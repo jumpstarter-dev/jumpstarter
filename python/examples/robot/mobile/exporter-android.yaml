@@ -1,0 +1,26 @@
+# An Android emulator with Appium, for the suites in tests/android.
+#
+# This file is a template: tests/android/__init__.robot replaces the
+# ANDROID_EMULATOR, AVD_NAME, APPIUM_EXECUTABLE and APPIUM_HOME placeholders
+# with its Robot Framework variables (`Replace Variables`, defaults from the
+# environment) and serves the result in-process. A lab exporter carries the
+# same drivers with fixed values.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: android-emulator
+endpoint: ""
+token: ""
+export:
+  emulator:
+    # Children, built by the driver: adb (ADB server), power (the emulator
+    # process) and appium (Appium with UiAutomator2, from the appium block).
+    type: jumpstarter_driver_androidemulator.driver.AndroidEmulator
+    config:
+      avd_name: "${AVD_NAME}"
+      emulator_path: "${ANDROID_EMULATOR}"
+      headless: true
+      appium:
+        executable: "${APPIUM_EXECUTABLE}"
+        home: "${APPIUM_HOME}"

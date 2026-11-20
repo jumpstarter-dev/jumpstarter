@@ -1,0 +1,25 @@
+# The same suites on a mock board, on lab boards, or in parallel on a pool of
+# boards: a testbed (a Robot Framework variable file) says where they run.
+# Pick one in RobotCode's profile selector or with `robotcode --profile lab robot`;
+# with plain robot, `robot -V testbeds/lab.yaml tests/`. The suite setup in
+# tests/__init__.robot (Acquire Lease) connects the board for every suite.
+paths = ["tests"]
+output-dir = "results"
+
+[profiles.mock]
+description = "The mock board, served in-process (local mode)"
+variable-files = ["testbeds/mock.yaml"]
+
+[profiles.lab]
+description = "A board from the lab controller: your lease for the selector, else a new one"
+variable-files = ["testbeds/lab.yaml"]
+
+[profiles.lab-pool]
+description = "One new lease per process from a pool, for pabot"
+variable-files = ["testbeds/lab-pool.yaml"]
+
+# The basic example's mock board (../basic/exporter.yaml). `jmp robot generate` writes
+# client.resource; the table name is the session name.
+[tool.jumpstarter.client.board]
+exporter-config = "../basic/exporter.yaml"
+resource = "client.resource"

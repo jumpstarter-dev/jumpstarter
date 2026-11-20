@@ -1,0 +1,40 @@
+# RobotCode and `robot` settings for the mobile examples, plus the Jumpstarter
+# client generation settings ([tool.jumpstarter.client]). The suites serve the
+# device locally; to run them from the editor on a lease you created, add
+# `[variables]` with `JMP_ANDROID_SELECTOR` (or `JMP_IOS_SELECTOR`).
+paths = ["tests"]
+output-dir = "results"
+python-path = ["."]
+
+# One client (and session) per platform, so a run of tests/ that covers both
+# never mixes them. The emulator and the simulator build their children at
+# run time, so they are not in the exporter configs: the committed `nodes`
+# tables list them (tree path -> client class). Refresh them from a running
+# exporter with `jmp robot generate --capture --client android`.
+
+[tool.jumpstarter.client.android]
+exporter-config = "exporter-android.yaml"
+resource = "client-android.resource"
+
+[tool.jumpstarter.client.android.aliases]   # the same keywords on both platforms
+"emulator.power" = "Device Power"
+"emulator.appium" = "Appium"
+
+[tool.jumpstarter.client.android.nodes]
+"emulator" = "jumpstarter_driver_androidemulator.client.AndroidEmulatorClient"
+"emulator.adb" = "jumpstarter_driver_adb.client.AdbClient"
+"emulator.power" = "jumpstarter_driver_power.client.PowerClient"
+"emulator.appium" = "jumpstarter_driver_appium.client.AppiumClient"
+
+[tool.jumpstarter.client.ios]
+exporter-config = "exporter-ios.yaml"
+resource = "client-ios.resource"
+
+[tool.jumpstarter.client.ios.aliases]
+"simulator.power" = "Device Power"
+"simulator.appium" = "Appium"
+
+[tool.jumpstarter.client.ios.nodes]
+"simulator.ios" = "jumpstarter_driver_iosdevice.client.IosDeviceClient"
+"simulator.power" = "jumpstarter_driver_power.client.VirtualPowerClient"
+"simulator.appium" = "jumpstarter_driver_appium.client.AppiumClient"

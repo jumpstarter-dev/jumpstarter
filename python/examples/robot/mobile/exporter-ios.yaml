@@ -1,0 +1,29 @@
+# An iOS simulator with Appium, for the suites in tests/ios (macOS only).
+#
+# This file is a template: tests/ios/__init__.robot replaces the
+# IOS_DEVICE_TYPE, IOS_RUNTIME, IDB_COMPANION, APPIUM_EXECUTABLE,
+# APPIUM_HOME and WDA_APP placeholders with its Robot Framework variables
+# (`Replace Variables`, defaults from the environment) and serves the result
+# in-process. A lab exporter carries the same drivers with fixed values.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: ios-simulator
+endpoint: ""
+token: ""
+export:
+  simulator:
+    # Children, built by the driver: ios (idb companion), power (the
+    # simulator) and appium (Appium with XCUITest, from the appium block).
+    type: jumpstarter_driver_iossimulator.driver.IosSimulator
+    config:
+      device_type: "${IOS_DEVICE_TYPE}"
+      runtime: "${IOS_RUNTIME}"
+      idb_companion: "${IDB_COMPANION}"
+      appium:
+        executable: "${APPIUM_EXECUTABLE}"
+        home: "${APPIUM_HOME}"
+        # A complete prebuilt *simulator* WebDriverAgentRunner-Runner.app;
+        # Jumpstarter never builds or signs WebDriverAgent.
+        wda: "${WDA_APP}"

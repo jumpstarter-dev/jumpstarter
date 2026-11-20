@@ -1,0 +1,26 @@
+# A Linux machine reached over SSH, for tests/linux_ssh.robot.
+#
+# This file is a template: the suite replaces the SSH_HOST, SSH_PORT,
+# SSH_USER and SSH_IDENTITY_FILE placeholders with its Robot Framework
+# variables (`Replace Variables`) and serves the result in-process. A lab exporter
+# would carry the same drivers with fixed values.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: linux-ssh
+endpoint: ""
+token: ""
+export:
+  ssh:
+    type: jumpstarter_driver_ssh.driver.SSHWrapper
+    config:
+      default_username: "${SSH_USER}"
+      # The private key the exporter hands to clients; empty for password logins.
+      ssh_identity_file: "${SSH_IDENTITY_FILE}"
+    children:
+      tcp:
+        type: jumpstarter_driver_network.driver.TcpNetwork
+        config:
+          host: "${SSH_HOST}"
+          port: ${SSH_PORT}

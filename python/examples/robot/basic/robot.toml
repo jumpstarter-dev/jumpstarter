@@ -1,0 +1,15 @@
+# Settings for RobotCode (`robotcode robot`, the editor's run/debug buttons and
+# Test Explorer) and the Jumpstarter client generator. Plain `robot` does not
+# read this file: everything a run needs is in the generated client.resource.
+# To run from the editor on a lease you created (jmp create lease -l board=mock
+# --duration 2h), add `[variables]` with `JMP_SELECTOR = "board=mock"`.
+paths = ["tests"]
+output-dir = "results"
+python-path = [".."]   # the shared mock board package, jumpstarter_example_robot
+
+# Client generation: `jmp robot generate` (re)writes
+# client.resource from exporter.yaml. The table name is the session name; the
+# default session's variables are plain JMP_SELECTOR, JMP_EXPORTER_CONFIG, ...
+[tool.jumpstarter.client.default]
+exporter-config = "exporter.yaml"
+resource = "client.resource"

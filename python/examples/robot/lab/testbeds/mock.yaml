@@ -1,0 +1,9 @@
+# Testbed: the mock board, served in-process (local mode).
+#
+#   robot -d results -V testbeds/mock.yaml tests/
+#
+# A testbed is a Robot Framework variable file. The JUMPSTARTER mapping says
+# where the session connects; everything else is test data. client.resource
+# already defaults to local mode, so this testbed only adds data: the suite
+# setup's Acquire Lease serves the mock board in-process and leases nothing.
+PASSWORD: not-a-secret
