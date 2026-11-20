@@ -38,7 +38,7 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 | 0011 | [Protobuf Introspection and Interface Generation](JEP-0011-protobuf-introspection-interface-generation.md)             | Accepted    | @kirkbrauer (Kirk Brauer)            |
 | 0013 | [Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)                                    | Accepted    | @mangelajo (Miguel Angel Ajo Pelayo) |
 | 0014 | [Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)                                                   | Approved    | @mangelajo (Miguel Angel Ajo Pelayo) |
-| 0019 | [Scale and Performance Testing](JEP-0019-scale-performance-testing.md)                                               | Draft       | @mangelajo (Miguel Angel Ajo Pelayo) |
+| 0019 | [Scale and Performance Testing](JEP-0019-scale-performance-testing.md)                                                 | Draft       | @mangelajo (Miguel Angel Ajo Pelayo) |
 | 0020 | [Mock ExporterSet Performance Testing (Phase 2)](JEP-0020-mock-exporterset-performance-testing.md)                     | Draft       | @mangelajo (Miguel Angel Ajo Pelayo) |
 
 ### Informational JEPs
@@ -52,19 +52,19 @@ For the full process definition, see [JEP-0000](JEP-0000-jep-process.md).
 > **Note:** [JEP-0000](JEP-0000-jep-process.md) is the canonical source for
 > lifecycle states and their definitions.
 
-| Status       | Meaning                                          |
-| ------------ | ------------------------------------------------ |
-| Draft        | Author is still writing; not yet open for review |
-| Discussion   | PR is open and under community discussion        |
-| Accepted     | Design approved; implementation may begin        |
-| Implementing | Implementation in progress                       |
-| Implemented  | Reference implementation merged                  |
-| Final        | Complete and authoritative                       |
-| Rejected     | Declined (record preserved)                      |
-| Deferred     | Sound but not a current priority                 |
-| Withdrawn    | Author voluntarily withdrew                      |
+| Status       | Meaning                                                  |
+| ------------ | -------------------------------------------------------- |
+| Draft        | Author is still writing; not yet open for review         |
+| Discussion   | PR is open and under community discussion                |
+| Accepted     | Design approved; implementation may begin                |
+| Implementing | Implementation in progress                               |
+| Implemented  | Reference implementation merged                          |
+| Final        | Complete and authoritative                               |
+| Rejected     | Declined (record preserved)                              |
+| Deferred     | Sound but not a current priority                         |
+| Withdrawn    | Author voluntarily withdrew                              |
 | Active       | Living document, actively maintained (Process JEPs only) |
-| Superseded   | Replaced by a newer JEP                          |
+| Superseded   | Replaced by a newer JEP                                  |
 
 ```{toctree}
 :hidden:

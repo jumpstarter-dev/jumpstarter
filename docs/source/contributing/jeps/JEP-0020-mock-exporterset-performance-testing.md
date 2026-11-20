@@ -1,14 +1,14 @@
 # JEP-0020: Mock ExporterSet Performance Testing
 
-| Field | Value |
-| ----- | ----- |
-| **JEP** | 0020 |
-| **Title** | Mock ExporterSet Performance Testing |
+| Field         | Value                                                     |
+| ------------- | --------------------------------------------------------- |
+| **JEP**       | 0020                                                      |
+| **Title**     | Mock ExporterSet Performance Testing                      |
 | **Author(s)** | @mangelajo (Miguel Angel Ajo Pelayo <miguelangel@ajo.es>) |
-| **Status** | Draft |
-| **Type** | Standards Track |
-| **Created** | 2026-11-20 |
-| **Requires** | JEP-0019; ExporterSet support from JEP-0014 |
+| **Status**    | Draft                                                     |
+| **Type**      | Standards Track                                           |
+| **Created**   | 2026-11-20                                                |
+| **Requires**  | JEP-0019; ExporterSet support from JEP-0014               |
 
 ## Abstract
 

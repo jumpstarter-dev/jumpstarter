@@ -1,14 +1,14 @@
 # JEP-0019: Scale and Performance Testing
 
-| Field | Value |
-| ----- | ----- |
-| **JEP** | 0019 |
-| **Title** | Scale and Performance Testing |
+| Field         | Value                                                     |
+| ------------- | --------------------------------------------------------- |
+| **JEP**       | 0019                                                      |
+| **Title**     | Scale and Performance Testing                             |
 | **Author(s)** | @mangelajo (Miguel Angel Ajo Pelayo <miguelangel@ajo.es>) |
-| **Status** | Draft |
-| **Type** | Standards Track |
-| **Created** | 2026-11-19 |
-| **Requires** | None |
+| **Status**    | Draft                                                     |
+| **Type**      | Standards Track                                           |
+| **Created**   | 2026-11-19                                                |
+| **Requires**  | None                                                      |
 
 ## Abstract
 
@@ -62,13 +62,12 @@ acceptance criterion for this JEP. No Phase 2 scaffolding is required in Phase 1
 
 ### Initial scenarios
 
-| Scenario | Workload | Primary measurements |
-| -------- | -------- | -------------------- |
-| `lease-scheduling` | Repeatedly acquire, briefly hold, release, and delete leases against a ready mock-exporter pool. | Assignment, lease-ready, and release latency, leases/s, errors. |
-| `client-churn` | Repeatedly create and delete clients, without creating exporters or leases. | Client creation/deletion latency, cycles/s, errors. |
-| `exporter-churn` | Repeatedly create exporters, connect mock runtimes, wait until available, then disconnect and delete them, without requesting leases. | Exporter creation/deletion latency, time to available, cycles/s, errors. |
-
-| `router-traffic` | Open leased sessions and exchange fixed-size echo payloads through routers. | Connection latency, round-trip latency, bytes/s, failures. |
+| Scenario           | Workload                                                                                                                              | Primary measurements                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `lease-scheduling` | Repeatedly acquire, briefly hold, release, and delete leases against a ready mock-exporter pool.                                      | Assignment, lease-ready, and release latency, leases/s, errors.          |
+| `client-churn`     | Repeatedly create and delete clients, without creating exporters or leases.                                                           | Client creation/deletion latency, cycles/s, errors.                      |
+| `exporter-churn`   | Repeatedly create exporters, connect mock runtimes, wait until available, then disconnect and delete them, without requesting leases. | Exporter creation/deletion latency, time to available, cycles/s, errors. |
+| `router-traffic`   | Open leased sessions and exchange fixed-size echo payloads through routers.                                                           | Connection latency, round-trip latency, bytes/s, failures.               |
 
 `lease-scheduling` also covers lease churn, reusing clients and exporters created
 during setup. Keeping client and exporter churn separate isolates their lifecycle
@@ -256,10 +255,10 @@ include credentials in artifacts.
 During each run, collect resource metrics for the running controllers and routers,
 including all replicas:
 
-| Metric | Samples | Report summary per load step |
-| ------ | ------- | ---------------------------- |
-| CPU | Usage in cores. | Mean and peak usage. |
-| Memory | Working set in bytes. | Mean and peak working set. |
+| Metric  | Samples                            | Report summary per load step                        |
+| ------- | ---------------------------------- | --------------------------------------------------- |
+| CPU     | Usage in cores.                    | Mean and peak usage.                                |
+| Memory  | Working set in bytes.              | Mean and peak working set.                          |
 | Network | Receive/transmit bytes per second. | Mean and peak rates, total bytes in each direction. |
 
 Query an existing Prometheus-compatible monitoring service using a configurable
@@ -315,11 +314,10 @@ Step  Exporters  Clients  Leases  Completed/s  Ready p50/p95/p99 (ms)  Errors  T
 Resource summary for step 1 over the same measurement window, summed across each
 component's replicas before computing mean/peak values:
 
-| Component | CPU mean/peak (cores) | Memory mean/peak (MiB) | Network RX/TX mean (KiB/s) |
-| --------- | --------------------- | ---------------------- | ------------------------ |
-| Controller | 0.30 / 0.52 | 180 / 205 | 85 / 62 |
-
-| Router | 0.08 / 0.14 | 95 / 102 | 40 / 39 |
+| Component  | CPU mean/peak (cores) | Memory mean/peak (MiB) | Network RX/TX mean (KiB/s) |
+| ---------- | --------------------- | ---------------------- | -------------------------- |
+| Controller | 0.30 / 0.52           | 180 / 205              | 85 / 62                    |
+| Router     | 0.08 / 0.14           | 95 / 102               | 40 / 39                    |
 
 The full report also includes per-replica values, peak network rates, byte totals,
 and metric coverage. If collection is unavailable, show `N/A` with the reason
