@@ -16,6 +16,9 @@ dependencies = [
     "jumpstarter-driver-network",
 ]
 
+[project.optional-dependencies]
+hmi = ["jumpstarter-driver-hmi"]
+
 [project.entry-points."jumpstarter.drivers"]
 IosDevice = "jumpstarter_driver_iosdevice.driver:IosDevice"
 
@@ -26,6 +29,10 @@ raw-options = { 'root' = '../../../'}
 [tool.hatch.metadata.hooks.vcs.urls]
 Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.coverage.run]
+# fake_scrios.py is a program the tests start as a child process: the test process never imports it
+omit = ["*/fake_scrios.py"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=. --cov-report=html --cov-report=xml"
@@ -42,6 +49,7 @@ name = "pin_jumpstarter"
 
 [dependency-groups]
 dev = [
+    "jumpstarter-driver-hmi",
     "pytest-cov>=6.0.0",
     "pytest>=8.3.3",
 ]

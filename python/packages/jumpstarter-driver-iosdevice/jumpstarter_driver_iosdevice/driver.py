@@ -25,6 +25,23 @@ MAX_LOCKDOWN_MESSAGE = 1024 * 1024
 _TLS_PSK = hasattr(ssl.SSLContext, "set_psk_server_callback")
 
 
+def _build_hmi(device, options):
+    """The ``hmi`` child, built from the ``hmi:`` option. The HMI package is an extra: it is imported here, and
+    only for a device that has the option.
+    """
+    if not isinstance(options, dict):
+        raise ConfigurationError("hmi must be a mapping of options (an empty one enables the HMI)")
+    try:
+        from .hmi import build_hmi
+    except ImportError as error:
+        if error.name is not None and error.name.split(".")[0] != "jumpstarter_driver_hmi":
+            raise  # something else is broken: do not hide it behind a hint about the extra
+        raise ConfigurationError(
+            "the hmi option needs the HMI package: pip install jumpstarter-driver-iosdevice[hmi]"
+        ) from error
+    return build_hmi(device, options)
+
+
 def _canonical_udid(value: str) -> str:
     # Linux sysfs omits the dash inserted by usbmuxd for newer Apple serials.
     return value.replace("-", "").lower()
@@ -85,6 +102,7 @@ class IosDevice(IosDeviceInterface, Driver):
     devicehub_state: str | None = None
     devicehub_udid: str | None = None
     appium: dict | None = None
+    hmi: dict | None = None
 
     def __post_init__(self):
         super().__post_init__()
@@ -103,6 +121,10 @@ class IosDevice(IosDeviceInterface, Driver):
             if "appium" in self.children:
                 raise ConfigurationError("child appium conflicts with the appium option")
             self.children["appium"] = IosDeviceAppium(device=self, **self.appium)
+        if self.hmi is not None:
+            if "hmi" in self.children:
+                raise ConfigurationError("child hmi conflicts with the hmi option")
+            self.children["hmi"] = _build_hmi(self, self.hmi)
 
     def _validate_config(self):  # noqa: C901
         if self.transport not in ("usb", "network"):
@@ -288,6 +310,10 @@ class IosDevice(IosDeviceInterface, Driver):
         super().reset()
 
     def close(self):
+        # The HMI's scrios is told to stop while the usbmux connection it uses is still there.
+        hmi = self.children.get("hmi") if self.hmi is not None else None
+        if hmi is not None:
+            hmi.close()
         self._invalidate_trust()
         super().close()
 

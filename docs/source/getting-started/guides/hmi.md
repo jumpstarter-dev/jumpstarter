@@ -26,6 +26,7 @@ Device drivers add an `hmi` child when the exporter configures one, the way `app
 | --- | --- | --- |
 | No device (synthetic pictures, for tests and demos) | {doc}`hmi <../../reference/package-apis/drivers/hmi>` | `MockHmi`, with `pattern: true` for a picture a browser can decode |
 | Android device | {doc}`adb <../../reference/package-apis/drivers/adb>` (`jumpstarter-driver-adb[hmi]`) | `hmi:` on `AdbDevice`; the picture comes from scrcpy's server |
+| iPhone or iPad on USB | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` (`jumpstarter-driver-iosdevice[hmi]`) | `hmi:` on `IosDevice`; the picture comes from [scrios](https://github.com/kirkbrauer/scrios) |
 
 ## What a device declares
 
