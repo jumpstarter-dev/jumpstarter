@@ -1,4 +1,5 @@
 import logging
+import os
 import sys
 import termios
 import tty
@@ -6,8 +7,8 @@ from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from typing import NoReturn
 
-from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, to_thread
-from anyio.streams.file import FileReadStream, FileWriteStream
+from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, to_thread, wait_readable
+from anyio.streams.file import FileWriteStream
 from jumpstarter_driver_power.client import PowerClient
 
 from jumpstarter.client import DriverClient
@@ -70,6 +71,7 @@ class Console:
         self.serial_client = serial_client
         self.observe = observe
         self.power_control = power_control
+        self._stream = None
 
     def run(self):
         with self.setraw():
@@ -86,17 +88,19 @@ class Console:
 
     async def __run(self):
         try:
-            method = "observe" if self.observe else "connect"
-            async with self.serial_client.stream_async(method=method) as stream:
+            async with create_task_group() as tg:
+                # Started first so the hotkeys work while the exporter opens the port.
+                tg.start_soon(self.__read_stdin)
                 try:
-                    async with create_task_group() as tg:
-                        tg.start_soon(self.__serial_to_stdout, stream)
-                        tg.start_soon(self.__read_stdin, None if self.observe else stream)
-                except* ConsoleExit:
-                    pass
-                except* ConsoleStreamDrop:
+                    method = "observe" if self.observe else "connect"
+                    async with self.serial_client.stream_async(method=method) as stream:
+                        self._stream = None if self.observe else stream
+                        await self.__serial_to_stdout(stream)
+                except EndOfStream:
                     raise ConsoleStreamDrop() from None
-        except EndOfStream:
+        except* ConsoleExit:
+            pass
+        except* ConsoleStreamDrop:
             raise ConsoleStreamDrop() from None
 
     async def __serial_to_stdout(self, stream):
@@ -117,25 +121,29 @@ class Console:
         except Exception:
             logger.warning("power cycle failed", exc_info=True)
 
-    async def __read_stdin(self, stream=None):
-        stdin = FileReadStream(sys.stdin.buffer)
+    async def __read_stdin(self):
+        fd = sys.stdin.fileno()
         actions: dict[bytes, Callable[[], Awaitable[None]]] = {EXIT_KEY: _exit_console}
         if self.power_control is not None:
             actions[POWER_KEY] = self._power_cycle
         hotkeys = HotkeyDetector(actions)
         send_warned = False
         while True:
-            data = await stdin.receive(max_bytes=1)
+            # Wait on the event loop, where cancellation interrupts it; a read in a
+            # worker thread would keep the console open until the next keypress.
+            await wait_readable(fd)
+            data = os.read(fd, 1)
             if not data:
-                continue
+                raise EndOfStream
             action = hotkeys.feed(data)
             if action is not None:
                 await action()
                 continue
-            if stream is not None:
+            # Input is discarded until the console has connected, and in observe mode.
+            if self._stream is not None:
                 try:
-                    await stream.send(data)
-                except STREAM_ERRORS:  # stream breaking; the reader task surfaces the drop
+                    await self._stream.send(data)
+                except STREAM_ERRORS:  # stream breaking; __serial_to_stdout surfaces the drop
                     if not send_warned:
                         logger.warning("send failed, input may not reach the device")
                     send_warned = True
