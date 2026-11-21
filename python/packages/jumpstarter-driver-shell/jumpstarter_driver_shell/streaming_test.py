@@ -35,6 +35,8 @@ def _alive(pid: int) -> bool:
             return stat.read().rsplit(") ", 1)[1][0] != "Z"
     except FileNotFoundError:
         return True
+    except ProcessLookupError:
+        return False  # reaped after the file was opened: reading it then fails with ESRCH
 
 
 async def _wait_until_gone(pid: int) -> None:
