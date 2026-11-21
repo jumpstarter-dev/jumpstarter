@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager, suppress
@@ -141,10 +142,10 @@ class StreamingProcess:
         """Signal the process, or its whole group if it leads one; a no-op once it has exited."""
         if self._process.returncode is not None:
             return
-        with suppress(ProcessLookupError):
-            if self._new_process_group:
-                os.killpg(self._process.pid, sig)
-            else:
+        if self._new_process_group:
+            _signal_group(self._process.pid, sig)
+        else:
+            with suppress(ProcessLookupError):
                 self._process.send_signal(sig)
 
     def terminate(self) -> None:
@@ -163,8 +164,7 @@ class StreamingProcess:
                 with move_on_after(self._stop_grace):
                     await self._process.wait()
             if group_was_running:
-                with suppress(ProcessLookupError):
-                    os.killpg(self._process.pid, signal.SIGKILL)
+                _signal_group(self._process.pid, signal.SIGKILL)
             else:
                 self.send_signal(signal.SIGKILL)
             returncode = await self._process.wait()
@@ -221,6 +221,26 @@ class StreamingProcess:
                 self._partial[source] = b""
                 return OutputChunk(source, buffered)
         return None
+
+
+def _signal_group(pgid: int, sig: signal.Signals) -> None:
+    """Signal every process in a group; a no-op once no member is left to signal."""
+    with suppress(ProcessLookupError):
+        try:
+            os.killpg(pgid, sig)
+        except PermissionError:  # pragma: no cover - needs macOS or a member this process may not signal
+            if sys.platform != "darwin":
+                raise
+            # XNU leaves out members that have exited but are not reaped yet (killpg1 in
+            # bsd/kern/kern_sig.c) and reports a group holding only those as EPERM, as a
+            # group finishing its exit briefly is. Linux signals such members, so there
+            # EPERM always means a member this process may not signal. Signal 0 to the
+            # leader, whose pid is the group's, still catches a running leader this process
+            # may not signal, which stop() would wait for forever: it raises EPERM again,
+            # while a zombie leader passes and a reaped one gives ESRCH. Once the leader is
+            # gone, a running member this process may not signal looks the same as an
+            # exited one; telling them apart would take listing the group's processes.
+            os.kill(pgid, 0)
 
 
 @asynccontextmanager
