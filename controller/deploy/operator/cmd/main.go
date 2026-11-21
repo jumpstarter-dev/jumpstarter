@@ -223,11 +223,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	operandImages, err := jumpstarter.OperandImagesFromEnv()
+	if err != nil {
+		setupLog.Error(err, "unable to read operand images")
+		os.Exit(1)
+	}
+	setupLog.Info("Operand images", "controller", operandImages.Controller,
+		"exporterSetController", operandImages.ExporterSetController)
+
 	if err := (&jumpstarter.JumpstarterReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
 		EndpointReconciler: endpoints.NewReconciler(mgr.GetClient(), mgr.GetScheme(), mgr.GetConfig()),
 		Recorder:           mgr.GetEventRecorderFor("jumpstarter-operator"),
+		OperandImages:      operandImages,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Jumpstarter")
 		os.Exit(1)

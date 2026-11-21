@@ -13,6 +13,7 @@ The operator bundle version is driven by variables in `controller/deploy/operato
 - **`VERSION`**: The semver for the bundle (e.g. `0.8.1`). This is NOT prefixed with `v`.
 - **`REPLACES`**: The previous OLM bundle this release upgrades from (e.g. `jumpstarter-operator.v0.8.0`). Note the OLM name uses a `v` prefix per OLM convention, but image tags do NOT. **Important**: This must point to the _most recent_ published version in the channel, including release candidates. For example, if `v0.8.1-rc.1` was published, then `v0.8.1` must replace `v0.8.1-rc.1` (not `v0.8.0`), otherwise OLM will report "multiple channel heads".
 - **`IMG`**: Defaults to `$(IMAGE_TAG_BASE):$(VERSION)`, so all image references are automatically derived from `VERSION`. No need to pass `IMG` explicitly in most cases.
+- **`CONTROLLER_IMG`** / **`EXPORTER_SET_CONTROLLER_IMG`**: The images the operator deploys for a Jumpstarter that names none, passed to it as `RELATED_IMAGE_CONTROLLER` / `RELATED_IMAGE_EXPORTERSET_CONTROLLER`. They take the tag of `IMG`, so the operator always deploys components from its own release. The CRD has no image defaults.
 - **`FBC_CHANNELS`**: Catalog channel (default `alpha`).
 - **`OPENSHIFT_VERSIONS`**: Red Hat OpenShift version range (e.g. `v4.18-v4.21`).
 - **`IMAGE_TAG_BASE`**: Registry prefix (`quay.io/jumpstarter-dev/jumpstarter-operator`).
@@ -38,7 +39,7 @@ When preparing a new release version X.Y.Z, update these files together:
 - Optionally update `OPENSHIFT_VERSIONS` if the supported range changes
 
 ### 2. `controller/deploy/operator/config/manager/kustomization.yaml`
-The `newTag` field is updated automatically by `make bundle` (via `kustomize edit set image`), but verify it reflects the correct tag after running the bundle target.
+The three `newTag` fields (operator, controller, exporterset-controller) are updated automatically by `make bundle` (via `kustomize edit set image`), but verify they reflect the correct tag after running the bundle target.
 
 ## Release Steps
 
@@ -67,7 +68,7 @@ make bundle
 Check that all image references are correct (no `:latest`, no `:vX.Y.Z`):
 ```bash
 grep -E "containerImage|image: quay" bundle/manifests/jumpstarter-operator.clusterserviceversion.yaml
-grep "default: quay" bundle/manifests/operator.jumpstarter.dev_jumpstarters.yaml
+grep -A1 RELATED_IMAGE bundle/manifests/jumpstarter-operator.clusterserviceversion.yaml
 cat bundle/release-config.yaml
 ```
 
@@ -117,7 +118,7 @@ When a release includes Makefile infrastructure fixes (not version-specific), sp
 ```
 Makefile (VERSION, REPLACES, IMG=$(IMAGE_TAG_BASE):$(VERSION))
   -> operator-sdk generate kustomize manifests
-  -> kustomize edit set image IMAGE_TAG_BASE=IMG
+  -> kustomize edit set image IMAGE_TAG_BASE=IMG (and the RELATED_IMAGE_* operand images, same tag)
   -> kustomize build config/manifests | operator-sdk generate bundle
   -> perl replaces :latest with IMG in CSV containerImage annotation
   -> inject openshift.versions into annotations.yaml

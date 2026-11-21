@@ -1,0 +1,7 @@
+# Let the images transformer (and `kustomize edit set image`) rewrite the
+# RELATED_IMAGE_* values in manager.yaml along with the container image.
+# It only replaces values that name one of the images listed in
+# kustomization.yaml, so other variables are left alone.
+images:
+- path: spec/template/spec/containers[]/env[]/value
+  kind: Deployment

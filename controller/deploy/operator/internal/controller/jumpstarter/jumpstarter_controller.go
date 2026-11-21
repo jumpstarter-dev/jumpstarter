@@ -66,6 +66,7 @@ type JumpstarterReconciler struct {
 	Scheme             *runtime.Scheme
 	EndpointReconciler *endpoints.Reconciler
 	Recorder           record.EventRecorder
+	OperandImages      OperandImages
 }
 
 // +kubebuilder:rbac:groups=operator.jumpstarter.dev,resources=jumpstarters,verbs=get;list;watch;create;update;patch;delete
@@ -194,6 +195,7 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Apply runtime-computed defaults (endpoints based on baseDomain and cluster capabilities)
 	// Static defaults are handled by kubebuilder annotations in the CRD schema
 	r.EndpointReconciler.ApplyDefaults(&jumpstarter.Spec, jumpstarter.Namespace)
+	r.OperandImages.applyDefaults(&jumpstarter.Spec)
 
 	// Clamp controller replicas to 1: the controller uses in-memory state for
 	// gRPC stream coordination (Dial/Listen pairing), so only one replica can

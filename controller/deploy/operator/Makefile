@@ -67,6 +67,22 @@ OPM_VERSION ?= v1.55.0
 # Image URL to use all building/pushing image targets
 IMG ?= $(IMAGE_TAG_BASE):$(VERSION)
 
+# Images the operator deploys for a Jumpstarter that does not name its own.
+# They take the operator's tag, so a bundle or an installer deploys the
+# components built in the same release as the operator. Only the last path
+# element can carry the tag (a registry host may have a port), and an untagged
+# IMG is :latest.
+IMG_NAME = $(notdir $(IMG))
+IMG_TAG = $(if $(findstring :,$(IMG_NAME)),$(lastword $(subst :, ,$(IMG_NAME))),latest)
+CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-controller:$(IMG_TAG)
+EXPORTER_SET_CONTROLLER_IMG ?= quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:$(IMG_TAG)
+
+# Points config/manager at IMG and the operand images above.
+SET_IMAGES = cd config/manager && $(KUSTOMIZE) edit set image \
+	$(IMAGE_TAG_BASE)=$(IMG) \
+	quay.io/jumpstarter-dev/jumpstarter-controller=$(CONTROLLER_IMG) \
+	quay.io/jumpstarter-dev/jumpstarter-exporterset-controller=$(EXPORTER_SET_CONTROLLER_IMG)
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -169,7 +185,7 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	RELATED_IMAGE_CONTROLLER=$(CONTROLLER_IMG) RELATED_IMAGE_EXPORTERSET_CONTROLLER=$(EXPORTER_SET_CONTROLLER_IMG) go run ./cmd/main.go
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -213,7 +229,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=${IMG}
+	$(SET_IMAGES)
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment
@@ -232,7 +248,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=${IMG}
+	$(SET_IMAGES)
 	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
@@ -330,7 +346,7 @@ endif
 .PHONY: bundle
 bundle: manifests kustomize operator-sdk ## Generate bundle manifests and metadata, then validate generated files.
 	$(OPERATOR_SDK) generate kustomize manifests -q
-	cd config/manager && $(KUSTOMIZE) edit set image $(IMAGE_TAG_BASE)=$(IMG)
+	$(SET_IMAGES)
 	$(KUSTOMIZE) build config/manifests | $(OPERATOR_SDK) generate bundle $(BUNDLE_GEN_FLAGS)
 	@# Align CSV containerImage annotation with the manager image (base CSV still references :latest)
 	@perl -pi -e 's|quay.io/jumpstarter-dev/jumpstarter-operator:latest|$(IMG)|g' bundle/manifests/jumpstarter-operator.clusterserviceversion.yaml

@@ -231,7 +231,7 @@ type HiddenLabelsConfig struct {
 // ExporterSetsConfig defines the configuration for ExporterSet provisioner controller deployments.
 type ExporterSetsConfig struct {
 	// Image for all provisioner controller Deployments.
-	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest"
+	// If not specified, the operator uses the exporterset-controller image of its own release.
 	Image string `json:"image,omitempty"`
 
 	// ImagePullPolicy for provisioner controller containers.
@@ -295,7 +295,8 @@ type TelemetryConfig struct {
 	Enabled bool `json:"enabled,omitempty"`
 
 	// Container image for the telemetry pod in 'registry/repository/image:tag' format.
-	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-telemetry:latest"
+	// If not specified, the operator uses the controller image of its own release,
+	// which also contains the telemetry service.
 	Image string `json:"image,omitempty"`
 
 	// Image pull policy for the telemetry container.
@@ -442,8 +443,7 @@ type LeasePolicyConfig struct {
 // Routers handle gRPC traffic routing and load balancing between clients and exporters.
 type RoutersConfig struct {
 	// Container image for the router pods in 'registry/repository/image:tag' format.
-	// If not specified, defaults to the latest stable version of the Jumpstarter router.
-	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+	// If not specified, the operator uses the controller image of its own release.
 	Image string `json:"image,omitempty"`
 
 	// Image pull policy for the router container.
@@ -485,8 +485,7 @@ type RoutersConfig struct {
 // and exporters to interact with Jumpstarter.
 type ControllerConfig struct {
 	// Container image for the controller pods in 'registry/repository/image:tag' format.
-	// If not specified, defaults to the latest stable version of the Jumpstarter controller.
-	// +kubebuilder:default="quay.io/jumpstarter-dev/jumpstarter-controller:latest"
+	// If not specified, the operator uses the controller image of its own release.
 	Image string `json:"image,omitempty"`
 
 	// Image pull policy for the controller container.
