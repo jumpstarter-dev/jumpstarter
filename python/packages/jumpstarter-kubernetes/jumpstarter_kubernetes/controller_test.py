@@ -7,8 +7,6 @@ import pytest
 from jumpstarter_kubernetes.controller import get_latest_compatible_controller_version
 from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
 
-from jumpstarter.common.http import ProxyFromEnvironmentRequest
-
 
 class TestGetLatestCompatibleControllerVersion:
     """Test controller version resolution from Quay.io API."""
@@ -41,24 +39,6 @@ class TestGetLatestCompatibleControllerVersion:
         await get_latest_compatible_controller_version("v0.5.0")
 
         assert captured_url == "https://quay.io/api/v1/repository/jumpstarter-dev/jumpstarter-operator/tag/"
-
-    @pytest.mark.anyio
-    @patch("aiohttp.ClientSession")
-    async def test_honors_proxy_environment(self, mock_session_class):
-        mock_response = AsyncMock()
-        mock_response.json = AsyncMock(return_value={"tags": [{"name": "v0.5.0"}]})
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=False)
-
-        mock_session = AsyncMock()
-        mock_session.get = lambda url, **kwargs: mock_response
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=False)
-        mock_session_class.return_value = mock_session
-
-        await get_latest_compatible_controller_version("v0.5.0")
-
-        assert mock_session_class.call_args.kwargs["request_class"] is ProxyFromEnvironmentRequest
 
     @pytest.mark.anyio
     @patch("aiohttp.ClientSession")

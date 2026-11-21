@@ -1,5 +1,7 @@
 import gc
+import ssl
 from asyncio import Task  # noqa: TID251
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from ipaddress import IPv4Address
@@ -88,12 +90,9 @@ class FakeProxy:
     headers: list[dict[str, str]] = field(default_factory=list)
 
 
-@pytest.fixture
-async def http_proxy(monkeypatch):
-    """Run a fake forward proxy and point the proxy environment variables at it.
-
-    The proxy records the (method, host) and the headers of every request it receives.
-    """
+@asynccontextmanager
+async def _fake_proxy(ssl_context: ssl.SSLContext | None = None):
+    """Run a fake forward proxy that records the (method, host) and the headers of every request."""
     async def handler(request: web.Request) -> web.Response:
         proxy.requests.append((request.method, request.host))
         proxy.headers.append(dict(request.headers))
@@ -103,17 +102,33 @@ async def http_proxy(monkeypatch):
     app.router.add_route("*", "/{tail:.*}", handler)
     runner = web.AppRunner(app)
     await runner.setup()
-    await web.TCPSite(runner, "127.0.0.1", 0).start()
-    proxy = FakeProxy(url=f"http://127.0.0.1:{runner.addresses[0][1]}")
-
-    for name in ("NO_PROXY", "no_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
-        monkeypatch.delenv(name, raising=False)
-    for name in ("HTTP_PROXY", "http_proxy"):
-        monkeypatch.setenv(name, proxy.url)
     try:
+        await web.TCPSite(runner, "127.0.0.1", 0, ssl_context=ssl_context).start()
+        scheme = "http" if ssl_context is None else "https"
+        proxy = FakeProxy(url=f"{scheme}://127.0.0.1:{runner.addresses[0][1]}")
         yield proxy
     finally:
         await runner.cleanup()
+
+
+@pytest.fixture
+async def http_proxy(monkeypatch):
+    """Point http_proxy at a fake forward proxy."""
+    async with _fake_proxy() as proxy:
+        monkeypatch.setenv("http_proxy", proxy.url)
+        yield proxy
+
+
+@pytest.fixture
+async def tls_http_proxy(monkeypatch, tmp_path):
+    """Point http_proxy at a fake forward proxy that is reached over TLS."""
+    (tmp_path / "proxy.crt").write_bytes(tls_crt)
+    (tmp_path / "proxy.key").write_bytes(tls_key)
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.load_cert_chain(tmp_path / "proxy.crt", tmp_path / "proxy.key")
+    async with _fake_proxy(context) as proxy:
+        monkeypatch.setenv("http_proxy", proxy.url)
+        yield proxy
 
 
 def pytest_collection_finish():

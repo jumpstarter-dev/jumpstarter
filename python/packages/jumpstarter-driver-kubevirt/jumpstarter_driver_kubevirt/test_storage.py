@@ -231,13 +231,6 @@ class Cluster:
         self.objects[DataVolume, token]["status"] = {"phase": "Succeeded" if self.complete_uploads else "UploadReady"}
 
 
-@pytest.fixture(autouse=True)
-def _direct_connections(monkeypatch):
-    # The CDI upload honors the proxy environment; reach the local test servers directly.
-    for name in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
-        monkeypatch.delenv(name, raising=False)
-
-
 @pytest.fixture
 def cluster(monkeypatch):
     cluster = Cluster()

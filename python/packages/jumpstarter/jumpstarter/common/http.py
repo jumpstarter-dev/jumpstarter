@@ -16,11 +16,13 @@ def _proxy_from_environment(url: URL) -> URL | None:
     value = getproxies().get(url.scheme)
     if not value:
         return None
-    proxy = URL(value)
-    if proxy.scheme != "http":
-        logger.warning("Ignoring proxy %s: aiohttp only supports http:// proxies", proxy.with_user(None))
+    # Like curl and requests, read a proxy without a scheme as an http:// proxy.
+    proxy = URL(value if "://" in value else f"http://{value}")
+    if proxy.scheme not in ("http", "https"):
+        logger.warning("Ignoring the %s:// proxy: aiohttp only supports http:// and https:// proxies", proxy.scheme)
         return None
-    # aiohttp sends the credentials of the proxy URL, if any, in Proxy-Authorization.
+    # aiohttp sends the credentials of the proxy URL, if any, in Proxy-Authorization, and
+    # reaches an https:// proxy over TLS.
     return proxy
 
 
@@ -37,20 +39,15 @@ class ProxyFromEnvironmentRequest(aiohttp.ClientRequest):
 
 # This helper is the only code allowed to create aiohttp sessions directly, hence the
 # TID251 exemptions: ruff bans aiohttp.ClientSession everywhere else.
-def client_session(*, trust_env: bool = True, **kwargs: Any) -> aiohttp.ClientSession:  # noqa: TID251
+def client_session(**kwargs: Any) -> aiohttp.ClientSession:  # noqa: TID251
     """Create an aiohttp client session that honors the proxy environment.
 
     aiohttp ignores http_proxy, https_proxy and no_proxy unless the session is created with
     trust_env=True, unlike requests and urllib. Use this helper for every outgoing HTTP
     session so Jumpstarter behaves the same on hosts that reach the network through a proxy.
 
-    The proxy is selected as aiohttp does with trust_env=True, but ~/.netrc is never read:
-    aiohttp would send its credentials to the target host, and refuse requests that already
-    carry an Authorization header for that host.
-
-    Pass trust_env=False for connections that must never go through a proxy, such as a Unix
-    socket.
+    The proxy is selected from the environment like urllib does, but unlike trust_env=True,
+    ~/.netrc is never read: aiohttp would send its credentials to the target host, and refuse
+    requests that already carry an Authorization header for that host.
     """
-    if trust_env:
-        kwargs.setdefault("request_class", ProxyFromEnvironmentRequest)
-    return aiohttp.ClientSession(**kwargs)  # noqa: TID251
+    return aiohttp.ClientSession(request_class=ProxyFromEnvironmentRequest, **kwargs)  # noqa: TID251

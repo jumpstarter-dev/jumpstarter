@@ -47,13 +47,6 @@ class FakeCameraHandler(BaseHTTPRequestHandler):
         pass
 
 
-@pytest.fixture(autouse=True)
-def _direct_connections(monkeypatch):
-    # HttpVideo honors the proxy environment; reach the local fake cameras directly.
-    for name in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
-        monkeypatch.delenv(name, raising=False)
-
-
 @pytest.fixture
 def fake_camera():
     server = ThreadingHTTPServer(("127.0.0.1", 0), FakeCameraHandler)
