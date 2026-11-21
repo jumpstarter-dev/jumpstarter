@@ -44,6 +44,7 @@ fn main() {
                 log_format,
                 log_fields,
             };
+            server::handle_sigterm();
             if let Err(e) = server::serve_with(&socket, opts) {
                 eprintln!("jumpstarter-exec serve: {e}");
                 process::exit(1);
