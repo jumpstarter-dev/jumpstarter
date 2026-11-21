@@ -118,6 +118,14 @@ jobs:
           echo "PEP440_VERSION=${PEP440_VERSION}" >> $GITHUB_ENV
           echo "PEP440_VERSION=${PEP440_VERSION}"
 
+          # OLM orders bundles by semver precedence. In 0.10.0-dev-248-g54cd2f08
+          # the prerelease "dev-248-g54cd2f08" is one identifier, compared as
+          # text (dev-1000 sorts before dev-999), so the bundle gets the commit
+          # count as a numeric identifier of its own: 0.10.0-dev.248.
+          BUNDLE_VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+)-([0-9]+)-g[0-9a-f]+$/\1.\2/')
+          echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> $GITHUB_ENV
+          echo "BUNDLE_VERSION=${BUNDLE_VERSION}"
+
       - name: Set build args
         if: steps.check.outputs.skip != 'true'
         id: build-args
@@ -131,7 +139,7 @@ jobs:
 
       - name: Generate operator bundle
         if: ${{ matrix.generate_bundle && steps.check.outputs.skip != 'true' }}
-        run: make bundle VERSION=${{ env.VERSION }}
+        run: make bundle VERSION=${{ env.BUNDLE_VERSION }} IMG=${{ env.QUAY_ORG }}/jumpstarter-operator:${{ env.VERSION }}
         working-directory: controller/deploy/operator
 
       - name: Set up Go
@@ -289,3 +297,56 @@ jobs:
               });
             }
 
+  # Publishes an OLM catalog that follows main. Its one channel, "unstable",
+  # holds only the bundle built from this commit, whose skipRange lets OLM
+  # upgrade to it from any lower version. It waits for every image of the
+  # run, since the bundle deploys them.
+  publish-unstable-catalog:
+    needs: build-and-push-image
+    if: github.repository_owner == 'jumpstarter-dev' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # One publish at a time, so no other run can push between this run's
+    # head-of-main check and its own push.
+    concurrency:
+      group: publish-unstable-catalog
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: jumpstarter-dev+jumpstarter_ci
+          password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Publish catalog
+        working-directory: controller/deploy/operator
+        run: |
+          # Runs for consecutive commits overlap and reach this job in any
+          # order. Only the run for the current head of main publishes, so an
+          # older run that finishes late cannot move the channel back.
+          git fetch origin main
+          if [ "$(git rev-parse origin/main)" != "${GITHUB_SHA}" ]; then
+            echo "main has moved on to $(git rev-parse --short origin/main); its run publishes the catalog"
+            exit 0
+          fi
+
+          VERSION=$(git describe --tags)
+          VERSION=${VERSION#v}
+          make catalog BUNDLE_IMG="${QUAY_ORG}/jumpstarter-operator-bundle:${VERSION}"
+          # The catalog image has no RUN step, so building it for arm64 needs no emulation.
+          docker buildx build --push --platform linux/amd64,linux/arm64 \
+            -f Containerfile.catalog \
+            -t "${QUAY_ORG}/jumpstarter-operator-catalog:unstable" \
+            -t "${QUAY_ORG}/jumpstarter-operator-catalog:${VERSION}" \
+            .

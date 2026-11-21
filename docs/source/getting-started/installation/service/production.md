@@ -62,6 +62,41 @@ Or via CLI subscription:
       installPlanApproval: Automatic
 ```
 
+#### Follow `main`
+
+To try changes before they are released, subscribe to the `unstable` channel
+of the catalog that CI publishes from every commit on `main`. Each update
+moves the {term}`operator`, and with it the {term}`controller` and
+{term}`router`, to the latest `main` build. These builds have passed CI but
+not a release; do not run them in production.
+
+```{code-block} yaml
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: jumpstarter-unstable
+  namespace: olm # openshift-marketplace on OpenShift
+spec:
+  sourceType: grpc
+  image: quay.io/jumpstarter-dev/jumpstarter-operator-catalog:unstable
+  displayName: Jumpstarter (unstable)
+  updateStrategy:
+    registryPoll:
+      interval: 1h
+---
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: jumpstarter-operator
+  namespace: operators # openshift-operators on OpenShift
+spec:
+  channel: unstable
+  name: jumpstarter-operator
+  source: jumpstarter-unstable
+  sourceNamespace: olm # openshift-marketplace on OpenShift
+  installPlanApproval: Automatic
+```
+
 ### Create a Namespace
 
 ```{code-block} console
