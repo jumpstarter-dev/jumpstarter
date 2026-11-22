@@ -412,6 +412,8 @@ def _alive(pid: int) -> bool:
         stat = Path(f"/proc/{pid}/stat").read_text()
     except FileNotFoundError:
         return True  # no /proc (e.g. macOS): the kernel said it exists
+    except ProcessLookupError:
+        return False  # reaped after the file was opened: reading it then fails with ESRCH
     return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
