@@ -20,6 +20,7 @@ import (
 	"context"
 	"embed"
 	"html/template"
+	"net"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -69,7 +70,11 @@ func (s *DashboardService) Start(ctx context.Context) error {
 		})
 	})
 
-	return r.Run(":8084")
+	lis, err := net.Listen("tcp", ":8084")
+	if err != nil {
+		return err
+	}
+	return serveUntilDone(ctx, &http.Server{Handler: r.Handler()}, lis)
 }
 
 func (s *DashboardService) NeedLeaderElection() bool {

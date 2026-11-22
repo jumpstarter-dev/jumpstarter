@@ -170,17 +170,10 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "a38b78e7.jumpstarter.dev",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
+		// Give up the lease when the manager stops, so that the next controller
+		// takes over within a retry period instead of once the lease expires.
+		// This is safe only because main returns as soon as the manager stops.
+		LeaderElectionReleaseOnCancel: true,
 	}
 
 	// If a specific namespace is set, configure the cache to only watch that namespace
