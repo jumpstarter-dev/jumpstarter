@@ -32,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
@@ -130,6 +131,98 @@ var _ = Describe("Jumpstarter Controller", func() {
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
 		})
+	})
+})
+
+var _ = Describe("Jumpstarter Controller — TLS secrets issued after the resource", func() {
+	const name = "tls-wait"
+	ctx := context.Background()
+	var namespace string
+
+	BeforeEach(func() {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{GenerateName: "tls-wait-test-"}}
+		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		namespace = ns.Name
+	})
+
+	AfterEach(func() {
+		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
+	})
+
+	// Pods created before their TLS secret exists cannot start, and are
+	// replaced once it does: the controller pod took the leader lease in
+	// between and held it while it shut down.
+	It("creates each deployment only once its TLS secret exists", func() {
+		secrets := []*corev1.Secret{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: name + "-controller-tls", Namespace: namespace},
+				Data:       map[string][]byte{"tls.crt": []byte("controller-cert"), "tls.key": []byte("controller-key")},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: name + "-router-tls", Namespace: namespace},
+				Data:       map[string][]byte{"tls.crt": []byte("router-cert"), "tls.key": []byte("router-key")},
+			},
+		}
+		deployments := []string{name + "-controller", name + "-router-0"}
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+			Spec: operatorv1alpha1.JumpstarterSpec{
+				BaseDomain: "example.com",
+				Controller: operatorv1alpha1.ControllerConfig{
+					Image:    "quay.io/jumpstarter/jumpstarter:latest",
+					Replicas: new(int32(1)),
+					GRPC: operatorv1alpha1.GRPCConfig{
+						Endpoints: []operatorv1alpha1.Endpoint{{Address: "controller"}},
+						TLS:       operatorv1alpha1.TLSConfig{CertSecret: secrets[0].Name},
+					},
+				},
+				Routers: operatorv1alpha1.RoutersConfig{
+					Image:    "quay.io/jumpstarter/jumpstarter:latest",
+					Replicas: new(int32(1)),
+					GRPC: operatorv1alpha1.GRPCConfig{
+						Endpoints: []operatorv1alpha1.Endpoint{{Address: "router"}},
+						TLS:       operatorv1alpha1.TLSConfig{CertSecret: secrets[1].Name},
+					},
+				},
+			},
+		})).To(Succeed())
+		recorder := record.NewFakeRecorder(100)
+		reconciler := &JumpstarterReconciler{
+			Client:             k8sClient,
+			Scheme:             k8sClient.Scheme(),
+			Recorder:           recorder,
+			EndpointReconciler: endpoints.NewReconciler(k8sClient, k8sClient.Scheme(), cfg),
+		}
+		reconcileOnce := func() {
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
+			})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		By("reconciling before the TLS secrets exist")
+		reconcileOnce()
+		for _, deployment := range deployments {
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: deployment, Namespace: namespace}, &appsv1.Deployment{})
+			Expect(errors.IsNotFound(err)).To(BeTrue(), "%s was created before its TLS secret existed", deployment)
+		}
+		var events []string
+		for len(recorder.Events) > 0 {
+			events = append(events, <-recorder.Events)
+		}
+		Expect(events).To(ContainElement(ContainSubstring("The controller deployment waits for TLS secret " + secrets[0].Name)))
+
+		By("reconciling once the TLS secrets exist")
+		for _, secret := range secrets {
+			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
+		}
+		reconcileOnce()
+		for i, deployment := range deployments {
+			created := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: deployment, Namespace: namespace}, created)).To(Succeed())
+			Expect(created.Spec.Template.Annotations).To(
+				HaveKeyWithValue("jumpstarter.dev/tls-secret-sha256", secretDataHash(secrets[i])))
+		}
 	})
 })
 
