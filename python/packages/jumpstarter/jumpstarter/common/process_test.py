@@ -169,6 +169,43 @@ async def test_stopping_a_new_process_group_kills_grandchildren_that_outlive_the
             os.kill(grandchild, signal.SIGKILL)
 
 
+# The leader forks a helper into a process group of its own, and the helper forks a
+# member back into the leader's group that exits at once. The helper never reaps it
+# and outlives the leader, so once the leader is gone its group holds nothing but a
+# member that has exited and is not reaped yet.
+LEAVE_AN_UNREAPED_MEMBER_IN_THE_GROUP = (
+    "import os, time\n"
+    "group = os.getpgrp()\n"
+    "if os.fork() == 0:\n"
+    "    os.setpgid(0, 0)\n"
+    "    joined, member = os.pipe()\n"
+    "    if os.fork() == 0:\n"
+    "        os.setpgid(0, group)\n"
+    "        os.write(member, b'joined')\n"
+    "        os._exit(0)\n"
+    "    os.close(member)\n"
+    "    assert os.read(joined, 6) == b'joined'\n"
+    "    assert os.read(joined, 1) == b''\n"
+    "    print(os.getpid(), flush=True)\n"
+    "    time.sleep(60)\n"
+    "    os._exit(0)\n"
+    "time.sleep(60)\n"
+)
+
+
+@pytest.mark.anyio
+async def test_stopping_a_group_left_with_only_an_unreaped_member():
+    with fail_after(10):
+        async with open_streaming_process(
+            python(LEAVE_AN_UNREAPED_MEMBER_IN_THE_GROUP), new_process_group=True, stop_grace=1
+        ) as process:
+            helper = int((await process.receive_line()).data)
+            try:
+                assert await process.stop() == -signal.SIGTERM
+            finally:
+                os.kill(helper, signal.SIGKILL)
+
+
 @pytest.mark.anyio
 async def test_a_background_job_survives_a_normal_exit():
     with fail_after(10):

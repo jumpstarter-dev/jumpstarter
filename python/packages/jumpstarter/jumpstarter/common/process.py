@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import signal
 import subprocess
+import sys
 from collections import deque
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager, suppress
@@ -141,10 +143,10 @@ class StreamingProcess:
         """Signal the process, or its whole group if it leads one; a no-op once it has exited."""
         if self._process.returncode is not None:
             return
-        with suppress(ProcessLookupError):
-            if self._new_process_group:
-                os.killpg(self._process.pid, sig)
-            else:
+        if self._new_process_group:
+            _signal_group(self._process.pid, sig)
+        else:
+            with suppress(ProcessLookupError):
                 self._process.send_signal(sig)
 
     def terminate(self) -> None:
@@ -163,8 +165,7 @@ class StreamingProcess:
                 with move_on_after(self._stop_grace):
                     await self._process.wait()
             if group_was_running:
-                with suppress(ProcessLookupError):
-                    os.killpg(self._process.pid, signal.SIGKILL)
+                _signal_group(self._process.pid, signal.SIGKILL)
             else:
                 self.send_signal(signal.SIGKILL)
             returncode = await self._process.wait()
@@ -221,6 +222,38 @@ class StreamingProcess:
                 self._partial[source] = b""
                 return OutputChunk(source, buffered)
         return None
+
+
+def _signal_group(pgid: int, sig: signal.Signals) -> None:
+    """Signal every process in a group; a no-op once no member is left to signal."""
+    with suppress(ProcessLookupError):
+        try:
+            os.killpg(pgid, sig)
+        except PermissionError:  # pragma: no cover - needs macOS or a member this process may not signal
+            if sys.platform != "darwin":
+                raise
+            # XNU leaves out members that have exited but are not reaped yet (killpg1 in
+            # bsd/kern/kern_sig.c) and reports a group holding only those as EPERM, as a
+            # group finishing its exit briefly is. Linux signals such members, so there
+            # EPERM always means a member this process may not signal. kill() of a single
+            # such member succeeds, so signalling the members one at a time raises EPERM
+            # again only for a running member this process may not signal.
+            for pid in _darwin_group_members(pgid):
+                with suppress(ProcessLookupError):
+                    os.kill(pid, sig)
+
+
+def _darwin_group_members(pgid: int) -> list[int]:  # pragma: no cover - macOS only
+    """List a process group's members, also those that have exited but are not reaped yet."""
+    libsystem = ctypes.CDLL("/usr/lib/libSystem.B.dylib", use_errno=True)
+    # Without a buffer, proc_listpgrppids returns how many pids the system could hold.
+    pids = (ctypes.c_int * libsystem.proc_listpgrppids(pgid, None, 0))()
+    ctypes.set_errno(0)
+    count = libsystem.proc_listpgrppids(pgid, pids, ctypes.sizeof(pids))
+    # An empty group and a failed call both return 0; only errno tells them apart.
+    if err := ctypes.get_errno():
+        raise OSError(err, os.strerror(err))
+    return pids[:count]
 
 
 @asynccontextmanager
