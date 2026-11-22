@@ -1,11 +1,20 @@
+import os
+import pty
+import select
 import shutil
 import signal
+import subprocess
+import tempfile
+import threading
+import time
+from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from .utils import _build_common_env, _lease_env_vars, launch_shell
+from .utils import _build_common_env, _lease_env_vars, _zsh_isolated_config, launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.utils.env import ExporterMetadata, _resolve_drivers_config
 
@@ -237,6 +246,44 @@ def test_launch_shell_bash_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     assert "➤" in ps1
 
 
+@pytest.mark.parametrize("bashopts", [None, "", "checkwinsize", "histappend:checkwinsize"])
+def test_launch_shell_bash_isolated_history_env(tmp_path, monkeypatch, bashopts):
+    if bashopts is None:
+        monkeypatch.delenv("BASHOPTS", raising=False)
+    else:
+        monkeypatch.setenv("BASHOPTS", bashopts)
+    for var in ("HISTSIZE", "HISTFILESIZE"):
+        monkeypatch.delenv(var, raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "fake.bash")
+    assert exit_code == 0
+    assert call.args[0][1:] == ["--norc", "--noprofile", "-O", "histappend"]
+    env = call[1].get("env", {})
+    assert env["HISTSIZE"] == "50000"
+    assert env["HISTFILESIZE"] == "-1"
+    assert env.get("BASHOPTS") == bashopts
+
+
+def test_launch_shell_bash_with_profiles_keeps_user_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", str(tmp_path / "fake.bash"))
+    monkeypatch.setenv("BASHOPTS", "checkwinsize")
+    for var in ("HISTSIZE", "HISTFILESIZE"):
+        monkeypatch.delenv(var, raising=False)
+    with patch("jumpstarter.common.utils.Popen") as mock_popen:
+        mock_popen.return_value.wait.return_value = 0
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=True,
+        )
+    assert exit_code == 0
+    env = mock_popen.call_args[1].get("env", {})
+    assert "HISTSIZE" not in env
+    assert "HISTFILESIZE" not in env
+    assert env["BASHOPTS"] == "checkwinsize"
+
+
 def test_launch_shell_fish_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.delenv("NO_ICONS", raising=False)
@@ -259,6 +306,370 @@ def test_launch_shell_zsh_prompt_is_plain_when_no_color(tmp_path, monkeypatch):
     assert "%F{" not in ps1  # No zsh color sequences
     assert "⚡" in ps1
     assert "➤" in ps1
+
+
+def test_launch_shell_zsh_isolated_config(tmp_path, monkeypatch):
+    created = []
+
+    def fake_temporary_directory(**kwargs):
+        @contextmanager
+        def _dir():
+            path = tempfile.mkdtemp(dir=str(tmp_path))
+            created.append(path)
+            yield path
+
+        return _dir()
+
+    monkeypatch.setattr("jumpstarter.common.utils.TemporaryDirectory", fake_temporary_directory)
+    for var in ("ZDOTDIR", "HISTSIZE", "SAVEHIST", "HISTFILE"):
+        monkeypatch.delenv(var, raising=False)
+    exit_code, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, "zsh")
+    assert exit_code == 0
+    assert "--no-rcs" not in call[0][0]
+    env = call[1].get("env", {})
+    assert env["ZDOTDIR"] == created[0]
+    assert "HISTSIZE" not in env
+    assert "SAVEHIST" not in env
+    assert "HISTFILE" not in env
+    zshrc = (Path(created[0]) / ".zshrc").read_text()
+    assert 'HISTFILE=${HISTFILE-"$HOME/.zsh_history"}' in zshrc
+    assert "HISTSIZE=50000\n" in zshrc
+    assert "SAVEHIST=2147483647\n" in zshrc
+    assert "history-incremental-search-backward" in zshrc
+    assert "unsetopt GLOBALRCS" in (Path(created[0]) / ".zshenv").read_text()
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
+@pytest.mark.parametrize("original", [None, "", "/config with spaces/it's $(touch UNEXPECTED)"])
+def test_zsh_isolated_config_restores_zdotdir(tmp_path, original):
+    zsh = shutil.which("zsh")
+    assert zsh is not None
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path), "HISTFILE": ""}
+    if original is not None:
+        env["ZDOTDIR"] = original
+    with _zsh_isolated_config(env):
+        result = subprocess.run(
+            [
+                zsh,
+                "-fc",
+                'source "$1"; printenv ZDOTDIR',
+                "zsh",
+                str(Path(env["ZDOTDIR"]) / ".zshrc"),
+            ],
+            env=env,
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    assert result.returncode == (1 if original is None else 0)
+    assert result.stdout == ("" if original is None else original + "\n")
+    assert not (tmp_path / "UNEXPECTED").exists()
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
+@pytest.mark.parametrize("exported", [False, True])
+def test_zsh_history_defaults_do_not_leak_to_nested_shells(tmp_path, exported):
+    zsh = shutil.which("zsh")
+    assert zsh is not None
+    (tmp_path / ".zshenv").write_text("unsetopt GLOBALRCS\n")
+    (tmp_path / ".zshrc").write_text(
+        "(( HISTSIZE < 50000 )) && HISTSIZE=50000\n(( SAVEHIST < 10000 )) && SAVEHIST=10000\n"
+    )
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
+    if exported:
+        env.update(HISTSIZE="75000", SAVEHIST="250000", HISTFILE=str(tmp_path / "custom history"))
+    with _zsh_isolated_config(env):
+        result = subprocess.run(
+            [
+                zsh,
+                "-ic",
+                (
+                    'print -r -- "$HISTSIZE:$SAVEHIST"; '
+                    "zsh -ic 'print -r -- \"$HISTSIZE:$SAVEHIST\"'; "
+                    "printenv HISTSIZE; printenv SAVEHIST; printenv HISTFILE"
+                ),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    if exported:
+        assert result.returncode == 0
+        assert result.stdout.splitlines() == [
+            "75000:250000",
+            "75000:250000",
+            "75000",
+            "250000",
+            str(tmp_path / "custom history"),
+        ]
+    else:
+        assert result.returncode == 1
+        assert result.stdout.splitlines() == ["50000:2147483647", "50000:10000"]
+
+
+@pytest.mark.parametrize(
+    "shell,values",
+    [
+        ("fake.bash", {"HISTSIZE": "42", "HISTFILESIZE": "0"}),
+        ("zsh", {"HISTSIZE": "42", "SAVEHIST": "0", "HISTFILE": ""}),
+    ],
+)
+def test_launch_shell_preserves_exported_history_settings(tmp_path, monkeypatch, shell, values):
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    _, call = _launch_shell_capturing_popen(tmp_path, monkeypatch, shell)
+    for key, value in values.items():
+        assert call.kwargs["env"][key] == value
+
+
+def test_launch_shell_zsh_with_profiles_keeps_user_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHELL", str(tmp_path / "zsh"))
+    monkeypatch.delenv("ZDOTDIR", raising=False)
+    with patch("jumpstarter.common.utils.Popen") as mock_popen:
+        mock_popen.return_value.wait.return_value = 0
+        exit_code = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="remote",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=True,
+        )
+    assert exit_code == 0
+    assert "--no-rcs" not in mock_popen.call_args[0][0]
+    assert "ZDOTDIR" not in mock_popen.call_args[1].get("env", {})
+
+
+def _pty_read(fd, expected, timeout=3.0):
+    out = b""
+    deadline = time.monotonic() + timeout
+    while expected not in out:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0 or not select.select([fd], [], [], remaining)[0]:
+            break
+        try:
+            chunk = os.read(fd, 4096)
+        except OSError:
+            break
+        if not chunk:
+            break
+        out += chunk
+    assert expected in out, f"Expected {expected!r}, received {out!r}"
+    return out
+
+
+def _pty_send(fd, data, expected, timeout=3.0):
+    os.write(fd, data)
+    return _pty_read(fd, expected, timeout)
+
+
+def _pty_wait_for_exit(fd, thread, timeout=10):
+    deadline = time.monotonic() + timeout
+    while thread.is_alive():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        if select.select([fd], [], [], min(0.05, remaining))[0]:
+            try:
+                if not os.read(fd, 65536):
+                    break
+            except OSError:
+                break
+    thread.join(timeout=max(0, deadline - time.monotonic()))
+
+
+def test_pty_read_returns_without_another_wait():
+    reader, writer = os.pipe()
+    try:
+        os.write(writer, b"i-search:")
+        with patch.object(select, "select", side_effect=[([reader], [], [])]) as wait:
+            assert _pty_read(reader, b"i-search:") == b"i-search:"
+        wait.assert_called_once()
+    finally:
+        os.close(reader)
+        os.close(writer)
+
+
+def test_pty_read_fails_when_expected_output_is_missing():
+    reader, writer = os.pipe()
+    try:
+        with pytest.raises(AssertionError, match="i-search:"):
+            _pty_read(reader, b"i-search:", timeout=0)
+    finally:
+        os.close(reader)
+        os.close(writer)
+
+
+@pytest.mark.skipif(shutil.which("zsh") is None, reason="zsh not available")
+@pytest.mark.parametrize("run_command", [False, True])
+def test_launch_shell_zsh_history_and_reverse_search(tmp_path, monkeypatch, run_command):
+    """Isolated zsh recalls history at the first prompt and binds ^R."""
+    import jumpstarter.common.utils as utils_module
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".zsh_history").write_text(
+        "".join(f": 1700000000:0;echo line{i:05d}\n" for i in range(1, 20000))
+        + ": 1700000000:0;echo PREVIOUS_SESSION_COMMAND\n"
+    )
+    (home / ".zshrc").write_text("touch $HOME/RC_WAS_SOURCED\n")
+
+    monkeypatch.setenv("SHELL", shutil.which("zsh"))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("NO_ICONS", "1")
+    for var in ("HISTFILE", "HISTSIZE", "SAVEHIST", "ZDOTDIR"):
+        monkeypatch.delenv(var, raising=False)
+
+    master_fd, slave_fd = pty.openpty()
+    slave = os.fdopen(slave_fd, "w+b", buffering=0)
+    monkeypatch.setattr(utils_module.sys, "stdin", slave)
+    monkeypatch.setattr(utils_module.sys, "stdout", slave)
+    monkeypatch.setattr(utils_module.sys, "stderr", slave)
+
+    real_popen = utils_module.Popen
+    spawned = {}
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        spawned["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(utils_module, "Popen", recording_popen)
+
+    result = {}
+
+    def run_launch_shell():
+        result["rc"] = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="pytest",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+
+    thread = threading.Thread(target=run_launch_shell, daemon=True)
+
+    try:
+        thread.start()
+        prompt = b"pytest > "
+        _pty_read(master_fd, prompt)
+
+        _pty_send(master_fd, b"\x1b[A", b"PREVIOUS_SESSION_COMMAND")
+
+        _pty_send(master_fd, b"\x15\x12", b"i-search:")
+
+        _pty_send(master_fd, b"\x07\n", prompt)
+        if run_command:
+            _pty_send(master_fd, b"bash --norc --noprofile\n", prompt)
+            _pty_send(master_fd, b"echo BASH_SESSION_WRITTEN\n", prompt)
+            _pty_send(master_fd, b"exit\n", prompt)
+            assert "BASH_SESSION_WRITTEN" in (home / ".bash_history").read_text()
+            _pty_send(master_fd, b"echo SESSION_WRITTEN\n", prompt)
+        os.write(master_fd, b"exit\n")
+        _pty_wait_for_exit(master_fd, thread)
+        assert not thread.is_alive(), "shell did not exit"
+        assert result["rc"] == 0
+
+        content = (home / ".zsh_history").read_text()
+        assert ("SESSION_WRITTEN" in content) == run_command
+        assert "BASH_SESSION_WRITTEN" not in content
+        assert "echo line00001" in content
+        assert content.count("\n") >= 20000
+        assert all(line.startswith(": ") for line in content.splitlines()), "shared history lost its timestamps"
+        assert not (home / "RC_WAS_SOURCED").exists()
+    finally:
+        proc = spawned.get("proc")
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+        if thread.is_alive():
+            _pty_wait_for_exit(master_fd, thread, timeout=5)
+        slave.close()
+        os.close(master_fd)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
+@pytest.mark.parametrize("small_history", [False, True])
+def test_launch_shell_bash_does_not_truncate_history(tmp_path, monkeypatch, small_history):
+    """Isolated bash keeps long history files intact on exit."""
+    import jumpstarter.common.utils as utils_module
+
+    home = tmp_path / "home"
+    home.mkdir()
+    histfile = home / ".bash_history"
+    histfile.write_text("".join(f"echo line{i:05d}\n" for i in range(1, 60001)))
+    (home / "child.sh").write_text("alias probe='printf ALIAS_EXPANDED'\nprobe() { : > \"$HOME/child-ok\"; }\nprobe\n")
+
+    monkeypatch.setenv("SHELL", shutil.which("bash"))
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("NO_ICONS", "1")
+    for var in ("HISTFILE", "HISTSIZE", "HISTFILESIZE", "BASHOPTS", "HISTCONTROL", "HISTIGNORE"):
+        monkeypatch.delenv(var, raising=False)
+    if small_history:
+        monkeypatch.setenv("HISTSIZE", "3")
+
+    master_fd, slave_fd = pty.openpty()
+    slave = os.fdopen(slave_fd, "w+b", buffering=0)
+    monkeypatch.setattr(utils_module.sys, "stdin", slave)
+    monkeypatch.setattr(utils_module.sys, "stdout", slave)
+    monkeypatch.setattr(utils_module.sys, "stderr", slave)
+
+    real_popen = utils_module.Popen
+    spawned = {}
+
+    def recording_popen(*args, **kwargs):
+        proc = real_popen(*args, **kwargs)
+        spawned["proc"] = proc
+        return proc
+
+    monkeypatch.setattr(utils_module, "Popen", recording_popen)
+
+    result = {}
+
+    def run_launch_shell():
+        result["rc"] = launch_shell(
+            host=str(tmp_path / "test.sock"),
+            context="pytest",
+            allow=["*"],
+            unsafe=False,
+            use_profiles=False,
+        )
+
+    thread = threading.Thread(target=run_launch_shell, daemon=True)
+
+    try:
+        thread.start()
+        prompt = b"pytest > "
+        _pty_read(master_fd, prompt)
+
+        _pty_send(master_fd, b'bash "$HOME/child.sh"\n', prompt)
+        assert (home / "child-ok").exists(), "jmp's interactive options leaked into a child script"
+        with histfile.open("a") as file:
+            file.write("echo CONCURRENT_ENTRY\n")
+        for _ in range(5):
+            _pty_send(master_fd, b"echo SESSION_WRITTEN\n", prompt)
+        os.write(master_fd, b"exit\n")
+        _pty_wait_for_exit(master_fd, thread)
+        assert not thread.is_alive(), "shell did not exit"
+        assert result["rc"] == 0
+
+        content = histfile.read_text()
+        assert "SESSION_WRITTEN" in content
+        assert "CONCURRENT_ENTRY" in content
+        assert "echo line00001" in content, "history file was truncated"
+        assert content.count("\n") >= 60000, "history file was truncated"
+    finally:
+        proc = spawned.get("proc")
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+        if thread.is_alive():
+            _pty_wait_for_exit(master_fd, thread, timeout=5)
+        slave.close()
+        os.close(master_fd)
 
 
 def test_exporter_metadata_from_env(monkeypatch):
