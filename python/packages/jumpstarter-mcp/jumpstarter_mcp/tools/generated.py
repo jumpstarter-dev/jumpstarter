@@ -20,7 +20,7 @@ from typing import Any
 
 import anyio.to_thread
 
-from jumpstarter_mcp import catalogue
+from jumpstarter_mcp import catalogue, telemetry
 from jumpstarter_mcp.connections import ConnectionManager
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,14 @@ async def call_tool(
 ) -> dict:
     """Calls one tool of a lease with its arguments; what the driver answered is the ``result``."""
     conn = manager.get_connection(connection_id)
+    # what the call is about, on the span the MCP library made of it: the lease and the tool, never the arguments
+    telemetry.annotate(
+        tool=tool,
+        connection__id=conn.id,
+        exporter__name=conn.exporter_name,
+        lease__name=conn.lease_name,
+        tool__reads_only=reads_only,
+    )
     try:
         called = await anyio.to_thread.run_sync(_called, conn.client, tool, arguments, reads_only)
     except catalogue.CommandError as exc:
@@ -111,4 +119,5 @@ async def call_tool(
     except Exception as exc:  # noqa: BLE001 - what the driver raised is the tool's answer, not the server's failure
         logger.info("%s on %s failed: %s", tool, connection_id, exc)
         return {**_lease(conn), "tool": tool, "error": f"{type(exc).__name__}: {exc}"}
+    telemetry.annotate(driver__path=called["driver"])
     return {**_lease(conn), **called}

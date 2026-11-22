@@ -24,6 +24,21 @@ call on to it, over the same protocol an agent's host speaks to this one.
   with, or the one ``jmp_use_environment`` names. Without one, the server does the work itself, as it always did.
 * A **connection belongs to the environment it was made in**: every later call that names it goes there, so two
   leases may be driven from two environments at once without the agent having to say which each time.
+
+**What an agent may choose.** Using an environment starts a program, and the one who asks is a model: what it reads
+(a file of a repository, the output of a device) may have told it what to ask. So an agent chooses among
+environments, and never names one into being:
+
+* the environments of the environments file, and the one the server was started with, are a person's own words:
+  they may be used;
+* a Python environment that was only *found* (the ``.venv`` of the directory the server happens to run in) may be
+  used only if the server was started with ``--allow-found``: a repository can carry a ``.venv`` of its own;
+* a path, a ``container:`` or an ``image:`` that an agent gives and that is none of these is refused, with what there
+  is to choose from. Nothing is started for it, and nothing is pulled.
+
+The environments file is a list of commands to run, so it is read only when it is its owner's alone to write (as
+``ssh`` reads its configuration). The other server is started without a shell, from a list of arguments. A call that
+is passed on is written to the server's log by name, without its arguments.
 """
 
 from __future__ import annotations
@@ -44,6 +59,8 @@ import anyio.abc
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from jumpstarter_mcp import telemetry
+
 logger = logging.getLogger(__name__)
 
 ENV_VARIABLE = "JMP_MCP_ENV"
@@ -58,11 +75,17 @@ WORKER_VARIABLE = "JMP_MCP_WORKER"
 START_TIMEOUT_SECONDS = 60.0
 #: How far above the working directory a project's ``.venv`` is looked for.
 MAX_PARENTS = 6
+#: How many other servers may run at once: each is a process, and a lease is rarely in more than a few places.
+MAX_WORKERS = 8
 NOT_DELEGATED: Any = object()
 
 
 class EnvironmentError_(Exception):
     """An environment cannot be used, and why."""
+
+
+class ToolFailed(Exception):
+    """A tool that was passed on answered that it failed: the text is what it said."""
 
 
 @dataclass(frozen=True)
@@ -158,6 +181,19 @@ def environments_file(environ: Mapping[str, str] | None = None) -> Path:
     return Path(CONFIG_PATH) / FILE_NAME
 
 
+def unsafe_file(file: Path) -> str | None:
+    """Why the environments file is not to be trusted, or ``None``: it names commands to run, so it has to be its
+    owner's alone to write, and the owner has to be whoever runs the server."""
+    if os.name == "nt":
+        return None
+    status = file.stat()
+    if status.st_uid not in (os.getuid(), 0):
+        return "it belongs to someone else"
+    if status.st_mode & 0o022:
+        return "others may write to it (chmod go-w it)"
+    return None
+
+
 def named(environ: Mapping[str, str] | None = None) -> dict[str, Environment]:
     """The environments a person named in the environments file; one that cannot be used is left out, with a log.
 
@@ -169,6 +205,10 @@ def named(environ: Mapping[str, str] | None = None) -> dict[str, Environment]:
     try:
         import yaml
 
+        problem = unsafe_file(file)
+        if problem is not None:
+            logger.warning("%s is not read: %s", file, problem)
+            return {}
         listed = (yaml.safe_load(file.read_text()) or {}).get("environments") or {}
     except FileNotFoundError:
         return {}
@@ -178,22 +218,24 @@ def named(environ: Mapping[str, str] | None = None) -> dict[str, Environment]:
     found: dict[str, Environment] = {}
     for name, entry in listed.items() if isinstance(listed, dict) else ():
         try:
-            if not isinstance(entry, dict):
-                raise EnvironmentError_("give path:, container:, image: or command:")
-            if entry.get("command"):
-                command = tuple(str(part) for part in entry["command"])
-                found[str(name)] = Environment(name=str(name), command=command, kind="command")
-            elif entry.get("container"):
-                found[str(name)] = _container(f"{CONTAINER}{entry['container']}", str(name))
-            elif entry.get("image"):
-                found[str(name)] = _container(f"{IMAGE}{entry['image']}", str(name))
-            elif entry.get("path"):
-                found[str(name)] = _venv(Path(str(entry["path"])).expanduser(), str(name))
-            else:
-                raise EnvironmentError_("give path:, container:, image: or command:")
+            found[str(name)] = _entry(str(name), entry)
         except EnvironmentError_ as exc:
             logger.warning("environment %r of %s is left out: %s", name, file, exc)
     return found
+
+
+def _entry(name: str, entry: Any) -> Environment:
+    """One environment of the environments file."""
+    if isinstance(entry, dict):
+        if entry.get("command"):
+            return Environment(name=name, command=tuple(str(part) for part in entry["command"]), kind="command")
+        if entry.get("container"):
+            return _container(f"{CONTAINER}{entry['container']}", name)
+        if entry.get("image"):
+            return _container(f"{IMAGE}{entry['image']}", name)
+        if entry.get("path"):
+            return _venv(Path(str(entry["path"])).expanduser(), name)
+    raise EnvironmentError_("give path:, container:, image: or command:")
 
 
 def resolve(spec: str | os.PathLike[str], environ: Mapping[str, str] | None = None) -> Environment:
@@ -238,7 +280,10 @@ class _Call:
     tool: str
     arguments: dict[str, Any]
     done: anyio.Event = field(default_factory=anyio.Event)
+    #: the trace the caller is in: the call is passed on as part of it
+    trace: Any = field(default_factory=telemetry.current)
     answer: str | None = None
+    failed: bool = False
     error: BaseException | None = None
 
 
@@ -265,6 +310,12 @@ class Worker:
             env["PATH"] = f"{_scripts(self.environment.path)}{os.pathsep}{env.get('PATH', '')}"
             env["VIRTUAL_ENV"] = str(self.environment.path)
         command, *arguments = self.environment.command
+        if self.environment.kind in ("container", "image") and "-i" in arguments:
+            # a container is told to send its traces where this server sends its own: the names only, so that
+            # nothing of their values is on a command line
+            at = arguments.index("-i") + 1
+            wanted = [name for name in sorted(env) if name.startswith("OTEL_")]
+            arguments[at:at] = [part for name in wanted for part in ("-e", name)]
         params = StdioServerParameters(command=command, args=arguments, env=env)
         try:
             async with stdio_client(params) as (read, write), ClientSession(read, write) as session:
@@ -276,8 +327,12 @@ class Worker:
                 async with self._receive:
                     async for call in self._receive:
                         try:
-                            result = await session.call_tool(call.tool, call.arguments)
+                            # (the MCP library sends the trace on with the call: the other server's work is
+                            # part of the same trace as what the agent asked of this one)
+                            with telemetry.within(call.trace):
+                                result = await session.call_tool(call.tool, call.arguments)
                             call.answer = "\n".join(getattr(part, "text", "") for part in result.content)
+                            call.failed = bool(getattr(result, "is_error", False))
                         except Exception as exc:  # noqa: BLE001 - the caller is told, and the next call is served
                             call.error = exc
                         call.done.set()
@@ -307,16 +362,30 @@ class Worker:
         await call.done.wait()
         if call.error is not None:
             raise EnvironmentError_(f"{tool} failed in {self.environment.where}: {call.error}")
+        if call.failed:
+            raise ToolFailed(call.answer or f"{tool} failed in {self.environment.where}")
         return call.answer or ""
 
 
 class Router:
     """Which environment a tool call goes to, and the servers running in them."""
 
-    def __init__(self, selected: Environment | None = None, *, worker: bool | None = None) -> None:
+    def __init__(
+        self,
+        selected: Environment | None = None,
+        *,
+        worker: bool | None = None,
+        allow_found: bool = False,
+        cwd: Path | None = None,
+    ) -> None:
         #: a server started by another does the work itself, whatever it finds around it
         self.is_worker = os.environ.get(WORKER_VARIABLE) == "1" if worker is None else worker
-        self.selected = None if self.is_worker else selected
+        #: the environment the server was started with: a person's choice, so an agent may use it
+        self.started_with = None if self.is_worker else selected
+        self.selected = self.started_with
+        #: whether a Python environment that was only found near the server may be used
+        self.allow_found = allow_found
+        self.cwd = cwd
         self.connections: dict[str, Environment] = {}
         self._workers: dict[tuple[str, ...], Worker] = {}
         self._tasks: anyio.abc.TaskGroup | None = None
@@ -332,20 +401,56 @@ class Router:
                 self._tasks = None
                 tasks.cancel_scope.cancel()
 
-    def use(self, spec: str | None) -> Environment | None:
-        """Selects the environment a path means; ``None`` or ``""`` selects this server's own."""
+    def choices(self) -> tuple[list[Environment], list[Environment]]:
+        """What an agent may use, and what was found but is not its to use: each once, a person's own first."""
+        if self.is_worker:
+            return [], []
+        allowed: list[Environment] = list(named().values())
+        if self.started_with is not None and not any(self.started_with.key == e.key for e in allowed):
+            allowed.insert(0, self.started_with)
+        found = [e for e in discover(self.cwd) if not any(e.key == known.key for known in allowed)]
+        if self.allow_found:
+            return [*allowed, *found], []
+        return allowed, found
+
+    def choose(self, name: str) -> Environment:
+        """The environment an agent means by ``name``: one it may use, by its name or by where it is.
+
+        Raises :class:`EnvironmentError_` for anything else, saying what there is to choose from. What an agent
+        gives is only ever compared with what a person allowed: nothing is made of it.
+        """
+        wanted = name.strip()
+        allowed, found = self.choices()
+        for environment in allowed:
+            if wanted in (environment.name, environment.where):
+                return environment
+        have = ", ".join(sorted({e.name for e in allowed})) or "none"
+        if any(wanted in (e.name, e.where) for e in found):
+            raise EnvironmentError_(
+                f"{wanted!r} was found on this machine but nobody said it may be used. A person can allow it: name it "
+                f"in {environments_file()}, start the server with --env, or start it with --allow-found. "
+                f"Allowed now: {have}."
+            )
+        raise EnvironmentError_(
+            f"{wanted!r} is not an environment this server may use. An environment is chosen by a person, in "
+            f"{environments_file()} or with --env when the server is started; a path, container or image given "
+            f"here is not used. Allowed now: {have}."
+        )
+
+    def use(self, name: str | None) -> Environment | None:
+        """Selects the environment an agent names; ``None`` or ``""`` selects this server's own."""
         if self.is_worker:
             raise EnvironmentError_("This server was started by another to do its work: it uses its own environment.")
-        self.selected = resolve(spec) if spec else None
+        self.selected = self.choose(name) if name else None
         return self.selected
 
     def target(self, arguments: Mapping[str, Any]) -> Environment | None:
         """The environment a call with these arguments goes to; ``None`` is this server itself."""
         if self.is_worker:
             return None
-        named = arguments.get("environment")
-        if isinstance(named, str) and named:
-            environment = resolve(named)
+        given = arguments.get("environment")
+        if isinstance(given, str) and given:
+            environment: Environment | None = self.choose(given)
         else:
             connection = arguments.get("connection_id")
             if isinstance(connection, str) and connection in self.connections:
@@ -360,6 +465,9 @@ class Router:
         if worker is None or worker.failed is not None:
             if self._tasks is None:
                 raise EnvironmentError_("The server is not running.")
+            running = sum(1 for other in self._workers.values() if other.failed is None)
+            if worker is None and running >= MAX_WORKERS:
+                raise EnvironmentError_(f"{MAX_WORKERS} environments are in use already: disconnect from one first.")
             worker = Worker(environment)
             self._workers[key] = worker
             self._tasks.start_soon(_quietly, worker)
@@ -367,15 +475,23 @@ class Router:
 
     async def forward(self, tool: str, arguments: dict[str, Any]) -> Any:
         """What the tool answered in the environment the call belongs to, or :data:`NOT_DELEGATED` when that is
-        this server. An answer that names a connection (``jmp_connect``) is remembered as that environment's."""
-        try:
-            environment = self.target(arguments)
-            if environment is None:
-                return NOT_DELEGATED
-            passed = {name: value for name, value in arguments.items() if name != "environment"}
-            answer = await (await self._worker(environment)).call(tool, passed)
-        except EnvironmentError_ as exc:
-            return json.dumps({"error": str(exc)}, indent=2)
+        this server. An answer that names a connection (``jmp_connect``) is remembered as that environment's.
+
+        Raises :class:`EnvironmentError_` when the call cannot be passed on, and :class:`ToolFailed` when the tool
+        failed there: a failure is a failure here too, not an answer.
+        """
+        environment = self.target(arguments)
+        if environment is None:
+            return NOT_DELEGATED
+        passed = {name: value for name, value in arguments.items() if name != "environment"}
+        # what was asked of which environment, for whoever reads the log afterwards: never the arguments
+        logger.info("%s is passed on to %s (connection %s)", tool, environment.where, passed.get("connection_id"))
+        telemetry.annotate(
+            environment__name=environment.name,
+            environment__kind=environment.kind,
+            connection__id=passed.get("connection_id") if isinstance(passed.get("connection_id"), str) else None,
+        )
+        answer = await (await self._worker(environment)).call(tool, passed)
         try:
             said = json.loads(answer)
         except ValueError:
@@ -388,20 +504,25 @@ class Router:
                 else:
                     self.connections[connection] = environment
             # every answer says where it came from: with several environments in use, none is taken for another
-            said.setdefault("environment", environment.where)
+            said.setdefault("environment", environment.name)
             return json.dumps(said, indent=2)
         return answer
 
-    def describe(self, cwd: Path | None = None) -> dict[str, Any]:
-        found = [] if self.is_worker else discover(cwd)
-        if self.selected is not None and not any(self.selected.key == e.key for e in found):
-            found.insert(0, self.selected)
-        return {
+    def describe(self) -> dict[str, Any]:
+        allowed, found = self.choices()
+        described: dict[str, Any] = {
             "selected": self.selected.describe() if self.selected is not None else None,
             "own": {"path": sys.prefix, "note": "this server's own environment: used when none is selected"},
-            "found": [environment.describe() for environment in found],
-            "connections": {connection: env.where for connection, env in self.connections.items()},
+            "allowed": [environment.describe() for environment in allowed],
+            "connections": {connection: env.name for connection, env in self.connections.items()},
         }
+        if found:
+            described["found_not_allowed"] = [environment.describe() for environment in found]
+            described["found_not_allowed_note"] = (
+                "Found on this machine, and not used unless a person allows them: by naming them in "
+                f"{environments_file()}, or by starting the server with --env or --allow-found."
+            )
+        return described
 
 
 async def _quietly(worker: Worker) -> None:

@@ -16,6 +16,10 @@ dependencies = [
   "click>=8.1.7.2",
 ]
 
+[project.optional-dependencies]
+# sends traces of the tool calls when OTEL_* asks for them (jumpstarter_mcp.telemetry)
+otel = ["opentelemetry-sdk>=1.30", "opentelemetry-exporter-otlp-proto-http>=1.30"]
+
 [dependency-groups]
 dev = [
   "pytest>=8.4",

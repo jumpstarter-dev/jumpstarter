@@ -24,7 +24,17 @@ def mcp():
         "installed once, anywhere."
     ),
 )
-def serve(environment: str | None):
+@click.option(
+    "--allow-found",
+    is_flag=True,
+    envvar="JMP_MCP_ALLOW_FOUND",
+    help=(
+        "Let the agent also use Python environments found near where the server is started (the active one, a "
+        ".venv of the working directory or above). Off by default: using an environment runs a program from it, "
+        "and a repository can carry a .venv of its own."
+    ),
+)
+def serve(environment: str | None, allow_found: bool):
     """Start the MCP server with stdio transport.
 
     This is meant to be invoked by an MCP-compatible host (e.g. Cursor)
@@ -40,4 +50,4 @@ def serve(environment: str | None):
 
     from jumpstarter_mcp.server import run_server
 
-    anyio.run(run_server, environment)
+    anyio.run(run_server, environment, allow_found)

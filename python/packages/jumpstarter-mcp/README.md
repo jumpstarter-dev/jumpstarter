@@ -120,6 +120,40 @@ environments:
 - A connection made where a device's drivers are not installed says which ones are missing, and how to choose the
   environment that has them.
 
+### What an agent may choose
+
+Using an environment starts a program, and the one who asks is a model: what it has read (a file of a repository,
+the output of a device) may have told it what to ask. So an agent chooses among environments and never names one
+into being:
+
+- the environments of the environments file, and the one the server was started with (`--env`, `JMP_MCP_ENV`), are
+  a person's own words: they may be used;
+- a Python environment that was only found near the server (the `.venv` of the directory it runs in) may be used
+  only when the server was started with `--allow-found`: a repository can carry a `.venv` of its own.
+  `jmp_environments` lists these apart, as found and not allowed;
+- a path, a `container:` or an `image:` an agent gives that is none of these is refused, with what there is to
+  choose from. Nothing is started for it and nothing is pulled.
+
+The environments file is a list of commands to run, so it is read only when it belongs to whoever runs the server
+and nobody else may write to it. The other server is started from a list of arguments, without a shell, and at most
+eight run at once. A call that is passed on is written to the server's log by name, without its arguments.
+
+A tool that fails, here or where it was passed on, fails in the protocol's own way (`isError`), so a host does not
+take a refusal for an answer. Every tool says whether it only reads (`readOnlyHint`) and whether it may destroy
+something (`destructiveHint`): `jmp_read` only reads, `jmp_call`, `jmp_run` and `jmp_delete_lease` may destroy. The
+set of tools is fixed: it does not change with what is connected.
+
+### Traces
+
+The MCP library makes a span of every tool call and takes up the trace an agent's host sends with it
+(`traceparent`), so what an agent does through this server is part of the agent's own trace. A call that is passed
+on to another environment stays in that trace: the server there continues it. Spans say which tool was called on
+which lease, exporter, driver and environment (`jumpstarter.*` attributes), and never the arguments.
+
+Nothing is sent unless a person asks for it the standard way (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_TRACES_EXPORTER`)
+and the OpenTelemetry SDK is installed (`jumpstarter-mcp[otel]`), in each environment whose spans are wanted. A
+container is passed the names of the `OTEL_*` variables that are set, not their values.
+
 ## API Reference
 
 ```{eval-rst}
