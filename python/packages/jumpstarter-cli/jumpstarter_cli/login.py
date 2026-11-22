@@ -12,6 +12,7 @@ from jumpstarter_cli_common.oidc import Config, decode_jwt_issuer, opt_oidc, sho
 from jumpstarter_cli_common.opt import confirm_insecure_tls, opt_insecure_tls, opt_nointeractive
 
 from jumpstarter.common.exceptions import ReauthenticationFailed
+from jumpstarter.common.http import client_session
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -67,7 +68,7 @@ async def fetch_auth_config(
     timeout = aiohttp.ClientTimeout(total=_HTTP_TIMEOUT_SECONDS)
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout) as session, session.get(url, ssl=ssl_context) as response:
+        async with client_session(timeout=timeout) as session, session.get(url, ssl=ssl_context) as response:
             if response.status != 200:
                 raise click.ClickException(f"Failed to fetch auth config from {url}: HTTP {response.status}")
             payload = await response.json()

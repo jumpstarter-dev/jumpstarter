@@ -4,6 +4,7 @@ import semver
 from packaging.version import Version
 
 from .exceptions import JumpstarterKubernetesError
+from jumpstarter.common.http import client_session
 
 
 async def get_latest_compatible_controller_version(client_version: str | None):  # noqa: C901
@@ -23,7 +24,7 @@ async def get_latest_compatible_controller_version(client_version: str | None): 
                 f"Invalid client version '{client_version}': {e}"
             ) from e
 
-    async with aiohttp.ClientSession(
+    async with client_session(
         raise_for_status=True,
     ) as session:
         try:

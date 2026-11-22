@@ -179,6 +179,40 @@ $ jmp config exporter list            # List available exporter configs
 $ jmp config exporter delete <alias>  # Remove a local exporter config
 ```
 
+## HTTP Proxy
+
+Clients and exporters reach the network through an HTTP proxy when the standard
+proxy environment variables are set:
+
+- `http_proxy` - Proxy for `http://` URLs
+- `https_proxy` - Proxy for `https://` URLs and for {term}`gRPC` connections
+- `no_proxy` - Comma-separated host names, domain suffixes and addresses to reach directly
+
+This covers the {term}`gRPC` connection to the {term}`controller`, `jmp login`,
+and the HTTP requests made by Jumpstarter and its drivers, such as an exporter
+downloading an image from an `http://` or `https://` URL passed to a flasher.
+Set the lowercase names: {term}`gRPC` ignores `HTTP_PROXY`, `HTTPS_PROXY` and
+`NO_PROXY`, which the HTTP clients also accept.
+
+```{code-block} console
+$ export http_proxy=http://proxy.example.com:3128
+$ export https_proxy=http://proxy.example.com:3128
+$ export no_proxy=localhost,127.0.0.1,.lab.example.com,192.168.1.20
+```
+
+An HTTP request goes through the proxy set for the scheme of its URL, unless its
+host is listed in `no_proxy`: with only `https_proxy` set, `http://` URLs are
+reached directly. On an exporter, list in `no_proxy` the devices and services of
+the local network that drivers reach over HTTP, such as cameras, power switches
+or image servers. List each address: some HTTP clients do not understand CIDR
+ranges such as `192.168.1.0/24` and would send those requests to the proxy.
+
+For an exporter running as a [`systemd`](https://systemd.io/) service, set the
+variables in the unit, for example with `Environment=` lines in the
+`[Container]` section of a
+[`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
+unit, or with `EnvironmentFile=` in a native service.
+
 ## Running Exporters
 
 ### Running from the CLI

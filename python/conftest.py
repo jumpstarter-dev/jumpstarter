@@ -6,6 +6,14 @@ import pytest
 os.environ["TERM"] = "dumb"
 
 
+@pytest.fixture(autouse=True)
+def _no_proxy_environment(monkeypatch):
+    # Tests reach local servers: a proxy set on the host that runs them must not apply.
+    for name in list(os.environ):
+        if name.lower().endswith("_proxy"):
+            monkeypatch.delenv(name)
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"

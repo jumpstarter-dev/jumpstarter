@@ -10,7 +10,8 @@ from shutil import which
 from subprocess import Popen, TimeoutExpired
 from tempfile import TemporaryDirectory
 
-from aiohttp import ClientSession, UnixConnector
+# ustreamer is reached over a Unix socket, which never goes through a proxy.
+from aiohttp import ClientSession, UnixConnector  # noqa: TID251
 from anyio import connect_unix
 from jumpstarter_driver_video.driver import VideoInterface
 

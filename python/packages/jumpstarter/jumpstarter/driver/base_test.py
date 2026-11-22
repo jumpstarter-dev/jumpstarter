@@ -3,6 +3,7 @@ from uuid import UUID
 
 import pytest
 import yarl
+from anyio import EndOfStream
 
 from .base import Driver
 
@@ -179,3 +180,27 @@ def test_propagate_log_level_child_explicit_overrides_parent():
         assert grandchild.logger.level == logging.WARNING
     finally:
         parent.close()
+
+
+class _ProxyTestDriver(Driver):
+    @classmethod
+    def client(cls) -> str:
+        return "test.client"
+
+
+@pytest.mark.anyio
+async def test_presigned_get_uses_proxy_from_environment(http_proxy):
+    driver = _ProxyTestDriver(uuid=UUID(int=1))
+    try:
+        received = b""
+        async with driver._resource_from_presigned({}, "http://package.invalid/image.bin", "GET", 10) as stream:
+            try:
+                while True:
+                    received += await stream.receive()
+            except EndOfStream:
+                pass
+    finally:
+        driver.close()
+
+    assert received == b'{"proxied": true}'
+    assert http_proxy.requests == [("GET", "package.invalid")]
