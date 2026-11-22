@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import asyncio  # noqa: TID251
-import errno
 import os
-import tempfile
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
@@ -23,7 +21,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-from .common import CONFIG_PATH, ObjectMeta
+from .common import CONFIG_PATH, ObjectMeta, write_yaml_atomically
 from .env import JMP_DIAL_TIMEOUT, JMP_LEASE, JMP_RETRY_TIMEOUT
 from .grpc import call_credentials
 from .shell import ShellConfigV1Alpha1
@@ -453,25 +451,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         default_leases = ClientConfigV1Alpha1Lease().model_dump(mode="json", exclude_none=True)
         if payload.get("leases") == default_leases:
             payload.pop("leases", None)
-        temp_fd, temp_path = tempfile.mkstemp(prefix=f".{config.path.name}.", dir=config.path.parent)
-        try:
-            os.fchmod(temp_fd, 0o600)
-            with os.fdopen(temp_fd, "w") as f:
-                yaml.safe_dump(
-                    payload,
-                    f,
-                    sort_keys=False,
-                )
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_path, config.path)
-            os.chmod(config.path, 0o600)
-        finally:
-            try:
-                os.unlink(temp_path)
-            except OSError as e:
-                if e.errno != errno.ENOENT:
-                    raise
+        write_yaml_atomically(config.path, payload)
         return config.path
 
     @classmethod

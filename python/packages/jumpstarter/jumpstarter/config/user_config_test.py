@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import yaml
 
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers, ObjectMeta
 from jumpstarter.config.user import UserConfigV1Alpha1, UserConfigV1Alpha1Config
@@ -279,3 +280,44 @@ config:
             assert value == USER_CONFIG
         assert config.config.current_client is None
         os.unlink(f.name)
+
+
+def test_user_config_save_never_exposes_a_partial_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Another jmp process loading the config while this one saves sees the old file, not a truncated one.
+
+    Parallel e2e processes running `jmp admin create client --save` used to tear the shared config.yaml.
+    """
+    path = tmp_path / "config.yaml"
+    monkeypatch.setattr(UserConfigV1Alpha1, "USER_CONFIG_PATH", path)
+    empty = UserConfigV1Alpha1(config=UserConfigV1Alpha1Config.model_validate({"current-client": None}))
+    UserConfigV1Alpha1.save(empty)
+    before = path.read_text()
+
+    # Read the file from disk on both sides of serializing the new document, before save() returns.
+    seen_mid_save = []
+    real_safe_dump = yaml.safe_dump
+
+    def read_around_safe_dump(data, stream, **kwargs):
+        seen_mid_save.append(path.read_text())
+        real_safe_dump(data, stream, **kwargs)
+        seen_mid_save.append(path.read_text())
+
+    config = UserConfigV1Alpha1(
+        config=UserConfigV1Alpha1Config.model_validate({"current-client": ClientConfigV1Alpha1(
+            alias="testclient",
+            metadata=ObjectMeta(namespace="default", name="testclient"),
+            endpoint="abc",
+            token="123",
+            drivers=ClientConfigV1Alpha1Drivers(allow=[], unsafe=False),
+        )})
+    )
+    with patch("yaml.safe_dump", read_around_safe_dump):
+        UserConfigV1Alpha1.save(config)
+
+    assert seen_mid_save == [before, before]
+    assert path.read_text() == """apiVersion: jumpstarter.dev/v1alpha1
+kind: UserConfig
+config:
+  current-client: testclient
+"""
+    assert list(tmp_path.iterdir()) == [path]

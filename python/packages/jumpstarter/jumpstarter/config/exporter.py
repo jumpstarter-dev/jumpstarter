@@ -4,7 +4,6 @@ import errno
 import logging
 import os
 import stat
-import tempfile
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager, suppress
 from pathlib import Path
@@ -16,7 +15,7 @@ from anyio.from_thread import start_blocking_portal
 from anyio.to_thread import run_sync
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
-from .common import CONFIG_PATH, ObjectMeta
+from .common import CONFIG_PATH, ObjectMeta, write_yaml_atomically
 from .grpc import call_credentials
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.exceptions import ConfigurationError, MissingDriverError
@@ -27,27 +26,6 @@ if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
 logger = logging.getLogger(__name__)
-
-
-def _write_yaml(path: Path, data: dict) -> None:
-    temp_fd, temp_path = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        os.fchmod(temp_fd, 0o600)
-        with os.fdopen(temp_fd, "w") as f:
-            yaml.safe_dump(
-                data,
-                f,
-                sort_keys=False,
-            )
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, path)
-    finally:
-        try:
-            os.unlink(temp_path)
-        except OSError as e:
-            if e.errno != errno.ENOENT:
-                raise
 
 
 DEFAULT_STATUS_STREAM_RETRY_TIMEOUT = 30 * 60.0
@@ -324,7 +302,8 @@ class ExporterConfigV1Alpha1(BaseModel):
         else:
             config.path = Path(path)
         config.path.parent.mkdir(parents=True, exist_ok=True)
-        _write_yaml(config.path, config.model_dump(mode="json", by_alias=True, exclude=cls._EXCLUDE_FROM_YAML))
+        data = config.model_dump(mode="json", by_alias=True, exclude=cls._EXCLUDE_FROM_YAML)
+        write_yaml_atomically(config.path, data)
         return config.path
 
     def _save_rotated_token(self, token: str) -> None:
@@ -340,7 +319,7 @@ class ExporterConfigV1Alpha1(BaseModel):
                 "Exporter config %s was readable by other users (mode %o); saving it with mode 600", path, mode
             )
         data["token"] = token
-        _write_yaml(path, data)
+        write_yaml_atomically(path, data)
 
     async def _persist_rotated_token(self, token: str) -> None:
         if self.path is None:
