@@ -83,6 +83,29 @@ class PowerClient(DriverClient):
 
 `jmp_run` still runs a raw `j` command line, for what is not one call (a console that keeps streaming).
 
+## Install once, drivers per project
+
+```shell
+uv tool install jumpstarter-mcp        # the server, once: the `jumpstarter-mcp` command
+```
+
+Register `jumpstarter-mcp` in your agent's host. The drivers of your devices go in a Python environment of their
+own, per project, and nothing else has to be in it:
+
+```shell
+cd my-project
+uv venv
+uv pip install jumpstarter-driver-power jumpstarter-driver-pyserial   # what your devices need
+```
+
+Start the server with `--env .venv` in that project (for example in the project's own MCP configuration), or name
+the environment in the environments file. The server runs the device tools in that environment. It does not have to
+be installed there: an environment that has only drivers is lent the server for the length of a run (`uv` lays the
+package over the environment's Python and leaves the environment as it was). An environment that has
+`jumpstarter-mcp` installed runs its own.
+
+`jmp mcp serve` is the same server, for an environment that has the `jmp` command.
+
 ## One server, many environments
 
 A device's drivers are Python packages: a project installs the ones its devices need, in its own environment or

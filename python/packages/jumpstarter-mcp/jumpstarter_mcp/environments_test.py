@@ -8,13 +8,22 @@ from jumpstarter_mcp import environments
 from jumpstarter_mcp.environments import NOT_DELEGATED, Environment, EnvironmentError_, Router, ToolFailed
 
 
-def make_env(root: Path, name: str = ".venv", script: str = "#!/bin/sh\nexit 0\n") -> Path:
-    """A directory that looks like a Python environment with Jumpstarter: it has a `jmp` command."""
+def make_env(root: Path, name: str = ".venv", script: str = "#!/bin/sh\nexit 0\n", server: bool = True) -> Path:
+    """A directory that looks like a Python environment with Jumpstarter and a device's drivers. With ``server`` it
+    has this server installed too, and `script` is its `jmp` command; without, it has the drivers only."""
     path = root / name
     (path / "bin").mkdir(parents=True)
-    jmp = path / "bin" / "jmp"
-    jmp.write_text(script)
-    jmp.chmod(0o755)
+    packages = path / "lib" / "python3.12" / "site-packages"
+    (packages / "jumpstarter-1.0.dist-info").mkdir(parents=True)
+    (packages / "jumpstarter_driver_power-1.0.dist-info").mkdir()
+    python = path / "bin" / "python"
+    python.write_text("#!/bin/sh\nexit 0\n")
+    python.chmod(0o755)
+    if server:
+        (packages / "jumpstarter_mcp-1.0.dist-info").mkdir()
+        jmp = path / "bin" / "jmp"
+        jmp.write_text(script)
+        jmp.chmod(0o755)
     return path
 
 
@@ -28,15 +37,64 @@ def no_file(monkeypatch, tmp_path):
 def test_an_environment_is_named_by_its_directory_its_project_or_a_command_in_it(tmp_path):
     project = tmp_path / "phones"
     venv = make_env(project)
-    for spec in (venv, project, venv / "bin" / "jmp"):
+    for spec in (venv, project, venv / "bin" / "python"):
         found = environments.resolve(spec)
         assert (found.path, found.name, found.kind) == (venv, "phones", "venv")
-        assert found.command == (str(venv / "bin" / "jmp"), "mcp", "serve")
+        assert environments.launch(found) == (str(venv / "bin" / "jmp"), "mcp", "serve")
     with pytest.raises(EnvironmentError_, match="does not exist"):
         environments.resolve(tmp_path / "nowhere")
     (tmp_path / "empty").mkdir()
-    with pytest.raises(EnvironmentError_, match="no `jmp` command"):
+    with pytest.raises(EnvironmentError_, match="not a Python environment with Jumpstarter"):
         environments.resolve(tmp_path / "empty")
+
+
+def test_an_environment_with_only_drivers_is_lent_the_server_and_left_as_it_was(tmp_path, monkeypatch):
+    venv = make_env(tmp_path / "phones", server=False)
+    found = environments.resolve(tmp_path / "phones")
+    monkeypatch.setattr(environments.shutil, "which", lambda name: "/opt/bin/uv" if name == "uv" else None)
+    monkeypatch.setattr(environments, "own_requirement", lambda: "jumpstarter-mcp==9.9.9")
+    python = str(venv / "bin" / "python")
+    assert environments.launch(found) == (
+        "/opt/bin/uv",
+        "run",
+        "--quiet",
+        "--no-project",
+        "--python",
+        python,
+        "--with",
+        "jumpstarter-mcp==9.9.9",
+        "python",
+        "-m",
+        "jumpstarter_mcp",
+        "serve",
+    )
+    assert sorted(entry.name for entry in (venv / "bin").iterdir()) == ["python"]  # nothing was put in it
+    # an environment that has the server but no `jmp` command runs the server's module
+    (venv / "lib" / "python3.12" / "site-packages" / "jumpstarter_mcp-1.0.dist-info").mkdir()
+    assert environments.launch(found) == (python, "-m", "jumpstarter_mcp", "serve")
+
+
+def test_an_environment_given_beside_the_server_is_the_one_found_there(tmp_path, monkeypatch):
+    venv = make_env(tmp_path / "phones")
+    monkeypatch.chdir(tmp_path / "phones")
+    beside = environments.resolve(".venv")
+    assert (beside.name, beside.path) == ("phones", venv)
+    router = Router(selected=beside)
+    assert [e["name"] for e in router.describe()["allowed"]] == ["phones"]
+    assert "found_not_allowed" not in router.describe()
+
+
+def test_without_uv_a_drivers_only_environment_says_how_to_install_the_server(tmp_path, monkeypatch):
+    found = environments.resolve(make_env(tmp_path / "phones", server=False))
+    monkeypatch.setattr(environments.shutil, "which", lambda name: None)
+    with pytest.raises(EnvironmentError_, match="pip install jumpstarter-mcp"):
+        environments.launch(found)
+
+
+def test_the_server_names_itself_as_something_to_install():
+    wanted = environments.own_requirement()
+    # this checkout, or the version that runs when it came from an index
+    assert wanted.startswith("jumpstarter-mcp==") or Path(wanted).is_dir()
 
 
 def test_a_container_is_an_environment_too(monkeypatch):

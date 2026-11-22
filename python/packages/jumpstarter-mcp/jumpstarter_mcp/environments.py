@@ -9,8 +9,9 @@ call on to it, over the same protocol an agent's host speaks to this one.
 
 * An **environment** is anywhere that server can be started (:func:`resolve`):
 
-  - a Python environment on this machine: a virtual environment's directory, or a project directory that has a
-    ``.venv``;
+  - a Python environment on this machine that has Jumpstarter and the drivers of one's devices: a virtual
+    environment's directory, or a project directory that has a ``.venv``. It need not have this server: one
+    without it is lent this one for the length of the run (:func:`launch`), and is itself left as it was;
   - a container: ``container:<name>`` is one that runs (the server is started in it with ``exec``), and
     ``image:<reference>`` one that is started for it;
   - any command that starts the server and speaks to it on its standard input and output, given by name in the
@@ -140,20 +141,83 @@ def _engine() -> str:
     raise EnvironmentError_("Neither podman nor docker is installed on this machine: a container cannot be used.")
 
 
+def _python(path: Path) -> Path | None:
+    for name in ("python", "python3", "python.exe"):
+        python = _scripts(path) / name
+        if python.is_file():
+            return python
+    return None
+
+
+def _installed(path: Path, distribution: str) -> bool:
+    """Whether a Python environment has a distribution installed, by what its site-packages holds. Nothing of the
+    environment is run to find out."""
+    wanted = distribution.replace("-", "_").lower()
+    for packages in (*path.glob("lib/python*/site-packages"), path / "Lib" / "site-packages"):
+        if any(entry.name.lower().startswith(f"{wanted}-") for entry in packages.glob("*.dist-info")):
+            return True
+    return False
+
+
 def _venv(given: Path, name: str | None = None) -> Environment:
+    """A Python environment that has Jumpstarter: its drivers are what the tools are made of. It does not have to
+    have this server: one that has not is lent it for the time it runs (:func:`launch`)."""
     if not given.exists():
         raise EnvironmentError_(f"{given} does not exist")
+    # where it really is: `.venv` given beside the server is the same environment as its full path, by one name
+    given = given.absolute()
     candidates = [given.parent.parent] if given.is_file() else [given, given / ".venv", given / "venv"]
     for candidate in candidates:
-        for script in ("jmp", "jmp.exe"):
-            jmp = _scripts(candidate) / script
-            if jmp.is_file():
-                called = name or (candidate.parent.name if candidate.name in (".venv", "venv") else candidate.name)
-                return Environment(name=called, command=(str(jmp), "mcp", "serve"), kind="venv", path=candidate)
+        if _python(candidate) is not None and _installed(candidate, "jumpstarter"):
+            called = name or (candidate.parent.name if candidate.name in (".venv", "venv") else candidate.name)
+            return Environment(name=called, command=("venv", str(candidate)), kind="venv", path=candidate)
     raise EnvironmentError_(
-        f"{given} is not a Python environment with Jumpstarter: there is no `jmp` command in it (or in its .venv). "
-        "Install jumpstarter-cli and jumpstarter-mcp there, with the driver packages of your devices."
+        f"{given} is not a Python environment with Jumpstarter (nor has it one as its .venv). Create one for your "
+        "devices and install their driver packages in it, for example: uv venv && uv pip install "
+        "jumpstarter-driver-power"
     )
+
+
+def own_requirement() -> str:
+    """This server as something to install: the version that runs, or where it was installed from when that was
+    a directory (a checkout). It is what an environment without the server is lent."""
+    from importlib import metadata
+
+    distribution = metadata.distribution("jumpstarter-mcp")
+    try:
+        origin = json.loads(distribution.read_text("direct_url.json") or "{}")
+    except ValueError:
+        origin = {}
+    url = origin.get("url", "")
+    if url.startswith("file://") and "dir_info" in origin:
+        return url[len("file://") :]
+    return f"jumpstarter-mcp=={distribution.version}"
+
+
+def launch(environment: Environment) -> tuple[str, ...]:
+    """The command that starts the server in an environment.
+
+    A Python environment that has the server runs its own. One that has only drivers is lent this one: ``uv``
+    runs the environment's Python with this server's package laid over it for the length of the run, and the
+    environment itself is left as it was. Raises :class:`EnvironmentError_` when neither can be done.
+    """
+    if environment.kind != "venv" or environment.path is None:
+        return environment.command
+    python = _python(environment.path)
+    if python is None:
+        raise EnvironmentError_(f"{environment.path} has no Python any more")
+    if _installed(environment.path, "jumpstarter-mcp"):
+        jmp = _scripts(environment.path) / "jmp"
+        # (`jmp mcp serve` is what every version of the server answers to)
+        return (str(jmp), "mcp", "serve") if jmp.is_file() else (str(python), "-m", "jumpstarter_mcp", "serve")
+    uv = shutil.which("uv")
+    if uv is None:
+        raise EnvironmentError_(
+            f"{environment.path} has the drivers but not this server, and `uv` is not installed to lend it one. "
+            f"Install it there: {python} -m pip install jumpstarter-mcp"
+        )
+    lent = (uv, "run", "--quiet", "--no-project", "--python", str(python), "--with", own_requirement())
+    return (*lent, "python", "-m", "jumpstarter_mcp", "serve")
 
 
 def _container(spec: str, name: str | None = None) -> Environment:
@@ -309,7 +373,7 @@ class Worker:
             # as if it had been activated: its own commands (`j`) are the ones found
             env["PATH"] = f"{_scripts(self.environment.path)}{os.pathsep}{env.get('PATH', '')}"
             env["VIRTUAL_ENV"] = str(self.environment.path)
-        command, *arguments = self.environment.command
+        command, *arguments = launch(self.environment)
         if self.environment.kind in ("container", "image") and "-i" in arguments:
             # a container is told to send its traces where this server sends its own: the names only, so that
             # nothing of their values is on a command line
