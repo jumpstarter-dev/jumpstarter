@@ -50,6 +50,12 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="2b23", ATTR{idProduct}=="1012", MODE="0660", 
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2b23", ATTRS{idProduct}=="1012", MODE="0660", GROUP="plugdev"
 ```
 
+The rules grant access to the `plugdev` group, so the account that runs the
+exporter must be a member. If your distribution has no `plugdev` group, create it
+or use a group that account already belongs to. A new group membership applies to
+new login sessions, so log in again or restart the exporter service after adding
+it.
+
 Then run `sudo udevadm control --reload` and re-plug the board. Without the first
 line, the exporter fails with `The device has no langid (permission issue, ...)`;
 without the second, with `Permission denied` on the console tty.
