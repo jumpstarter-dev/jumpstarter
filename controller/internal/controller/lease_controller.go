@@ -46,7 +46,10 @@ import (
 // LeaseReconciler reconciles a Lease object
 type LeaseReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	// APIReader reads from the API server instead of the cache. See
+	// ListActiveLeases.
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
 }
 
 // ApprovedExporter represents an exporter that has been approved for leasing,
@@ -349,19 +352,19 @@ func (r *LeaseReconciler) reconcileStatusExporterRef(
 		onlineApprovedExporters = attachExistingLeases(onlineApprovedExporters, activeLeases.Items)
 		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
 
-		if len(orderedExporters) > 0 && orderedExporters[0].Policy.SpotAccess {
+		if orderedExporters[0].Policy.SpotAccess {
 			lease.SetStatusUnsatisfiable("SpotAccess",
 				"The only possible exporters are under spot access (i.e. %s), but spot access is still not implemented",
 				orderedExporters[0].Exporter.Name)
 			return nil
 		}
 
-		availableExporters := filterOutLeasedExporters(onlineApprovedExporters)
+		availableExporters := filterOutLeasedExporters(orderedExporters)
 		if len(availableExporters) == 0 {
 			lease.SetStatusPending("NotAvailable",
 				"There are %d approved exporters, (i.e. %s) but all of them are already leased",
-				len(onlineApprovedExporters),
-				onlineApprovedExporters[0].Exporter.Name,
+				len(orderedExporters),
+				orderedExporters[0].Exporter.Name,
 			)
 			result.RequeueAfter = pendingRequeueAfter(lease)
 			return nil
@@ -628,10 +631,19 @@ func (r *LeaseReconciler) ListMatchingExporters(ctx context.Context, lease *jump
 	return &matchingExporters, nil
 }
 
-// ListActiveLeases returns a list of active leases in the namespace
+// ListActiveLeases returns the active leases in the namespace, read from the
+// API server. Exporter selection treats every exporter these leases hold as
+// taken, and the cache sees a status write only some time after it succeeds: a
+// lease reconciled in that window would be assigned the exporter the previous
+// reconcile has just assigned to another lease. Both writes would succeed, as
+// they go to different Lease objects.
+//
+// A fresh read is enough while assignments are made one at a time, by a single
+// controller replica with a single worker. It does not fence a former leader
+// that keeps reconciling after losing leadership.
 func (r *LeaseReconciler) ListActiveLeases(ctx context.Context, namespace string) (*jumpstarterdevv1alpha1.LeaseList, error) {
 	var activeLeases jumpstarterdevv1alpha1.LeaseList
-	if err := r.List(
+	if err := r.APIReader.List(
 		ctx,
 		&activeLeases,
 		client.InNamespace(namespace),
