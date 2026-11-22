@@ -32,8 +32,11 @@ environments, and never names one into being:
 
 * the environments of the environments file, and the one the server was started with, are a person's own words:
   they may be used;
-* a Python environment that was only *found* (the ``.venv`` of the directory the server happens to run in) may be
-  used only if the server was started with ``--allow-found``: a repository can carry a ``.venv`` of its own;
+* so may the **local** one: the ``.venv`` of the very directory the server was launched in, and the environment that
+  was active when it was launched (``VIRTUAL_ENV``). A person who starts their agent in a project means that
+  project's environment, and it is the one used when no other is selected (:func:`local`);
+* a Python environment that was only *found* further away (the ``.venv`` of a directory above) may be used only if
+  the server was started with ``--allow-found``;
 * a path, a ``container:`` or an ``image:`` that an agent gives and that is none of these is refused, with what there
   is to choose from. Nothing is started for it, and nothing is pulled.
 
@@ -319,6 +322,28 @@ def resolve(spec: str | os.PathLike[str], environ: Mapping[str, str] | None = No
         raise EnvironmentError_(f"{exc}{have}") from exc
 
 
+def local(cwd: Path | None = None, environ: Mapping[str, str] | None = None) -> list[Environment]:
+    """The environments of where the server was launched: the ``.venv`` (or ``venv``) of that very directory, then
+    the one that was active (``VIRTUAL_ENV``). Not those of the directories above it: launching an agent in a
+    project is choosing that project, and nothing more."""
+    environ = os.environ if environ is None else environ
+    here = (cwd or Path.cwd()).absolute()
+    wanted: list[Path] = [here / ".venv", here / "venv"]
+    if environ.get("VIRTUAL_ENV"):
+        wanted.append(Path(environ["VIRTUAL_ENV"]))
+    found: list[Environment] = []
+    for path in wanted:
+        if not path.is_dir():
+            continue
+        try:
+            environment = _venv(path)
+        except EnvironmentError_:
+            continue
+        if not any(environment.key == known.key for known in found):
+            found.append(environment)
+    return found
+
+
 def discover(cwd: Path | None = None, environ: Mapping[str, str] | None = None) -> list[Environment]:
     """The environments there are to choose from, the likeliest first, each once: the ones a person named, then the
     Python environments near where the server was started."""
@@ -446,10 +471,12 @@ class Router:
         self.is_worker = os.environ.get(WORKER_VARIABLE) == "1" if worker is None else worker
         #: the environment the server was started with: a person's choice, so an agent may use it
         self.started_with = None if self.is_worker else selected
-        self.selected = self.started_with
         #: whether a Python environment that was only found near the server may be used
         self.allow_found = allow_found
         self.cwd = cwd
+        # with none named, the one of where the server was launched is the one meant
+        nearby = [] if self.is_worker else [e for e in local(cwd) if not e.is_own]
+        self.selected = self.started_with or (nearby[0] if nearby else None)
         self.connections: dict[str, Environment] = {}
         self._workers: dict[tuple[str, ...], Worker] = {}
         self._tasks: anyio.abc.TaskGroup | None = None
@@ -472,6 +499,8 @@ class Router:
         allowed: list[Environment] = list(named().values())
         if self.started_with is not None and not any(self.started_with.key == e.key for e in allowed):
             allowed.insert(0, self.started_with)
+        # the environment of where the server was launched is a person's choice too (`local`)
+        allowed += [e for e in local(self.cwd) if not any(e.key == known.key for known in allowed)]
         found = [e for e in discover(self.cwd) if not any(e.key == known.key for known in allowed)]
         if self.allow_found:
             return [*allowed, *found], []
@@ -491,9 +520,9 @@ class Router:
         have = ", ".join(sorted({e.name for e in allowed})) or "none"
         if any(wanted in (e.name, e.where) for e in found):
             raise EnvironmentError_(
-                f"{wanted!r} was found on this machine but nobody said it may be used. A person can allow it: name it "
-                f"in {environments_file()}, start the server with --env, or start it with --allow-found. "
-                f"Allowed now: {have}."
+                f"{wanted!r} was found on this machine but nobody said it may be used. A person can allow it: launch "
+                f"the server in its project, name it in {environments_file()}, or start the server with --env or "
+                f"--allow-found. Allowed now: {have}."
             )
         raise EnvironmentError_(
             f"{wanted!r} is not an environment this server may use. An environment is chosen by a person, in "
@@ -583,8 +612,9 @@ class Router:
         if found:
             described["found_not_allowed"] = [environment.describe() for environment in found]
             described["found_not_allowed_note"] = (
-                "Found on this machine, and not used unless a person allows them: by naming them in "
-                f"{environments_file()}, or by starting the server with --env or --allow-found."
+                "Found on this machine, and not used unless a person allows them: by launching the server in "
+                f"their project, by naming them in {environments_file()}, or by starting the server with --env or "
+                "--allow-found."
             )
         return described
 

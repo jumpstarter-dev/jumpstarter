@@ -98,8 +98,9 @@ uv venv
 uv pip install jumpstarter-driver-power jumpstarter-driver-pyserial   # what your devices need
 ```
 
-Start the server with `--env .venv` in that project (for example in the project's own MCP configuration), or name
-the environment in the environments file. The server runs the device tools in that environment. It does not have to
+Launch your agent in that project: the server uses the `.venv` of the directory it is launched in (or the
+environment that is active), with nothing more to set up. To use another, start the server with `--env`, or name it
+in the environments file. The server runs the device tools in that environment. It does not have to
 be installed there: an environment that has only drivers is lent the server for the length of a run (`uv` lays the
 package over the environment's Python and leaves the environment as it was). An environment that has
 `jumpstarter-mcp` installed runs its own.
@@ -132,8 +133,9 @@ environments:
   lab: {command: [ssh, lab, jmp, mcp, serve]}
 ```
 
-- `jmp mcp serve --env <environment>` (or `JMP_MCP_ENV`) selects one at the start; `jmp_use_environment` selects one
-  later. Without one the server does the work itself, as it always did.
+- Launched in a project, the server selects that project's `.venv`. `jumpstarter-mcp --env <environment>` (or
+  `JMP_MCP_ENV`) selects another at the start; `jmp_use_environment` selects one later. With none, the server does
+  the work itself, as it always did.
 - `jmp_environments` lists the named ones and the Python environments near where the server was started (the active
   one, and the `.venv` of the working directory and of the directories above it).
 - `jmp_connect(..., environment=...)` connects a device where its drivers are. **A connection belongs to the
@@ -151,9 +153,11 @@ into being:
 
 - the environments of the environments file, and the one the server was started with (`--env`, `JMP_MCP_ENV`), are
   a person's own words: they may be used;
-- a Python environment that was only found near the server (the `.venv` of the directory it runs in) may be used
-  only when the server was started with `--allow-found`: a repository can carry a `.venv` of its own.
-  `jmp_environments` lists these apart, as found and not allowed;
+- so may the local one: the `.venv` of the very directory the server was launched in, and the environment that was
+  active then. Launching an agent in a project is choosing that project's environment, and it is the one used when
+  no other is selected. Launch an agent only in a project whose `.venv` you would run yourself;
+- a Python environment that was only found further away (the `.venv` of a directory above) may be used only when
+  the server was started with `--allow-found`. `jmp_environments` lists these apart, as found and not allowed;
 - a path, a `container:` or an `image:` an agent gives that is none of these is refused, with what there is to
   choose from. Nothing is started for it and nothing is pulled.
 

@@ -170,16 +170,17 @@ def test_a_call_goes_to_the_environment_of_its_connection(tmp_path, monkeypatch)
 
 def test_an_agent_chooses_among_what_a_person_allowed_and_names_nothing_into_being(tmp_path, monkeypatch):
     started = environments.resolve(make_env(tmp_path / "started"))
-    planted = make_env(tmp_path / "cloned-repo")  # a repository that carries a .venv of its own
+    above = make_env(tmp_path / "work")  # the .venv of a directory above where the server was launched
+    (tmp_path / "work" / "tests").mkdir()
     name_them(tmp_path, monkeypatch, phones=make_env(tmp_path / "phones"))
     monkeypatch.setattr(environments.shutil, "which", lambda name: f"/usr/bin/{name}")
-    router = Router(selected=started, cwd=tmp_path / "cloned-repo")
+    router = Router(selected=started, cwd=tmp_path / "work" / "tests")
 
     assert router.choose("phones").name == "phones"
     assert router.choose("started") == started
     assert router.choose(str(started.path)) == started
     # a path, a container and an image an agent gives are compared with the list, and are not on it
-    for given in (str(planted), str(tmp_path), "container:anything", "image:evil.example/x:latest", "../phones"):
+    for given in (str(above), str(tmp_path), "container:anything", "image:evil.example/x:latest", "../phones"):
         with pytest.raises(EnvironmentError_, match="Allowed now: phones, started"):
             router.choose(given)
         with pytest.raises(EnvironmentError_):
@@ -188,14 +189,38 @@ def test_an_agent_chooses_among_what_a_person_allowed_and_names_nothing_into_bei
             router.use(given)
     assert router.selected == started  # a refusal changes nothing
 
-    # what was only found says so, and how a person allows it
+    # what was only found further away says so, and how a person allows it
     with pytest.raises(EnvironmentError_, match="nobody said it may be used"):
-        router.choose("cloned-repo")
+        router.choose("work")
     said = router.describe()
     assert [e["name"] for e in said["allowed"]] == ["started", "phones"]
-    assert [e["name"] for e in said["found_not_allowed"]] == ["cloned-repo"]
+    assert [e["name"] for e in said["found_not_allowed"]] == ["work"]
     # ... unless the person who started the server said found ones may be used
-    assert Router(allow_found=True, cwd=tmp_path / "cloned-repo").choose("cloned-repo").path == planted
+    assert Router(allow_found=True, cwd=tmp_path / "work" / "tests").choose("work").path == above
+
+
+def test_the_environment_of_where_the_server_was_launched_is_the_one_meant(tmp_path, monkeypatch):
+    project = make_env(tmp_path / "phones")
+    make_env(tmp_path)  # one above it: found, and not this project's
+    router = Router(cwd=tmp_path / "phones")
+    # launched in a project, with nothing said: its own .venv is selected and may be used
+    assert router.selected is not None and (router.selected.name, router.selected.path) == ("phones", project)
+    assert router.target({}) == router.selected
+    said = router.describe()
+    assert [e["name"] for e in said["allowed"]] == ["phones"]
+    assert [e["where"] for e in said["found_not_allowed"]] == [str(tmp_path / ".venv")]
+    # what the server was started with still comes first
+    other = environments.resolve(make_env(tmp_path / "boards"))
+    assert Router(selected=other, cwd=tmp_path / "phones").selected == other
+    # the environment that was active when the server was launched is the person's choice as well
+    active = make_env(tmp_path / "elsewhere", "venv")
+    monkeypatch.setenv("VIRTUAL_ENV", str(active))
+    nowhere = tmp_path / "empty"
+    nowhere.mkdir()
+    chosen = Router(cwd=nowhere).selected
+    assert chosen is not None and chosen.path == active
+    # a server started by another never looks around itself
+    assert Router(cwd=tmp_path / "phones", worker=True).selected is None
 
 
 def test_the_environments_file_is_read_only_when_it_is_its_owners_alone_to_write(tmp_path, monkeypatch):
