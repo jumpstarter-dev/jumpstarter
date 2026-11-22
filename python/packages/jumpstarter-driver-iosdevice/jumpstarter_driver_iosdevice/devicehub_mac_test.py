@@ -164,7 +164,9 @@ def fake_wda(tmp_path, monkeypatch):
     monkeypatch.setattr(devicehub_mac, "_connect", lambda udid: None)
 
     def use(mode):
-        monkeypatch.setattr(devicehub_mac, "XCODEBUILD", (sys.executable, str(script), str(marker), mode))
+        # -S: the fake needs only the standard library, and skipping site spares it
+        # reading every .pth file in the environment, most of its start-up time.
+        monkeypatch.setattr(devicehub_mac, "XCODEBUILD", (sys.executable, "-S", str(script), str(marker), mode))
 
     return use, marker
 
@@ -760,10 +762,14 @@ def test_connect_asks_coredevice_for_the_device(monkeypatch):
 async def test_webdriveragent_that_never_answers_times_out(fake_wda, monkeypatch):
     use, marker = fake_wda
     use("ok")
-    monkeypatch.setattr(devicehub_mac, "_wda_ready", lambda url: False)
+    asked = []
+    monkeypatch.setattr(devicehub_mac, "_wda_ready", lambda url: asked.append(url) or False)
     with pytest.raises(RuntimeError, match="not ready within"):
-        async with devicehub_mac.webdriveragent(Path("x.xctestrun"), udids=["DEVICE"], timeout=0.5, notify=print):
+        async with devicehub_mac.webdriveragent(Path("x.xctestrun"), udids=["DEVICE"], timeout=2, notify=print):
             pass
+    # The timeout also covers xcodebuild starting; this one has to run out while
+    # WebDriverAgent is being asked.
+    assert asked
     assert marker.exists()
 
 
