@@ -24,6 +24,8 @@ guide.
 | `jmp_connect` | Connect to a {term}`device` (by {term}`lease`, selector, or {term}`exporter`) |
 | `jmp_disconnect` | Disconnect from a {term}`device` |
 | `jmp_list_connections` | List active connections |
+| `jmp_environments` | List the environments the device tools can run in, and which each connection belongs to |
+| `jmp_use_environment` | Choose the environment the device tools run in |
 
 ### Device Interaction
 
@@ -80,6 +82,43 @@ class PowerClient(DriverClient):
 ```
 
 `jmp_run` still runs a raw `j` command line, for what is not one call (a console that keeps streaming).
+
+## One server, many environments
+
+A device's drivers are Python packages: a project installs the ones its devices need, in its own environment or
+container. The server an agent's host starts does not have to live there. It may be installed once, with no driver
+at all; when a tool needs the drivers, it starts a second copy of itself where they are and passes the call on, over
+the same protocol the host speaks to it.
+
+An environment is anywhere `jmp mcp serve` can be started:
+
+| | |
+| --- | --- |
+| a path | a Python environment's directory, or a project directory that has a `.venv` |
+| `container:<name>` | a container that runs (the server is started in it with `podman exec`, or `docker`) |
+| `image:<reference>` | a container started for it |
+| a name | an entry of the environments file: one of the above, or any command that starts the server |
+
+The environments file is `mcp-environments.yaml` beside the client configurations (or the file
+`JMP_MCP_ENVIRONMENTS` names):
+
+```yaml
+environments:
+  phones: {path: ~/work/phones}
+  rig-a: {container: rig-a-dev}
+  lab: {command: [ssh, lab, jmp, mcp, serve]}
+```
+
+- `jmp mcp serve --env <environment>` (or `JMP_MCP_ENV`) selects one at the start; `jmp_use_environment` selects one
+  later. Without one the server does the work itself, as it always did.
+- `jmp_environments` lists the named ones and the Python environments near where the server was started (the active
+  one, and the `.venv` of the working directory and of the directories above it).
+- `jmp_connect(..., environment=...)` connects a device where its drivers are. **A connection belongs to the
+  environment it was made in**: every later call that names its `connection_id` goes there, so devices leased from
+  different environments and containers are driven side by side, and every answer says which environment it came
+  from.
+- A connection made where a device's drivers are not installed says which ones are missing, and how to choose the
+  environment that has them.
 
 ## API Reference
 
