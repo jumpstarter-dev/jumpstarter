@@ -1,8 +1,10 @@
 import os
+import socket
 import tempfile
 
 import pytest
 from jumpstarter_driver_composite.driver import Composite, Proxy
+from jumpstarter_driver_http.driver import HttpServer
 from jumpstarter_driver_power.driver import MockPower
 from jumpstarter_driver_pyserial.driver import PySerial
 from jumpstarter_driver_tftp.driver import Tftp
@@ -25,36 +27,53 @@ def temp_dirs():
         yield cache, http, tftp
 
 
+def addressed(temp_dirs):
+    """tftp and http children with a host
+
+    Without one, each child looks up the machine's address, which takes about
+    35 seconds on the macOS runners, so tests that are not about the children
+    the flasher creates itself pass these.
+    """
+    _, http, tftp = temp_dirs
+    return {"tftp": Tftp(root_dir=tftp, host="127.0.0.1"), "http": HttpServer(root_dir=http, host="127.0.0.1")}
+
+
 @pytest.fixture(scope="session")  # session to retain cache over time
 def complete_flasher(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     yield BaseFlasher(
         flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
         cache_dir=cache,
-        http_dir=http,
-        tftp_dir=tftp,
         children={
             "serial": PySerial(url="loop://"),
             "power": MockPower(),
+            **addressed(temp_dirs),
         },
     )
 
 
 def test_missing_serial(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     with pytest.raises(ConfigurationError):
-        BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, children={"power": MockPower()})
+        BaseFlasher(cache_dir=cache, children={"power": MockPower(), **addressed(temp_dirs)})
 
 
 def test_missing_power(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     with pytest.raises(ConfigurationError):
-        BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, children={"serial": PySerial(url="loop://")})
+        BaseFlasher(cache_dir=cache, children={"serial": PySerial(url="loop://"), **addressed(temp_dirs)})
 
 
-def test_drivers_flashers_exporter_ip_override(temp_dirs):
+def test_drivers_flashers_exporter_ip_override(temp_dirs, monkeypatch):
     """Test that exporter_ip is passed as advertised_host to auto-created tftp/http children"""
     cache, http, tftp = temp_dirs
+
+    # The auto-created children look up the machine's address. Fail that lookup
+    # at once, as it fails after about 35 seconds on the macOS runners.
+    def unresolvable(_hostname):
+        raise socket.gaierror(socket.EAI_NONAME, "unresolvable")
+
+    monkeypatch.setattr(socket, "gethostbyname", unresolvable)
     flasher = BaseFlasher(
         flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
         cache_dir=cache,
@@ -177,25 +196,29 @@ def test_drivers_flashers_get_bootcmd_invalid_variant(complete_flasher):
 
 
 def test_drivers_flashers_rejects_wrong_http_child(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     with pytest.raises(ConfigurationError, match="'http' child"):
         BaseFlasher(
-            cache_dir=cache, http_dir=http, tftp_dir=tftp,
-            children={"serial": PySerial(url="loop://"), "power": MockPower(), "http": MockPower()},
+            cache_dir=cache,
+            children={
+                "serial": PySerial(url="loop://"),
+                "power": MockPower(),
+                **addressed(temp_dirs),
+                "http": MockPower(),
+            },
         )
 
 
 def test_drivers_flashers_get_default_target(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     flasher = BaseFlasher(
         flasher_bundle="quay.io/jumpstarter-dev/jumpstarter-flasher-test:new",
         cache_dir=cache,
-        http_dir=http,
-        tftp_dir=tftp,
         default_target="emmc",
         children={
             "serial": PySerial(url="loop://"),
             "power": MockPower(),
+            **addressed(temp_dirs),
         },
     )
     with serve(flasher) as client:
@@ -203,14 +226,13 @@ def test_drivers_flashers_get_default_target(temp_dirs):
 
 
 def test_drivers_flashers_get_cacert_not_configured(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     flasher = BaseFlasher(
         cache_dir=cache,
-        http_dir=http,
-        tftp_dir=tftp,
         children={
             "serial": PySerial(url="loop://"),
             "power": MockPower(),
+            **addressed(temp_dirs),
         },
     )
     with serve(flasher) as client:
@@ -218,17 +240,16 @@ def test_drivers_flashers_get_cacert_not_configured(temp_dirs):
 
 
 def test_drivers_flashers_get_cacert_configured(temp_dirs, tmp_path):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     cacert_path = tmp_path / "ca.crt"
     cacert_path.write_text("-----BEGIN CERTIFICATE-----\n")
     flasher = BaseFlasher(
         cache_dir=cache,
-        http_dir=http,
-        tftp_dir=tftp,
         cacert=str(cacert_path),
         children={
             "serial": PySerial(url="loop://"),
             "power": MockPower(),
+            **addressed(temp_dirs),
         },
     )
     with serve(flasher) as client:
@@ -254,49 +275,58 @@ def test_drivers_flashers_setup_fls_binary_missing(complete_flasher, tmp_path, m
 
 
 def test_drivers_flashers_get_fls_version(temp_dirs):
-    cache, http, tftp = temp_dirs
-    default = BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp,
-                          children={"serial": PySerial(url="loop://"), "power": MockPower()})
+    cache, _, _ = temp_dirs
+    default = BaseFlasher(cache_dir=cache,
+                          children={"serial": PySerial(url="loop://"), "power": MockPower(), **addressed(temp_dirs)})
     with serve(default) as client:
         assert client.call("get_fls_version") is None
 
-    pinned = BaseFlasher(cache_dir=cache, http_dir=http, tftp_dir=tftp, fls_version="0.4.0",
-                         children={"serial": PySerial(url="loop://"), "power": MockPower()})
+    pinned = BaseFlasher(cache_dir=cache, fls_version="0.4.0",
+                         children={"serial": PySerial(url="loop://"), "power": MockPower(), **addressed(temp_dirs)})
     with serve(pinned) as client:
         assert client.call("get_fls_version") == "0.4.0"
 
 
 def test_drivers_flashers_rejects_wrong_tftp_child(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     with pytest.raises(ConfigurationError, match="'tftp' child"):
         BaseFlasher(
             cache_dir=cache,
-            http_dir=http,
-            tftp_dir=tftp,
-            children={"serial": PySerial(url="loop://"), "power": MockPower(), "tftp": MockPower()},
+            children={
+                "serial": PySerial(url="loop://"),
+                "power": MockPower(),
+                **addressed(temp_dirs),
+                "tftp": MockPower(),
+            },
         )
 
 
 def test_drivers_flashers_follows_ref_children(temp_dirs):
-    cache, http, tftp = temp_dirs
-    shared_tftp = Tftp(root_dir=tftp)
+    cache, _, _ = temp_dirs
+    shared_tftp = addressed(temp_dirs)["tftp"]
     flasher = BaseFlasher(
         cache_dir=cache,
-        http_dir=http,
-        tftp_dir=tftp,
-        children={"serial": PySerial(url="loop://"), "power": MockPower(), "tftp": Proxy(ref="shared_tftp")},
+        children={
+            "serial": PySerial(url="loop://"),
+            "power": MockPower(),
+            **addressed(temp_dirs),
+            "tftp": Proxy(ref="shared_tftp"),
+        },
     )
     Composite(children={"shared_tftp": shared_tftp, "storage": flasher}).enumerate()
     assert flasher.tftp is shared_tftp
 
 
 def test_drivers_flashers_rejects_wrong_ref_child(temp_dirs):
-    cache, http, tftp = temp_dirs
+    cache, _, _ = temp_dirs
     flasher = BaseFlasher(
         cache_dir=cache,
-        http_dir=http,
-        tftp_dir=tftp,
-        children={"serial": PySerial(url="loop://"), "power": MockPower(), "tftp": Proxy(ref="other")},
+        children={
+            "serial": PySerial(url="loop://"),
+            "power": MockPower(),
+            **addressed(temp_dirs),
+            "tftp": Proxy(ref="other"),
+        },
     )
     Composite(children={"other": MockPower(), "storage": flasher}).enumerate()
     with pytest.raises(ConfigurationError, match="'tftp' child of BaseFlasher must be a Tftp driver, got MockPower"):

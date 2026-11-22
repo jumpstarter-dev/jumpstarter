@@ -7,6 +7,10 @@ from .driver import HttpServer
 from jumpstarter.common.http import client_session
 from jumpstarter.common.utils import serve
 
+# Without a host, the server looks up the machine's address, which takes about
+# 35 seconds on the macOS runners.
+HOST = "127.0.0.1"
+
 
 @pytest.fixture
 def anyio_backend():
@@ -20,7 +24,7 @@ def free_ipv4_tcp_port(free_tcp_port_factory):
 
 @pytest.fixture
 def http(tmp_path, free_ipv4_tcp_port):
-    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)) as client:
         client.start()
         try:
             yield client
@@ -69,7 +73,7 @@ def test_http_server_advertised_host(tmp_path):
 
 def test_http_server_root_directory_creation(tmp_path):
     new_dir = tmp_path / "new_http_root"
-    _ = HttpServer(root_dir=str(new_dir))
+    _ = HttpServer(root_dir=str(new_dir), host=HOST)
     assert new_dir.exists()
 
 
@@ -80,7 +84,10 @@ async def test_opendal_tracking_on_http_server_close(tmp_path, free_ipv4_tcp_por
     test_content = b"test content for tracking"
 
     # Set up logging to capture debug messages
-    with caplog.at_level(logging.DEBUG), serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
+    with (
+        caplog.at_level(logging.DEBUG),
+        serve(HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)) as client,
+    ):
         client.start()
 
         # Write a file through the HTTP server (which uses OpenDAL internally)
@@ -106,7 +113,7 @@ async def test_opendal_tracking_on_http_server_close(tmp_path, free_ipv4_tcp_por
 
 def test_opendal_tracking_methods(tmp_path, free_ipv4_tcp_port):
     """Test the OpenDAL tracking export methods directly."""
-    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)) as client:
         client.start()
 
         # Initially, no resources should be tracked
@@ -133,7 +140,7 @@ async def test_http_server_close_releases_port(tmp_path, free_ipv4_tcp_port):
     test_file.write_text("hello")
 
     # First server session
-    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)) as client:
         client.start()
         url = client.get_url()
         assert str(free_ipv4_tcp_port) in url
@@ -144,7 +151,7 @@ async def test_http_server_close_releases_port(tmp_path, free_ipv4_tcp_port):
         client.stop()
 
     # Second server session on the same port should not fail with "address already in use"
-    with serve(HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)) as client:
         client.start()
         url = client.get_url()
         assert str(free_ipv4_tcp_port) in url
@@ -161,7 +168,7 @@ async def test_http_server_port_zero(tmp_path):
     test_file = tmp_path / "test.txt"
     test_file.write_text("hello")
 
-    with serve(HttpServer(root_dir=str(tmp_path), port=0)) as client:
+    with serve(HttpServer(root_dir=str(tmp_path), host=HOST, port=0)) as client:
         client.start()
         port = client.get_port()
         assert isinstance(port, int), "Port should be an integer"
@@ -178,7 +185,7 @@ async def test_http_server_port_zero(tmp_path):
 @pytest.mark.anyio
 async def test_driver_start_stop_direct(tmp_path, free_ipv4_tcp_port):
     """Directly exercise driver start/stop to ensure coverage of server lifecycle."""
-    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)
     # start the server
     await server.start()
     assert server.runner is not None
@@ -204,7 +211,7 @@ async def test_driver_start_stop_direct(tmp_path, free_ipv4_tcp_port):
 @pytest.mark.anyio
 async def test_driver_start_cleans_stale_runner(tmp_path, free_ipv4_tcp_port):
     """Starting when a stale runner exists should clean it up and start fresh."""
-    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)
     await server.start()
     first_runner = server.runner
 
@@ -220,7 +227,7 @@ async def test_driver_start_cleans_stale_runner(tmp_path, free_ipv4_tcp_port):
 @pytest.mark.anyio
 async def test_driver_port_zero_assigns_real_port(tmp_path):
     """Using port=0 should bind to an OS-assigned port."""
-    server = HttpServer(root_dir=str(tmp_path), port=0)
+    server = HttpServer(root_dir=str(tmp_path), host=HOST, port=0)
     await server.start()
     assert server._bound_port > 0
     assert server.get_port() > 0
@@ -253,7 +260,7 @@ async def test_driver_close_with_running_loop(tmp_path, free_ipv4_tcp_port):
 @pytest.mark.anyio
 async def test_async_cleanup_direct(tmp_path, free_ipv4_tcp_port):
     """Directly test _async_cleanup for coverage."""
-    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)
     await server.start()
     assert server.runner is not None
 
@@ -268,7 +275,7 @@ async def test_async_cleanup_error_path(tmp_path, free_ipv4_tcp_port):
     """Test that _async_cleanup re-raises exceptions."""
     from unittest.mock import AsyncMock, MagicMock
 
-    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)
     await server.start()
 
     # Replace the runner with a mock so we can make cleanup() raise
@@ -291,7 +298,7 @@ async def test_close_cleanup_failure_logs_warning(tmp_path, free_ipv4_tcp_port, 
     """Test that close() logs a warning when cleanup fails."""
     from unittest.mock import AsyncMock, MagicMock
 
-    server = HttpServer(root_dir=str(tmp_path), port=free_ipv4_tcp_port)
+    server = HttpServer(root_dir=str(tmp_path), host=HOST, port=free_ipv4_tcp_port)
     await server.start()
 
     # Replace the runner with a mock so we can make cleanup() raise
@@ -321,7 +328,7 @@ async def test_close_cleanup_failure_logs_warning(tmp_path, free_ipv4_tcp_port, 
 
 def test_close_no_runner(tmp_path):
     """close() with no runner should be a no-op."""
-    server = HttpServer(root_dir=str(tmp_path))
+    server = HttpServer(root_dir=str(tmp_path), host=HOST)
     assert server.runner is None
     server.close()  # Should not raise
 
