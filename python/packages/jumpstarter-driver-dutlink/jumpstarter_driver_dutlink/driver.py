@@ -27,7 +27,7 @@ class DutlinkConfig:
     storage_fsync_timeout: int = field(default=900)
 
     dev: usb.core.Device = field(init=False)
-    itf: usb.core.Interface = field(init=False)
+    itf: usb.core.Interface | None = field(init=False, default=None)
     tty: str | None = field(init=False, default=None)
 
     def __post_init__(self):
@@ -61,7 +61,22 @@ class DutlinkConfig:
 
         raise FileNotFoundError("failed to find dutlink device")
 
+    @property
+    def firmware_version(self) -> str:
+        bcd = self.dev.bcdDevice  # ty: ignore[unresolved-attribute]
+        return f"{bcd >> 8:x}.{bcd & 0xFF:02x}"
+
+    def missing_control_interface_message(self) -> str:
+        return (
+            f"dutlink board with serial {self.serial} has no control interface "
+            f"(firmware {self.firmware_version}): power and storage control need firmware 0.08 or later, "
+            "see https://github.com/jumpstarter-dev/dutlink-firmware/releases"
+        )
+
     def control(self, direction, ty, actions, action, value):
+        if self.itf is None:
+            raise RuntimeError(self.missing_control_interface_message())
+
         if direction == usb.ENDPOINT_IN:
             self.dev.ctrl_transfer(
                 bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_INTERFACE,
@@ -250,6 +265,9 @@ class Dutlink(DutlinkConfig, CompositeInterface, Driver):
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()
+
+        if self.itf is None:
+            self.logger.warning(self.missing_control_interface_message())
 
         power = self.children["power"] = DutlinkPower(serial=self.serial, timeout_s=self.timeout_s)
         self.children["storage"] = DutlinkStorageMux(
