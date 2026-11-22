@@ -13,10 +13,12 @@ import anyio
 from anyio import ClosedResourceError
 from mcp.server.mcpserver import MCPServer
 from mcp.server.stdio import stdio_server
+from mcp.types import ToolAnnotations
 
 from jumpstarter_mcp.connections import ConnectionManager
 from jumpstarter_mcp.tools import commands as cmd_tools
 from jumpstarter_mcp.tools import connections as conn_tools
+from jumpstarter_mcp.tools import generated as generated_tools
 from jumpstarter_mcp.tools import leases as lease_tools
 
 from jumpstarter.config.client import ClientConfigV1Alpha1
@@ -31,11 +33,17 @@ controller that manages leases and exporters.
 
 Typical workflow:
 1. jmp_list_leases to see existing leases, or jmp_create_lease to get a new one
-2. jmp_connect with the lease ID to establish a persistent connection
-3. jmp_explore to discover what CLI commands are available for this device
-4. jmp_run to execute commands (power control, SSH, serial, storage, etc.)
+2. jmp_connect with the lease ID: it returns a connection_id and the names of the
+   device's tools, by driver
+3. jmp_tools(connection_id, driver) for the arguments of one driver's tools
+4. jmp_read (tools that only read) or jmp_call to use them, by name
 5. jmp_list_events periodically to receive lease expiry warnings and failure notices
 6. jmp_disconnect and jmp_delete_lease when done
+
+Every call names its connection_id: with several devices connected, that is
+what says which one a tool acts on. The same driver on two devices has the same
+tool names. jmp_run runs a raw `j` command line (jmp_explore lists them): use it
+for what is not one call, such as a console that keeps streaming.
 
 Each device type exposes different commands. Always explore before assuming
 what's available. Common patterns:
@@ -354,6 +362,54 @@ def _register_command_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
         return json.dumps(result, indent=2)
 
 
+def _register_generated_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
+    """Register the tools a lease's drivers are reached through (jumpstarter_mcp.tools.generated)."""
+
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def jmp_tools(connection_id: str, driver: str | None = None) -> str:
+        """List what a connected device can do: its drivers and their tools.
+
+        Each driver of the device (power, a serial console, a screen, ...) has typed
+        tools made from its commands. Without `driver`, returns every driver with
+        its tool names and one line on each. With `driver`, returns that driver's
+        tools with their descriptions and the JSON schema of their arguments. Call
+        a tool with jmp_read (tools that only read) or jmp_call.
+
+        Args:
+            connection_id: ID of the active connection (the lease to list)
+            driver: A driver's path, as listed ("power", "dutlink.console")
+        """
+        return json.dumps(await generated_tools.list_tools(manager, connection_id, driver), indent=2)
+
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def jmp_read(connection_id: str, tool: str, arguments: dict | None = None) -> str:
+        """Call a tool of a connected device that only reads (a status, a value, a list).
+
+        Refuses a tool that changes the device: those go through jmp_call.
+
+        Args:
+            connection_id: ID of the active connection (the lease the call is for)
+            tool: The tool's name, as jmp_tools lists it ("power_read")
+            arguments: The tool's arguments, by name, as its schema says
+        """
+        result = await generated_tools.call_tool(manager, connection_id, tool, arguments, reads_only=True)
+        return json.dumps(result, indent=2)
+
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
+    async def jmp_call(connection_id: str, tool: str, arguments: dict | None = None) -> str:
+        """Call a tool of a connected device: anything its drivers can do (power, flash, tap, ...).
+
+        The arguments are checked against the tool's schema before the device is
+        touched; a wrong name is answered with the nearest ones.
+
+        Args:
+            connection_id: ID of the active connection (the lease the call is for)
+            tool: The tool's name, as jmp_tools lists it ("power_cycle")
+            arguments: The tool's arguments, by name, as its schema says
+        """
+        return json.dumps(await generated_tools.call_tool(manager, connection_id, tool, arguments), indent=2)
+
+
 def _register_discovery_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
     """Register discovery and introspection tools."""
 
@@ -412,6 +468,7 @@ def create_server() -> tuple[MCPServer, ConnectionManager]:
     _register_lease_tools(mcp)
     _register_connection_tools(mcp, manager)
     _register_command_tools(mcp, manager)
+    _register_generated_tools(mcp, manager)
     _register_discovery_tools(mcp, manager)
 
     return mcp, manager

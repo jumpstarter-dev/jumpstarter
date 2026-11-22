@@ -85,7 +85,7 @@ def toolset[C: type](*, auto_tools: bool = False, description: str | None = None
 
 
 def toolset(cls=None, *, auto_tools=False, description=None):
-    """Configure how a client class is exposed, as ``robot.library`` does for keywords.
+    """Configure how a client class is exposed.
 
     Decorating a class turns automatic tools off by default, so only
     ``@mcp.tool`` methods are exposed; pass ``auto_tools=True`` to keep every
