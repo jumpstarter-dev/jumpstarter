@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 import aiohttp
 import grpc.aio
 import yarl
-from anyio import BrokenResourceError, to_thread
+from anyio import BrokenResourceError, create_task_group, to_thread
 from grpc import StatusCode
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from pydantic import TypeAdapter
@@ -496,6 +496,47 @@ class Driver(
         raise RuntimeError(f"Too many redirects ({max_redirects}) for {self._redact_url(url)}")
 
     @asynccontextmanager
+    async def _presigned_put(self, url: str, headers: dict[str, str], timeout: aiohttp.ClientTimeout):
+        """PUT what the caller sends into the yielded stream.
+
+        aiohttp sends nothing before the first chunk of the body and returns only once the
+        response has arrived, so the request runs in a task of its own while the caller
+        writes. Leaving the context ends the body and waits for the response. An error in
+        the caller aborts the request instead, since ending the body would present a
+        truncated upload to the server as complete.
+        """
+        remote, stream = create_memory_stream()
+        request_error: Exception | None = None
+        caller_error: Exception | None = None
+
+        async def put():
+            nonlocal request_error
+            try:
+                # remote closes when the request ends, so a send after that fails instead of blocking
+                async with remote, session.put(
+                    self._make_url(url), headers=headers, raise_for_status=True, data=remote,
+                ):
+                    pass
+            except Exception as error:  # noqa: BLE001 - raised below, after the caller is done
+                request_error = error
+
+        async with client_session(timeout=timeout) as session, stream, create_task_group() as tg:
+            tg.start_soon(put)
+            try:
+                yield ProgressStream(stream=stream, logging=True)
+            except Exception as error:  # noqa: BLE001 - raised below, once the request is aborted
+                # raised into the task group, it would reach the caller wrapped in an ExceptionGroup
+                caller_error = error
+                tg.cancel_scope.cancel()
+            else:
+                await stream.aclose()
+        # a failed request is why a send fails, so its error is the one to report
+        if request_error is not None:
+            raise request_error
+        if caller_error is not None:
+            raise caller_error
+
+    @asynccontextmanager
     async def _resource_from_presigned(self, headers, url: str, method: str, timeout: int):
         client_timeout = aiohttp.ClientTimeout(total=timeout)
         try:
@@ -504,15 +545,8 @@ class Driver(
                     async with self._presigned_get(url, headers, client_timeout) as stream:
                         yield stream
                 case "PUT":
-                    remote, stream = create_memory_stream()
-                    async with (
-                        client_session(timeout=client_timeout) as session,
-                        session.put(
-                            self._make_url(url), headers=headers, raise_for_status=True, data=remote,
-                        ) as _resp,
-                        stream,
-                    ):
-                        yield ProgressStream(stream=stream, logging=True)
+                    async with self._presigned_put(url, headers, client_timeout) as stream:
+                        yield stream
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource
                     raise ValueError("unreachable")
