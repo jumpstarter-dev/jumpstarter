@@ -476,18 +476,6 @@ class _QemuSerialStream(ObjectStream[bytes]):
         self._process = None
         await self._stack.aclose()
 
-    async def _wait_for_guest_exit(self, process: Popen[bytes] | None, error: Exception) -> None:
-        if (
-            process is not None
-            and self._current_process() is process
-            and (not isinstance(error, OSError) or error.errno in (None, errno.EIO))
-        ):
-            # A PTY hangup can precede process exit during guest-initiated shutdown.
-            try:
-                await to_thread.run_sync(process.wait, 1)
-            except TimeoutExpired:
-                pass
-
     async def receive(self) -> bytes:
         while not self._closed:
             changed = self.power._serial_changed
@@ -519,9 +507,13 @@ class _QemuSerialStream(ObjectStream[bytes]):
             except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream) as exc:
                 connected_process = self._process
                 await self._disconnect()
-                await self._wait_for_guest_exit(connected_process, exc)
-                if self._current_process() is process:
-                    raise  # A live VM's unexpected serial failure must stay visible.
+                if self._current_process() is process and (
+                    connected_process is not process
+                    or (isinstance(exc, OSError) and exc.errno not in (None, errno.EIO))
+                ):
+                    raise  # Initial-open failures and unrelated errors must stay visible.
+                # An established PTY hangup stays silent until the next power transition.
+                await changed.wait()
         raise ClosedResourceError
 
     async def send(self, item: bytes) -> None:

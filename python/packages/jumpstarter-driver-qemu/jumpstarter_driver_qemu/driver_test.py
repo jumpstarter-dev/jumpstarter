@@ -186,7 +186,7 @@ async def test_console_does_not_open_stale_pty_during_startup(qemu_serial, monke
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("error_type", [RuntimeError, PermissionError, BrokenResourceError, EndOfStream])
-async def test_live_vm_serial_failure_stays_visible(qemu_serial, error_type):
+async def test_serial_open_failure_stays_visible(qemu_serial, error_type):
     _driver, power, _console, _ptys = qemu_serial
     await power.on()
     error = error_type("unexpected serial failure")
@@ -209,7 +209,7 @@ async def test_live_vm_serial_failure_stays_visible(qemu_serial, error_type):
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("exits", [False, True])
+@pytest.mark.parametrize("transition", ["power", "guest", "close"])
 @pytest.mark.parametrize(
     "error",
     [
@@ -217,59 +217,61 @@ async def test_live_vm_serial_failure_stays_visible(qemu_serial, error_type):
         BrokenResourceError(), ClosedResourceError(), EndOfStream(),
     ],
 )
-async def test_serial_hangup_allows_guest_to_exit(qemu_serial, monkeypatch, exits, error):
+async def test_serial_hangup_waits_quietly_for_power_change_or_close(qemu_serial, transition, error):
     _driver, power, _console, _ptys = qemu_serial
     await power.on()
     process = power._process
-    loop_thread = threading.get_ident()
-    idle = Event()
-    original_wait = power._serial_changed.wait
-
-    async def wait_for_notification():
-        idle.set()
-        await original_wait()
-
-    def wait(timeout):
-        assert timeout == 1
-        assert threading.get_ident() != loop_thread
-        if not exits:
-            raise TimeoutExpired("qemu", timeout)
-        process.poll.return_value = 0
-        return 0
+    disconnected = Event()
+    failed_source = SimpleNamespace(receive=AsyncMock(side_effect=error), send=AsyncMock())
+    recovered_source = SimpleNamespace(receive=AsyncMock(return_value=b"recovered"), send=AsyncMock())
+    opens = 0
 
     @asynccontextmanager
     async def factory():
-        yield SimpleNamespace(receive=AsyncMock(side_effect=error))
+        nonlocal opens
+        opens += 1
+        try:
+            yield failed_source if opens == 1 else recovered_source
+        finally:
+            disconnected.set()
 
     finished = Event()
+    received = []
 
     async def receive(stream):
-        if exits:
-            await stream.receive()
-        else:
-            with pytest.raises(type(error)) as exc_info:
+        if transition == "close":
+            with pytest.raises(ClosedResourceError):
                 await stream.receive()
-            assert exc_info.value is error
+        else:
+            received.append(await stream.receive())
         finished.set()
 
-    process.wait.side_effect = wait
-    monkeypatch.setattr(power._serial_changed, "wait", wait_for_notification)
-    try:
-        with fail_after(2):
-            async with _QemuSerialStream(power=power, source_factory=factory) as stream, create_task_group() as tasks:
-                tasks.start_soon(receive, stream)
-                if exits:
-                    await idle.wait()
-                    assert not finished.is_set()
-                    await stream.send(b"discard after guest shutdown")
+    with fail_after(3):
+        async with _QemuSerialStream(power=power, source_factory=factory) as stream, create_task_group() as tasks:
+            tasks.start_soon(receive, stream)
+            await disconnected.wait()
+            await sleep(0.05)
+            assert not finished.is_set()
+            assert opens == 1
+            process.wait.assert_not_called()
+            process.terminate.assert_not_called()
+            process.kill.assert_not_called()
+            await stream.send(b"discard after hangup")
+            failed_source.send.assert_not_awaited()
+            if transition == "close":
+                await stream.aclose()
+            else:
+                if transition == "guest":
+                    process.terminate()
                 else:
-                    await finished.wait()
-                process.wait.assert_called_once_with(1)
-                process.terminate.assert_not_called()
-                process.kill.assert_not_called()
-                tasks.cancel_scope.cancel()
-    finally:
-        process.wait.side_effect = None
+                    await power.off()
+                await power.on()
+            await finished.wait()
+            if transition != "close":
+                assert received == [b"recovered"]
+                assert opens == 2
+                await stream.send(b"working input")
+                recovered_source.send.assert_awaited_once_with(b"working input")
 
 
 @pytest.mark.anyio
@@ -280,7 +282,7 @@ async def test_serial_hangup_allows_guest_to_exit(qemu_serial, monkeypatch, exit
         RuntimeError("unexpected failure"),
     ],
 )
-async def test_unrelated_serial_read_failure_does_not_wait_for_exit(qemu_serial, error):
+async def test_unrelated_serial_read_failure_stays_visible(qemu_serial, error):
     _driver, power, _console, _ptys = qemu_serial
     await power.on()
 
@@ -342,7 +344,8 @@ async def test_power_change_during_port_open_discards_stale_source(qemu_serial):
 
 
 @pytest.mark.anyio
-async def test_power_on_notification_during_port_close_is_not_lost(qemu_serial):
+@pytest.mark.parametrize("hangup", [False, True])
+async def test_power_on_notification_during_port_close_is_not_lost(qemu_serial, hangup):
     _driver, power, _console, _ptys = qemu_serial
     await power.on()
     closing = Event()
@@ -357,7 +360,10 @@ async def test_power_on_notification_during_port_close_is_not_lost(qemu_serial):
         opens += 1
         first = opens == 1
         try:
-            yield SimpleNamespace(receive=AsyncMock(return_value=b"first" if first else b"current"))
+            read = AsyncMock(return_value=b"first" if first else b"current")
+            if first and hangup:
+                read.side_effect = [b"first", EndOfStream()]
+            yield SimpleNamespace(receive=read)
         finally:
             if first:
                 closing.set()
@@ -370,9 +376,12 @@ async def test_power_on_notification_during_port_close_is_not_lost(qemu_serial):
     with fail_after(2):
         async with _QemuSerialStream(power=power, source_factory=factory) as stream, create_task_group() as tasks:
             assert await stream.receive() == b"first"
-            await power.off()
+            if not hangup:
+                await power.off()
             tasks.start_soon(receive, stream)
             await closing.wait()
+            if hangup:
+                await power.off()
             await power.on()
             finish_close.set()
             await finished.wait()
