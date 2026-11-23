@@ -3,7 +3,7 @@
 
 import os
 
-from jumpstarter.exporter.fsm import Starting
+from jumpstarter.exporter.fsm import Available, Starting
 from jumpstarter.fsm_mermaid import mermaid
 
 OUTPUT_PATH = os.path.join(
@@ -13,7 +13,8 @@ OUTPUT_PATH = os.path.join(
 
 def main(output_path: str = OUTPUT_PATH) -> str:
     """Render the production lifecycle states as a MyST mermaid include file."""
-    content = f"```{{mermaid}}\n{mermaid(Starting)}\n```\n"
+    # Controller mode starts at Starting; standalone mode has no controller and starts at Available.
+    content = f"```{{mermaid}}\n{mermaid(Starting, Available)}\n```\n"
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)

@@ -125,6 +125,11 @@ use the {term}`j` CLI to interact with exported devices. For full details, see
 The exporter runs these lease boundaries as an explicit state machine. The
 diagram below is generated from the production states in
 `jumpstarter.exporter.fsm` (regenerate with `make docs-generate-fsm`).
+It has two entry points: an exporter connected to a controller starts at
+`Starting`, and a standalone exporter at `Available`. The states inside `Leased`
+run while the lease's session is open. A new lease enters at `BeforeLeaseHook`;
+a lease taken over after an exporter restart enters at the state its hook record
+calls for.
 
 ```{include} exporter-fsm-diagram.md
 ```
