@@ -499,6 +499,16 @@ func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *
 		if err := r.reconcileServiceMonitors(ctx, js); err != nil {
 			errs = append(errs, fmt.Errorf("service monitors: %w", err))
 		}
+		if metricsErr != nil {
+			return serviceMonitorResult{
+				phase:  serviceMonitorApplyFailed,
+				reason: serviceMonitorReasonFailed,
+				message: fmt.Sprintf(
+					"failed to reconcile metrics Services while autodiscovery is disabled: %v",
+					metricsErr,
+				),
+			}, errors.Join(errs...)
+		}
 		return serviceMonitorResult{
 			phase:   serviceMonitorDisabled,
 			reason:  serviceMonitorReasonDisabled,
@@ -519,6 +529,16 @@ func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *
 		}, errors.Join(errs...)
 	}
 	if !crdAvailable {
+		if metricsErr != nil {
+			return serviceMonitorResult{
+				phase:  serviceMonitorApplyFailed,
+				reason: serviceMonitorReasonFailed,
+				message: fmt.Sprintf(
+					"failed to reconcile metrics Services: %v (monitoring.coreos.com/v1 ServiceMonitor CRD is not installed)",
+					metricsErr,
+				),
+			}, errors.Join(errs...)
+		}
 		return serviceMonitorResult{
 			phase:   serviceMonitorWaitingForCRD,
 			reason:  serviceMonitorReasonCRDNotFound,

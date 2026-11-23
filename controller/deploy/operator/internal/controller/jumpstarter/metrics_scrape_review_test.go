@@ -343,3 +343,90 @@ func TestPruneServiceMonitorsReturnsConflict(t *testing.T) {
 		t.Fatalf("the ServiceMonitor must survive a conflicting delete: %v", err)
 	}
 }
+
+// absentCRDServiceErrorClient fails metrics Service creation and reports the
+// ServiceMonitor API as absent, so both failures are present at once.
+type absentCRDServiceErrorClient struct {
+	client.Client
+}
+
+func (c *absentCRDServiceErrorClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if monitors, ok := list.(*unstructured.UnstructuredList); ok &&
+		monitors.GroupVersionKind().Kind == serviceMonitorKind+"List" {
+		return apierrors.NewNotFound(schema.GroupResource{
+			Group: serviceMonitorGroup, Resource: "servicemonitors",
+		}, "")
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+func (c *absentCRDServiceErrorClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	if _, ok := obj.(*corev1.Service); ok {
+		return errors.New("injected metrics Service create failure")
+	}
+	return c.Client.Create(ctx, obj, opts...)
+}
+
+// A metrics Service failure must be visible in status even when the
+// ServiceMonitor CRD is absent.
+func TestReconcileObservabilityReportsMetricsServiceFailureWhenCRDAbsent(t *testing.T) {
+	s := newObservabilityScheme(t)
+	js := testJumpstarter()
+
+	wrapped := &absentCRDServiceErrorClient{Client: fake.NewClientBuilder().WithScheme(s).Build()}
+	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
+
+	result, err := r.reconcileObservability(context.Background(), js)
+	if err == nil {
+		t.Fatal("reconcileObservability should report the metrics Service failure for retry")
+	}
+	if result.phase != serviceMonitorApplyFailed {
+		t.Fatalf("phase = %v, want serviceMonitorApplyFailed", result.phase)
+	}
+	ready, reason, message := result.condition()
+	if ready || reason != serviceMonitorReasonFailed {
+		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
+	}
+	if !strings.Contains(message, "metrics Services") || !strings.Contains(message, "not installed") {
+		t.Fatalf("message %q must name the metrics failure and the absent CRD", message)
+	}
+}
+
+// serviceGetErrorClient fails every Service read, which is how the disabled
+// path attempts cleanup.
+type serviceGetErrorClient struct {
+	client.Client
+}
+
+func (c *serviceGetErrorClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if _, ok := obj.(*corev1.Service); ok {
+		return errors.New("injected metrics Service get failure")
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+// A broken metrics Service must also surface while autodiscovery is disabled.
+func TestReconcileObservabilityReportsMetricsServiceFailureWhenDisabled(t *testing.T) {
+	s := newObservabilityScheme(t)
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.ServiceMonitor = new(false)
+
+	wrapped := &serviceGetErrorClient{Client: fake.NewClientBuilder().WithScheme(s).Build()}
+	r := &JumpstarterReconciler{Client: wrapped, Scheme: s}
+
+	result, err := r.reconcileObservability(context.Background(), js)
+	if err == nil {
+		t.Fatal("reconcileObservability should report the metrics Service failure for retry")
+	}
+	if result.phase != serviceMonitorApplyFailed {
+		t.Fatalf("phase = %v, want serviceMonitorApplyFailed", result.phase)
+	}
+	ready, reason, message := result.condition()
+	if ready || reason != serviceMonitorReasonFailed {
+		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
+	}
+	if !strings.Contains(message, "disabled") {
+		t.Fatalf("message %q must keep the disabled context", message)
+	}
+}
