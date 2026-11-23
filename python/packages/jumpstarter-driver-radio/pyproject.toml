@@ -1,0 +1,44 @@
+[project]
+name = "jumpstarter-driver-radio"
+dynamic = ["version", "urls"]
+description = "A device's radios (Wi-Fi, Bluetooth, UWB), simulated or real, as ports that can be joined between exporters"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Kirk Brauer" }]
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.0.0",
+    "jumpstarter",
+    "jumpstarter-driver-composite",
+    "jumpstarter-driver-network",
+    "pydantic>=2.8.2",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+MockRadio = "jumpstarter_driver_radio.driver:MockRadio"
+WmediumdWifi = "jumpstarter_driver_radio.wmediumd:WmediumdWifi"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../' }
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov=jumpstarter_driver_radio --cov-report=html --cov-report=xml"
+testpaths = ["jumpstarter_driver_radio"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.4",
+]
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"

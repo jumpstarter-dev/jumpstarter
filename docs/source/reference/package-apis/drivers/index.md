@@ -107,6 +107,7 @@ Drivers for virtual and emulated targets:
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
 - {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
 - {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, WiFi, UWB)
+- {doc}`Radio <radio>` (`jumpstarter-driver-radio`) - A device's radios (Wi-Fi, Bluetooth, UWB), simulated or real, as ports that can be joined between exporters
 
 ### Test and Measurement
 
@@ -151,6 +152,7 @@ iscsi.md
 kubevirt.md
 mitmproxy.md
 netsim.md
+radio.md
 network.md
 nanokvm-usb.md
 noyito-relay.md
