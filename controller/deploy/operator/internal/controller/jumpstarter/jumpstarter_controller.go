@@ -338,7 +338,7 @@ func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Contex
 	log := logf.FromContext(ctx)
 	// The TLS secret hash makes certificate renewals roll the controller.
 	tlsSecretHash, err := r.getControllerTLSSecretHash(ctx, jumpstarter)
-	if err != nil {
+	if err != nil && !suspendedWithoutTLSSecret(controllerReplicas(&jumpstarter.Spec.Controller), err) {
 		return r.waitForTLSSecret(ctx, jumpstarter, "controller", err)
 	}
 	desiredDeployment := r.createControllerDeployment(jumpstarter, configMapHash, tlsSecretHash)
@@ -782,6 +782,16 @@ func (r *JumpstarterReconciler) waitForTLSSecret(ctx context.Context, jumpstarte
 	r.emitEventf(jumpstarter, corev1.EventTypeNormal, "WaitingForTLSSecret",
 		"The %s deployment waits for TLS secret %s", component, missing.name)
 	return nil
+}
+
+// suspendedWithoutTLSSecret reports whether err is a TLS secret that does not
+// exist yet for a Deployment scaled to zero. That Deployment is reconciled
+// with an empty hash instead of waiting: it runs no pods, so nothing mounts
+// the secret, and the hash it gets once the secret exists changes a template
+// that has no pods to replace.
+func suspendedWithoutTLSSecret(replicas int32, err error) bool {
+	var missing *tlsSecretMissingError
+	return replicas == 0 && goerrors.As(err, &missing)
 }
 
 // getTLSSecretHash fetches a TLS secret by name and returns its data hash, or
@@ -1601,7 +1611,7 @@ func (r *JumpstarterReconciler) reconcileRouterDeploymentReplica(
 	if !ok {
 		var err error
 		routerTLSHash, err = r.getTLSSecretHash(ctx, jumpstarter.Namespace, secretName)
-		if err != nil {
+		if err != nil && !suspendedWithoutTLSSecret(routerReplicas(&jumpstarter.Spec.Routers), err) {
 			return r.waitForTLSSecret(ctx, jumpstarter, fmt.Sprintf("router %d", i), err)
 		}
 		tlsHashBySecret[secretName] = routerTLSHash

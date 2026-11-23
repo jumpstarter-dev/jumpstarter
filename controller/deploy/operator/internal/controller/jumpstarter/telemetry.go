@@ -232,7 +232,7 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 	log := logf.FromContext(ctx)
 
 	tlsSecretHash, err := r.getTelemetryTLSSecretHash(ctx, jumpstarter)
-	if err != nil {
+	if err != nil && !suspendedWithoutTLSSecret(telemetryReplicas(jumpstarter.Spec.Telemetry), err) {
 		return r.waitForTLSSecret(ctx, jumpstarter, "telemetry", err)
 	}
 
