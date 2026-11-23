@@ -12,11 +12,17 @@ from jumpstarter_cli_common.opt import (
     opt_output_name_only,
     validate_name,
 )
-from jumpstarter_kubernetes import ClientsV1Alpha1Api, ExportersV1Alpha1Api, delete_cluster_by_name
+from jumpstarter_kubernetes import (
+    ClientsV1Alpha1Api,
+    ExportersV1Alpha1Api,
+    LeaseTemplatesV1Alpha1Api,
+    delete_cluster_by_name,
+)
 from jumpstarter_kubernetes.exceptions import JumpstarterKubernetesError
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
+from .alias import add_aliases
 from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,
@@ -133,6 +139,42 @@ async def delete_exporter(
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
+
+
+@delete.command("leasetemplate")
+@click.argument("name", type=str, required=False, default=None)
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_name_only
+@blocking
+async def delete_lease_template(
+    name: str | None,
+    kubeconfig: str | None,
+    context: str | None,
+    namespace: str,
+    output: NameOutputType,
+):
+    """Delete a lease template object in the Kubernetes cluster
+
+    Leases that were made from the template keep the members they copied from it.
+    """
+    validate_name(name)
+    assert name is not None
+    try:
+        async with LeaseTemplatesV1Alpha1Api(namespace, kubeconfig, context) as api:
+            await api.delete_lease_template(name)
+            if output is None:
+                click.echo(f"Deleted lease template '{name}' in namespace '{namespace}'")
+            else:
+                click.echo(f"leasetemplate.jumpstarter.dev/{name}")
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+add_aliases(delete, delete_lease_template, "leasetemplates", "lease-template", "lease-templates")
 
 
 @delete.command("cluster")

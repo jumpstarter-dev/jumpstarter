@@ -60,8 +60,8 @@ async def apply(
     """Apply Jumpstarter manifests to a Kubernetes cluster
 
     Creates the resources in a manifest, or updates them in place when they
-    already exist. Only Jumpstarter resources (clients, exporters, exporter
-    sets, virtual target classes) can be applied.
+    already exist. Only Jumpstarter resources (clients, exporters, lease
+    templates, exporter sets, virtual target classes) can be applied.
     """
     try:
         manifests = []

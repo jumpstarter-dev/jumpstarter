@@ -12,14 +12,17 @@ from jumpstarter_cli_common.opt import (
 from jumpstarter_cli_common.print import model_print
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
+    ExporterClaimsV1Alpha1Api,
     ExportersV1Alpha1Api,
     LeasesV1Alpha1Api,
+    LeaseTemplatesV1Alpha1Api,
     get_cluster_info,
     list_clusters,
 )
 from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.config.config_exception import ConfigException
 
+from .alias import add_aliases
 from .k8s import (
     handle_k8s_api_exception,
     handle_k8s_config_exception,
@@ -77,10 +80,13 @@ async def get_exporter(
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 exporter = await api.get_exporter(name)
-                model_print(exporter, output, devices=devices, namespace=namespace)
+                # The GROUP column appears only where an exclusion group is in use.
+                groups = bool(exporter.exclusion_group)
+                model_print(exporter, output, devices=devices, groups=groups, namespace=namespace)
             else:
                 exporters = await api.list_exporters()
-                model_print(exporters, output, devices=devices, namespace=namespace)
+                groups = exporters.has_exclusion_groups()
+                model_print(exporters, output, devices=devices, groups=groups, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -110,6 +116,65 @@ async def get_lease(
         handle_k8s_api_exception(e)
     except ConfigException as e:
         handle_k8s_config_exception(e)
+
+
+@get.command("leasetemplate")
+@click.argument("name", type=str, required=False, default=None)
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_all
+@blocking
+async def get_lease_template(
+    name: str | None, kubeconfig: str | None, context: str | None, namespace: str, output: OutputType
+):
+    """Get the lease template objects in a Kubernetes cluster"""
+    try:
+        async with LeaseTemplatesV1Alpha1Api(namespace, kubeconfig, context) as api:
+            if name is not None:
+                template = await api.get_lease_template(name)
+                model_print(template, output, namespace=namespace)
+            else:
+                templates = await api.list_lease_templates()
+                model_print(templates, output, namespace=namespace)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+add_aliases(get, get_lease_template, "leasetemplates", "lease-template", "lease-templates")
+
+
+@get.command("exporterclaim")
+@click.argument("name", type=str, required=False, default=None)
+@opt_namespace
+@opt_kubeconfig
+@opt_context
+@opt_output_all
+@blocking
+async def get_exporter_claim(
+    name: str | None, kubeconfig: str | None, context: str | None, namespace: str, output: OutputType
+):
+    """Get the exporter claim objects in a Kubernetes cluster
+
+    A claim shows which lease holds an exporter or an exclusion group.
+    """
+    try:
+        async with ExporterClaimsV1Alpha1Api(namespace, kubeconfig, context) as api:
+            if name is not None:
+                claim = await api.get_exporter_claim(name)
+                model_print(claim, output, namespace=namespace)
+            else:
+                claims = await api.list_exporter_claims()
+                model_print(claims, output, namespace=namespace)
+    except ApiException as e:
+        handle_k8s_api_exception(e)
+    except ConfigException as e:
+        handle_k8s_config_exception(e)
+
+
+add_aliases(get, get_exporter_claim, "exporterclaims", "exporter-claim", "exporter-claims")
 
 
 @get.command("cluster")

@@ -622,3 +622,26 @@ class TestClusterCreation:
 
         assert result.exit_code != 0
         assert "minikube is not installed" in result.output
+
+
+@patch.object(ExporterConfigV1Alpha1, "save")
+@patch.object(ExportersV1Alpha1Api, "_load_kube_config")
+@patch.object(ExportersV1Alpha1Api, "create_exporter", return_value=EXPORTER_OBJECT)
+@patch.object(ExportersV1Alpha1Api, "get_exporter_config", return_value=EXPORTER_CONFIG)
+def test_create_exporter_with_an_exclusion_group(
+    _get_exporter_config_mock, create_exporter_mock: AsyncMock, _load_kube_config_mock, _save_exporter_mock: Mock
+):
+    runner = CliRunner()
+
+    result = runner.invoke(
+        create,
+        ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--exclusion-group", "bench-7", "--nointeractive"],
+    )
+    assert result.exit_code == 0
+    create_exporter_mock.assert_awaited_once_with(EXPORTER_NAME, {"foo": "bar"}, None, "bench-7")
+    create_exporter_mock.reset_mock()
+
+    # Without the option, no group is sent.
+    result = runner.invoke(create, ["exporter", EXPORTER_NAME, "--label", "foo=bar", "--nointeractive"])
+    assert result.exit_code == 0
+    create_exporter_mock.assert_awaited_once_with(EXPORTER_NAME, {"foo": "bar"}, None, None)

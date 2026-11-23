@@ -7,7 +7,7 @@ from pydantic import Field
 
 from .datetime import time_since
 from .exceptions import CredentialNotReadyError
-from .json import JsonBaseModel
+from .json import JsonBaseModel, OmitNoneModel
 from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta, SerializeV1ObjectReference
 from .util import AbstractAsyncCustomObjectApi
@@ -34,11 +34,23 @@ class V1Alpha1ExporterStatus(JsonBaseModel):
     status_message: str | None = Field(alias="statusMessage", default=None)
 
 
-class V1Alpha1Exporter(JsonBaseModel):
+class V1Alpha1ExporterSpec(OmitNoneModel):
+    # Names the DUT the exporter serves. One lease at a time can hold a group.
+    exclusion_group: str | None = Field(alias="exclusionGroup", default=None)
+
+
+class V1Alpha1Exporter(OmitNoneModel):
+    omit_none_fields = frozenset({"spec"})
+
     api_version: Literal["jumpstarter.dev/v1alpha1"] = Field(alias="apiVersion", default="jumpstarter.dev/v1alpha1")
     kind: Literal["Exporter"] = Field(default="Exporter")
     metadata: SerializeV1ObjectMeta
+    spec: V1Alpha1ExporterSpec | None = None
     status: V1Alpha1ExporterStatus | None = None
+
+    @property
+    def exclusion_group(self) -> str:
+        return (self.spec.exclusion_group if self.spec is not None else None) or ""
 
     @staticmethod
     def from_dict(dict: dict):
@@ -56,6 +68,11 @@ class V1Alpha1Exporter(JsonBaseModel):
                 resource_version=dict["metadata"]["resourceVersion"],
                 uid=dict["metadata"]["uid"],
             ),
+            # The exclusion group is the only part of the spec shown here, so
+            # an exporter without one prints as it always has.
+            spec=V1Alpha1ExporterSpec(exclusionGroup=dict["spec"]["exclusionGroup"])
+            if (dict.get("spec") or {}).get("exclusionGroup")
+            else None,
             status=V1Alpha1ExporterStatus(
                 credential=V1ObjectReference(name=dict["status"]["credential"]["name"])
                 if "credential" in dict["status"]
@@ -73,7 +90,7 @@ class V1Alpha1Exporter(JsonBaseModel):
         )
 
     @classmethod
-    def rich_add_columns(cls, table, devices: bool = False):
+    def rich_add_columns(cls, table, devices: bool = False, groups: bool = False):
         if devices:
             table.add_column("NAME", no_wrap=True)
             table.add_column("STATUS")
@@ -87,9 +104,12 @@ class V1Alpha1Exporter(JsonBaseModel):
             table.add_column("ENDPOINT")
             table.add_column("DEVICES")
             table.add_column("AGE")
+        if groups:
+            table.add_column("GROUP")
 
-    def rich_add_rows(self, table, devices: bool = False):
+    def rich_add_rows(self, table, devices: bool = False, groups: bool = False):
         status = self.status.exporter_status if self.status else "Unknown"
+        group = [self.exclusion_group] if groups else []
         if devices:
             if not (self.status and self.status.devices):
                 # An exporter with no devices to enumerate — never run, or not
@@ -102,6 +122,7 @@ class V1Alpha1Exporter(JsonBaseModel):
                     time_since(self.metadata.creation_timestamp),
                     "",
                     "",
+                    *group,
                 )
                 return
             for d in self.status.devices:
@@ -116,6 +137,7 @@ class V1Alpha1Exporter(JsonBaseModel):
                     time_since(self.metadata.creation_timestamp),
                     ",".join(labels),
                     d.uuid,
+                    *group,
                 )
 
         else:
@@ -125,6 +147,7 @@ class V1Alpha1Exporter(JsonBaseModel):
                 self.status.endpoint if self.status else "",
                 str(len(self.status.devices) if self.status and self.status.devices else 0),
                 time_since(self.metadata.creation_timestamp),
+                *group,
             )
 
     def rich_add_names(self, names):
@@ -133,6 +156,9 @@ class V1Alpha1Exporter(JsonBaseModel):
 
 class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
     kind: Literal["ExporterList"] = Field(default="ExporterList", frozen=True)
+
+    def has_exclusion_groups(self) -> bool:
+        return any(exporter.exclusion_group for exporter in self.items)
 
     @staticmethod
     def from_dict(dict: dict):
@@ -154,7 +180,7 @@ class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
 class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
     """Interact with the exporters custom resource API"""
 
-    async def list_exporters(self) -> V1Alpha1List[V1Alpha1Exporter]:
+    async def list_exporters(self) -> V1Alpha1ExporterList:
         """List the exporter objects in the cluster"""
         res = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="exporters", version="v1alpha1"
@@ -169,9 +195,18 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
         return V1Alpha1Exporter.from_dict(result)
 
     async def create_exporter(
-        self, name: str, labels: dict[str, str] | None = None, oidc_username: str | None = None
+        self,
+        name: str,
+        labels: dict[str, str] | None = None,
+        oidc_username: str | None = None,
+        exclusion_group: str | None = None,
     ) -> V1Alpha1Exporter:
         """Create an exporter in the cluster"""
+        spec = {}
+        if oidc_username is not None:
+            spec["username"] = oidc_username
+        if exclusion_group is not None:
+            spec["exclusionGroup"] = exclusion_group
         # Create the namespaced exporter object
         await self.api.create_namespaced_custom_object(
             namespace=self.namespace,
@@ -182,7 +217,7 @@ class ExportersV1Alpha1Api(AbstractAsyncCustomObjectApi):
                 "apiVersion": "jumpstarter.dev/v1alpha1",
                 "kind": "Exporter",
                 "metadata": {"name": name} | {"labels": labels} if labels is not None else {},
-                "spec": {"username": oidc_username} if oidc_username is not None else {},
+                "spec": spec,
             },
         )
         # Wait for the credentials to become available

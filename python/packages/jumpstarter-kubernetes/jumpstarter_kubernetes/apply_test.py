@@ -303,3 +303,66 @@ async def test_apply_all_looks_up_each_kind_once():
     assert [item.action for item in applied.items] == ["created", "created"]
     discoveries = [call for call in api._client.call_api.await_args_list if call.args[1] == "GET"]  # ty: ignore[unresolved-attribute]
     assert len(discoveries) == 1
+
+
+LEASE_TEMPLATE_MANIFESTS = """
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: ivi
+spec:
+  description: AAOS head unit and phone
+  members:
+    - name: headunit
+      selector: {matchLabels: {device-type: headunit}}
+    - name: phone
+      optional: true
+      selector: {matchLabels: {device-type: phone}}
+---
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: projection
+spec:
+  members:
+    - name: phone
+      selector: {matchLabels: {device-type: phone}}
+"""
+
+LEASE_TEMPLATE_DISCOVERY = {
+    "resources": [
+        {"name": "leases", "kind": "Lease", "namespaced": True},
+        {"name": "leasetemplates", "kind": "LeaseTemplate", "namespaced": True},
+    ]
+}
+
+
+@pytest.mark.anyio
+async def test_apply_creates_lease_templates():
+    api = make_api(discovery=LEASE_TEMPLATE_DISCOVERY)
+
+    applied = await api.apply_all(load_manifests(LEASE_TEMPLATE_MANIFESTS))
+
+    assert [(item.qualified_name, item.action) for item in applied.items] == [
+        ("leasetemplate.jumpstarter.dev/ivi", "created"),
+        ("leasetemplate.jumpstarter.dev/projection", "created"),
+    ]
+    call = patch_call(api)
+    assert call.kwargs["path_params"]["plural"] == "leasetemplates"
+    assert call.kwargs["path_params"]["namespace"] == "default"
+    # The members reach the server as written: it is the one that validates them.
+    assert [m["name"] for m in call.kwargs["body"]["spec"]["members"]] == ["headunit", "phone"]
+
+
+@pytest.mark.anyio
+async def test_apply_updates_a_lease_template_that_exists():
+    api = make_api(
+        discovery=LEASE_TEMPLATE_DISCOVERY,
+        existing={"metadata": {"name": "ivi", "resourceVersion": "1", "generation": 1}},
+        applied={"metadata": {"name": "ivi", "resourceVersion": "2", "generation": 2}},
+    )
+
+    applied = await api.apply(load_manifests(LEASE_TEMPLATE_MANIFESTS)[0])
+
+    assert applied.action == "configured"
+    assert applied.resource["metadata"]["generation"] == 2

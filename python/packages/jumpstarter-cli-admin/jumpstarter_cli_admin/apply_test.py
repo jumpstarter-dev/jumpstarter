@@ -201,3 +201,107 @@ def test_apply_leaves_conflicting_fields_alone_by_default():
 
     assert result.exit_code == 0
     assert apply_all.call_args.kwargs["force_conflicts"] is False
+
+
+IVI_TEMPLATE_MANIFEST = """\
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: ivi
+spec:
+  description: AAOS head unit and phone
+  members:
+    - name: headunit
+      selector: {matchLabels: {device-type: headunit}}
+    - name: phone
+      optional: true
+      selector: {matchLabels: {device-type: phone}}
+"""
+
+PROJECTION_TEMPLATE_MANIFEST = """\
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: projection
+spec:
+  members:
+    - name: phone
+      selector: {matchLabels: {device-type: phone}}
+"""
+
+
+def test_apply_creates_a_lease_template():
+    apply_all = AsyncMock(
+        return_value=V1Alpha1AppliedResourceList(items=[applied("LeaseTemplate", "ivi", "created")])
+    )
+
+    result = run(["-f", "ivi.yaml"], {"ivi.yaml": IVI_TEMPLATE_MANIFEST}, apply_all)
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "leasetemplate.jumpstarter.dev/ivi created"
+    (manifest,) = apply_all.call_args.args[0]
+    assert manifest["kind"] == "LeaseTemplate"
+    # The members are sent as written. The server validates them.
+    assert [m["name"] for m in manifest["spec"]["members"]] == ["headunit", "phone"]
+    assert manifest["spec"]["members"][1]["optional"] is True
+
+
+def test_apply_updates_several_lease_templates_from_one_file():
+    apply_all = AsyncMock(
+        return_value=V1Alpha1AppliedResourceList(
+            items=[
+                applied("LeaseTemplate", "ivi", "configured"),
+                applied("LeaseTemplate", "projection", "unchanged"),
+            ]
+        )
+    )
+
+    result = run(
+        ["-f", "templates.yaml"],
+        {"templates.yaml": f"{IVI_TEMPLATE_MANIFEST}---\n{PROJECTION_TEMPLATE_MANIFEST}"},
+        apply_all,
+    )
+
+    assert result.exit_code == 0
+    assert result.output.splitlines() == [
+        "leasetemplate.jumpstarter.dev/ivi configured",
+        "leasetemplate.jumpstarter.dev/projection unchanged",
+    ]
+    assert [m["metadata"]["name"] for m in apply_all.call_args.args[0]] == ["ivi", "projection"]
+
+
+def test_apply_rejects_a_kind_from_another_api_group_next_to_a_template():
+    apply_all = AsyncMock()
+    deployment = "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: web\n"
+
+    result = run(["-f", "mixed.yaml"], {"mixed.yaml": f"{IVI_TEMPLATE_MANIFEST}---\n{deployment}"}, apply_all)
+
+    assert result.exit_code != 0
+    assert "mixed.yaml (document 2)" in result.output
+    assert "not a Jumpstarter API group" in result.output
+    # The template before it is not applied either.
+    apply_all.assert_not_awaited()
+
+
+def test_apply_shows_why_the_server_refused_a_lease_template():
+    error = ApiException(status=422, reason="Unprocessable Entity")
+    error.body = json.dumps(
+        {
+            "kind": "Status",
+            "apiVersion": "v1",
+            "status": "Failure",
+            "reason": "Invalid",
+            "message": 'LeaseTemplate.jumpstarter.dev "ivi" is invalid: spec: Invalid value: "object": '
+            "a template member cannot set excluded",
+            "code": 422,
+        }
+    )
+    apply_all = AsyncMock(side_effect=error)
+
+    result = run(["-f", "ivi.yaml"], {"ivi.yaml": IVI_TEMPLATE_MANIFEST}, apply_all)
+
+    assert result.exit_code != 0
+    assert "Error from server (Invalid)" in result.output
+    assert "a template member cannot set excluded" in result.output
+    assert "Traceback" not in result.output
+    assert "--force-conflicts" not in result.output

@@ -475,3 +475,95 @@ def test_exporter_rich_add_rows_devices_when_it_has_none():
     assert mock_table.add_row.call_count == 1
     name, status, endpoint, _age, labels, uuid = mock_table.add_row.call_args.args
     assert (name, status, endpoint, labels, uuid) == ("never-run", "Unknown", "https://e", "", "")
+
+
+def exporter_dict(spec: dict | None = None) -> dict:
+    data = {
+        "apiVersion": "jumpstarter.dev/v1alpha1",
+        "kind": "Exporter",
+        "metadata": {
+            "creationTimestamp": "2021-10-01T00:00:00Z",
+            "generation": 1,
+            "name": "hu-1",
+            "namespace": "default",
+            "resourceVersion": "1",
+            "uid": "7a25eb81-6443-47ec-a62f-50165bffede8",
+        },
+        "status": {"endpoint": "https://hu-1", "devices": []},
+    }
+    if spec is not None:
+        data["spec"] = spec
+    return data
+
+
+def test_exporter_from_dict_reads_the_exclusion_group():
+    exporter = V1Alpha1Exporter.from_dict(exporter_dict({"enabled": True, "exclusionGroup": "bench-7"}))
+
+    assert exporter.exclusion_group == "bench-7"
+    assert exporter.model_dump(mode="json", by_alias=True)["spec"] == {"exclusionGroup": "bench-7"}
+
+
+@pytest.mark.parametrize("spec", [None, {}, {"enabled": True}])
+def test_exporter_without_an_exclusion_group_prints_no_spec(spec):
+    exporter = V1Alpha1Exporter.from_dict(exporter_dict(spec))
+
+    assert exporter.exclusion_group == ""
+    assert "spec" not in exporter.model_dump(mode="json", by_alias=True)
+
+
+def test_exporter_group_column_is_added_on_request():
+    exporter = V1Alpha1Exporter.from_dict(exporter_dict({"exclusionGroup": "bench-7"}))
+
+    for devices in (False, True):
+        table = MagicMock()
+        V1Alpha1Exporter.rich_add_columns(table, devices=devices, groups=True)
+        assert table.add_column.call_args_list[-1].args == ("GROUP",)
+        with patch("jumpstarter_kubernetes.exporters.time_since", return_value="5m"):
+            exporter.rich_add_rows(table, devices=devices, groups=True)
+        assert table.add_row.call_args[0][-1] == "bench-7"
+        assert len(table.add_row.call_args[0]) == table.add_column.call_count
+
+
+def test_exporter_list_knows_when_a_group_is_in_use():
+    from jumpstarter_kubernetes import V1Alpha1ExporterList
+
+    plain = V1Alpha1Exporter.from_dict(exporter_dict())
+    grouped = V1Alpha1Exporter.from_dict(exporter_dict({"exclusionGroup": "bench-7"}))
+
+    assert not V1Alpha1ExporterList(items=[plain]).has_exclusion_groups()
+    assert V1Alpha1ExporterList(items=[plain, grouped]).has_exclusion_groups()
+
+
+def make_create_api(created: dict) -> tuple[ExportersV1Alpha1Api, AsyncMock]:
+    api = ExportersV1Alpha1Api("default")
+    create = AsyncMock()
+    api.api = MagicMock()
+    api.api.create_namespaced_custom_object = create
+    api.api.get_namespaced_custom_object = AsyncMock(return_value=created)
+    return api, create
+
+
+@pytest.mark.anyio
+async def test_create_exporter_sets_the_exclusion_group():
+    created = exporter_dict({"exclusionGroup": "bench-7"})
+    created["status"]["credential"] = {"name": "hu-1-credential"}
+    api, create = make_create_api(created)
+
+    exporter = await api.create_exporter("hu-1", {"device-type": "headunit"}, exclusion_group="bench-7")
+
+    body = create.call_args.kwargs["body"]
+    assert body["spec"] == {"exclusionGroup": "bench-7"}
+    assert body["metadata"] == {"name": "hu-1", "labels": {"device-type": "headunit"}}
+    assert exporter.exclusion_group == "bench-7"
+
+
+@pytest.mark.anyio
+async def test_create_exporter_without_a_group_sends_the_spec_it_always_sent():
+    created = exporter_dict()
+    created["status"]["credential"] = {"name": "hu-1-credential"}
+    api, create = make_create_api(created)
+
+    await api.create_exporter("hu-1", {"device-type": "headunit"}, "hu-1@example.com")
+
+    body = create.call_args.kwargs["body"]
+    assert body["spec"] == {"username": "hu-1@example.com"}

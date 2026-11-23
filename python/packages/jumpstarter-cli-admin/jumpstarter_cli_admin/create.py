@@ -144,6 +144,13 @@ async def create_client(
     help="Specify an output file for the exporter config.",
     default=None,
 )
+@click.option(
+    "--exclusion-group",
+    "exclusion_group",
+    type=str,
+    default=None,
+    help="Name of the DUT that this exporter serves. Only one lease at a time can hold the exporters of a group.",
+)
 @opt_namespace
 @opt_labels(required=True)
 @opt_kubeconfig
@@ -162,6 +169,7 @@ async def create_exporter(
     labels: dict[str, str],
     save: bool,
     out: str | None,
+    exclusion_group: str | None,
     oidc_username: str | None,
     nointeractive: bool,
     output: OutputType,
@@ -174,7 +182,7 @@ async def create_exporter(
         async with ExportersV1Alpha1Api(namespace, kubeconfig, context) as api:
             if output is None:
                 click.echo(f"Creating exporter '{name}' in namespace '{namespace}'")
-            created_exporter = await api.create_exporter(name, labels, oidc_username)
+            created_exporter = await api.create_exporter(name, labels, oidc_username, exclusion_group)
             # Save the client config
             if save or out is not None or nointeractive is False and click.confirm("Save exporter configuration?"):
                 if output is None:

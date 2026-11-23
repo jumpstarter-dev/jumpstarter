@@ -5,9 +5,11 @@ from click.testing import CliRunner
 from jumpstarter_kubernetes import (
     ClientsV1Alpha1Api,
     ExportersV1Alpha1Api,
+    LeaseTemplatesV1Alpha1Api,
     V1Alpha1Exporter,
     V1Alpha1ExporterStatus,
 )
+from kubernetes_asyncio.client.exceptions import ApiException
 from kubernetes_asyncio.client.models import V1ObjectMeta, V1ObjectReference
 
 from .delete import delete
@@ -473,3 +475,45 @@ class TestClusterDeletion:
 
         assert result.exit_code == 0
         mock_delete.assert_called_once_with("test-cluster", "minikube", False, ANY)
+
+
+@patch.object(LeaseTemplatesV1Alpha1Api, "delete_lease_template")
+@patch.object(LeaseTemplatesV1Alpha1Api, "_load_kube_config")
+def test_delete_lease_template(_mock_load_kube_config, mock_delete_lease_template: AsyncMock):
+    runner = CliRunner()
+
+    result = runner.invoke(delete, ["leasetemplate", "ivi", "--namespace", "lab"])
+    assert result.exit_code == 0
+    assert "Deleted lease template 'ivi' in namespace 'lab'" in result.output
+    mock_delete_lease_template.assert_awaited_once_with("ivi")
+    mock_delete_lease_template.reset_mock()
+
+    # The other spellings of the noun reach the same command.
+    for noun in ("lease-template", "leasetemplates", "lease-templates"):
+        result = runner.invoke(delete, [noun, "ivi", "--output", "name"])
+        assert result.exit_code == 0
+        assert result.output == "leasetemplate.jumpstarter.dev/ivi\n"
+        mock_delete_lease_template.assert_awaited_once_with("ivi")
+        mock_delete_lease_template.reset_mock()
+
+
+@patch.object(LeaseTemplatesV1Alpha1Api, "delete_lease_template")
+@patch.object(LeaseTemplatesV1Alpha1Api, "_load_kube_config")
+def test_delete_lease_template_that_does_not_exist(_mock_load_kube_config, mock_delete_lease_template: AsyncMock):
+    error = ApiException(status=404, reason="Not Found")
+    error.body = '{"kind":"Status","reason":"NotFound","message":"leasetemplates.jumpstarter.dev \\"nope\\" not found"}'
+    mock_delete_lease_template.side_effect = error
+
+    result = CliRunner().invoke(delete, ["leasetemplate", "nope"])
+
+    assert result.exit_code == 1
+    assert 'Error from server (NotFound): leasetemplates.jumpstarter.dev "nope" not found' in result.output
+
+
+@patch.object(LeaseTemplatesV1Alpha1Api, "delete_lease_template")
+@patch.object(LeaseTemplatesV1Alpha1Api, "_load_kube_config")
+def test_delete_lease_template_requires_a_name(_mock_load_kube_config, mock_delete_lease_template: AsyncMock):
+    result = CliRunner().invoke(delete, ["leasetemplate"])
+
+    assert result.exit_code != 0
+    mock_delete_lease_template.assert_not_awaited()
