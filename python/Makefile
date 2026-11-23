@@ -57,7 +57,8 @@ pkg-ty-%: packages/%
 pkg-test-all: sync $(addprefix pkg-test-,$(PKG_TARGETS))
 
 ifdef LOGS_DIR
-test-report:
+# Under make -j, test-report would otherwise start before the last packages finish.
+test-report: pkg-test-all
 	@failed=0; \
 	for f in $(LOGS_DIR)/*.failed; do \
 		[ -f "$$f" ] || continue; \
