@@ -202,8 +202,6 @@ jobs:
           tags: ${{ github.event_name == 'pull_request' && steps.meta.outputs.tags || steps.set-tags.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           build-args: |
             GIT_VERSION=${{ env.PEP440_VERSION }}
             GIT_COMMIT=${{ steps.build-args.outputs.git_commit }}
