@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import re
-from contextlib import AsyncExitStack
 from dataclasses import FrozenInstanceError, dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, assert_type
@@ -51,7 +50,7 @@ class Available:
     story: Story
     last_completed: LeaseKey | None = None
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> BeforeHook | ExitFSM | None:
+    async def run(self, inputs: Inputs) -> BeforeHook | ExitFSM | None:
         if inputs.shutdown is not None:
             return ExitFSM()
         if inputs.lease_assignment is not None and inputs.lease_assignment.key != self.last_completed:
@@ -70,7 +69,7 @@ class BeforeHook:
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> Ready | BeforeFailed:
+    async def run(self, inputs: Inputs) -> Ready | BeforeFailed:
         self.story.trace.append("before")
         self.story.entered.set()
         await self.story.release.wait()
@@ -85,7 +84,7 @@ class BeforeFailed:
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> Cleanup:
+    async def run(self, inputs: Inputs) -> Cleanup:
         self.story.trace.append("failed")
         self.story.observed = inputs
         return Cleanup(self.story, self.key, self.lease)
@@ -97,7 +96,7 @@ class Ready:
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> Cleanup | None:
+    async def run(self, inputs: Inputs) -> Cleanup | None:
         self.story.trace.append("ready")
         self.story.ready.set()
         self.story.observed = inputs
@@ -117,7 +116,7 @@ class Cleanup:
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> Available | ExitFSM:
+    async def run(self, inputs: Inputs) -> Available | ExitFSM:
         self.story.trace.append("cleanup")
         self.story.closing.set()
         if self.story.teardown is not None:
@@ -128,11 +127,11 @@ class Cleanup:
 
 if TYPE_CHECKING:
 
-    async def _check_types(inputs: InputBuffer, before: BeforeHook, initial: State, resources: AsyncExitStack) -> None:
+    async def _check_types(inputs: InputBuffer, before: BeforeHook, initial: State) -> None:
         snapshot, _ = inputs.snapshot_and_watch()
-        assert_type(await initial.run(snapshot, resources), State | ExitFSM | None)
-        assert_type(await before.run(snapshot, resources), Ready | BeforeFailed)
-        assert_type(await Cleanup(before.story, before.key, before.lease).run(snapshot, resources), Available | ExitFSM)
+        assert_type(await initial.run(snapshot), State | ExitFSM | None)
+        assert_type(await before.run(snapshot), Ready | BeforeFailed)
+        assert_type(await Cleanup(before.story, before.key, before.lease).run(snapshot), Available | ExitFSM)
         assert_type(inputs.snapshot_and_watch(), tuple[Inputs, Event])
         assert_type(snapshot.lease_assignment, LeaseAssignment | None)
         assert_type(snapshot.shutdown, ShutdownRequest | None)
@@ -206,7 +205,7 @@ async def test_runner_captures_watch_before_state_can_await_and_return_none(leas
     calls = 0
 
     class Evaluating:
-        async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ExitFSM | None:
+        async def run(self, inputs: Inputs) -> ExitFSM | None:
             nonlocal calls
             calls += 1
             if calls == 1:
@@ -374,8 +373,7 @@ async def test_shutdown_escalates_without_losing_exit_or_cleanup_policy(first_co
     inputs.publish_lease_assignment("A")
     snapshot, _ = inputs.snapshot_and_watch()
     story = Story(False)
-    async with AsyncExitStack() as resources:
-        assert isinstance(await Available(story).run(snapshot, resources), ExitFSM)
+    assert isinstance(await Available(story).run(snapshot), ExitFSM)
     assert story.started == []
 
 

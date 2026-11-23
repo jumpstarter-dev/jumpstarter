@@ -21,7 +21,7 @@ from jumpstarter.exporter.fsm.states import (
     AwaitingLeaseRelease,
     BeforeLeaseHook,
     BeforeLeaseHookFailed,
-    ClosingLease,
+    Leased,
     LeaseReady,
     ReleasingLease,
     Stopping,
@@ -35,7 +35,6 @@ __all__ = [
     "AwaitingLeaseRelease",
     "BeforeLeaseHook",
     "BeforeLeaseHookFailed",
-    "ClosingLease",
     "ExporterFSM",
     "InputBuffer",
     "Inputs",
@@ -43,6 +42,7 @@ __all__ = [
     "LeaseContext",
     "LeaseKey",
     "LeaseReady",
+    "Leased",
     "ReleasingLease",
     "ShutdownMode",
     "ShutdownRequest",
@@ -63,3 +63,8 @@ class ExporterFSM:
         # The exporter name is already in the log context; name the FSM itself.
         self.runner = FSMRunner(initial, self.inputs, name="exporter")
         await self.runner.run()
+
+    async def run_nested(self, initial: State) -> None:
+        """Run the states of a lease inside the state that owns its resources."""
+        assert self.runner is not None
+        await self.runner.run_nested(initial)

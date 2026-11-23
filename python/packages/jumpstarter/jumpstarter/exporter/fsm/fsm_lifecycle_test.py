@@ -19,7 +19,7 @@ from jumpstarter.common import ExporterStatus
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.driver import Driver, export
 from jumpstarter.exporter.exporter import Exporter
-from jumpstarter.exporter.fsm import AwaitingLeaseRelease, BeforeLeaseHook, ClosingLease, LeaseReady, ShutdownMode
+from jumpstarter.exporter.fsm import AwaitingLeaseRelease, BeforeLeaseHook, Leased, LeaseReady, ShutdownMode
 from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.exporter.hooks import HookExecutionError, HookExecutor
 from jumpstarter.fsm import ExitFSM
@@ -77,9 +77,10 @@ class LocalExporter(Exporter):
 
     @asynccontextmanager
     async def session_for_lease(self):
+        # Leased, the state that owns this session, is current while it opens.
         state = self.fsm.runner.current_state if self.fsm.runner else None
-        lease = getattr(state, "admitting", None)
-        assert isinstance(lease, LeaseContext)
+        assert isinstance(state, Leased)
+        lease = state.lease
         self.trace.append(("open", lease.lease_name))
         try:
             async with super().session_for_lease() as session:
@@ -222,7 +223,7 @@ async def test_reassignment_waits_for_hooks_and_full_teardown(monkeypatch, repla
             release.set()
             await exporter.closing.wait()
             assert len(exporter.leases) == 1 and not exporter.closed.is_set()
-            assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ClosingLease)
+            assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, Leased)
             assert exporter.close_gate is not None
             exporter.close_gate.set()
             await exporter.wait_status(ExporterStatus.LEASE_READY, replacement)

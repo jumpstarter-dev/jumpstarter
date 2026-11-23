@@ -8,7 +8,7 @@ transitions or policies change (see the exporter-fsm-docs-sync Cursor rule).
 from __future__ import annotations
 
 import logging
-from contextlib import AbstractAsyncContextManager, AsyncExitStack
+from contextlib import AbstractAsyncContextManager, nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -34,20 +34,17 @@ class Available:
 
     Waiting state: honor an outstanding shutdown before admission. Reject the
     last completed assignment key so a stale observation cannot reopen the same
-    lease. Otherwise prepare the session for the current assignment, register it
-    on the runner resource stack, and transition to ``BeforeLeaseHook``. Return
-    ``None`` when there is nothing admissible.
+    lease. Otherwise admit the current assignment and transition to ``Leased``,
+    which opens its session. Return ``None`` when there is nothing admissible.
     """
 
     exporter: Exporter
     last_completed: LeaseKey | None = None
     # Standalone TCP injects its session here; controller mode leaves this None
-    # and falls back to exporter.session_for_lease() at admission.
+    # and Leased falls back to exporter.session_for_lease().
     session_context: AbstractAsyncContextManager[tuple[Session, str, str]] | None = None
-    # Set only while entering the session context so test doubles can observe admission.
-    admitting: LeaseContext | None = None
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> BeforeLeaseHook | Stopping | None:
+    async def run(self, inputs: Inputs) -> Leased | Stopping | None:
         # Drain/stop-now already requested: never admit another lease.
         if inputs.shutdown:
             return Stopping(self.exporter)
@@ -68,27 +65,62 @@ class Available:
         )
         set_log_context(client=lease.client_name)
         logger.info("Starting new lease: %s", lease.lease_name)
-        # Keep admitting visible while the session context enters for test doubles.
-        self.admitting = lease
-        try:
-            context = self.session_context or self.exporter.session_for_lease()
-            # Register session/sockets on the runner stack so ClosingLease can tear them down.
-            session, main_path, hook_path = await resources.enter_async_context(context)
-        finally:
-            self.admitting = None
-        lease.session, lease.socket_path, lease.hook_socket_path = session, main_path, hook_path
-        session.lease_context = lease
-        session.update_status(ExporterStatus.BEFORE_LEASE_HOOK, "Preparing lease")
-        return BeforeLeaseHook(self.exporter, lease_assignment.key, lease)
+        return Leased(self.exporter, lease_assignment.key, lease, self.session_context)
+
+
+@dataclass
+class Leased:
+    """Own one lease's session, sockets, drivers, and I/O for as long as it runs.
+
+    Composite state: open the session, then run the lease's own states, from
+    ``BeforeLeaseHook`` until one of them returns ``ExitFSM``, as a nested
+    machine inside that ``async with`` block. Controller mode also keeps the
+    lease's Listen/dial tasks open around them. Leaving the block stops and
+    joins lease I/O before closing the session, sockets, and drivers, whether
+    the lease's states exited, failed, or were cancelled.
+
+    Session setup awaits, so the assignment is read again once it is open: if it
+    was revoked or replaced, or stop-now applies, skip Listen and both hooks and
+    close. A failed close propagates and does not free the admission slot. Clear
+    lease-local log context, then return ``Available(last_completed=key)`` to
+    continue serving, or ``Stopping`` for exit-on-lease-end and standalone mode.
+    """
+
+    exporter: Exporter
+    key: LeaseKey
+    lease: LeaseContext
+    session_context: AbstractAsyncContextManager[tuple[Session, str, str]] | None = None
+
+    async def run(self, inputs: Inputs) -> Available | Stopping:
+        exporter, lease = self.exporter, self.lease
+        async with self.session_context or exporter.session_for_lease() as (session, main_path, hook_path):
+            lease.session, lease.socket_path, lease.hook_socket_path = session, main_path, hook_path
+            session.lease_context = lease
+            session.update_status(ExporterStatus.BEFORE_LEASE_HOOK, "Preparing lease")
+            # The snapshot this state was entered with predates session setup.
+            latest = exporter.fsm.inputs.snapshot()
+            if not (_released(latest, self.key) or _stop_now(latest)):
+                # Controller mode: Listen/dial tasks for this lease, closed before its session.
+                connections = nullcontext() if exporter.standalone else exporter.lease_connections(lease)
+                async with connections:
+                    await exporter.fsm.run_nested(BeforeLeaseHook(exporter, self.key, lease))
+        clear_log_context()
+        set_log_context(exporter=exporter.exporter_name)
+        if exporter.exit_on_lease_end and not exporter.standalone:
+            exporter.stop(should_unregister=True)
+        # One-shot / standalone sessions exit after this lease.
+        if exporter.exit_on_lease_end or exporter.standalone:
+            return Stopping(exporter)
+        # Available gets a fresh snapshot: it honors shutdown before admitting any replacement.
+        return Available(exporter, last_completed=self.key)
 
 
 @dataclass
 class BeforeLeaseHook:
     """Run the before-lease hook for an admitted assignment.
 
-    Activity state: after session setup, re-check the latest assignment. If the
-    assignment was revoked or stop-now applies, skip both hooks and go to
-    ``ClosingLease``. Otherwise start Listen (controller mode), await the
+    Activity state: first state of the machine nested in ``Leased``, entered
+    with the session open and the assignment still held. Await the
     execution-only before-lease hook under a shielded cancel scope, and select
     ``LeaseReady`` or ``BeforeLeaseHookFailed`` from the outcome.
     """
@@ -97,14 +129,8 @@ class BeforeLeaseHook:
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> LeaseReady | BeforeLeaseHookFailed | ClosingLease:
-        # Setup may have awaited while this assignment was revoked or replaced.
-        if _released(inputs, self.key) or _stop_now(inputs):
-            return ClosingLease(self.exporter, self.key, self.lease)
+    async def run(self, inputs: Inputs) -> LeaseReady | BeforeLeaseHookFailed:
         _update_client(inputs, self.key, self.lease)
-        # Controller mode: start Listen/dial tasks for this lease on the resource stack.
-        if not self.exporter.standalone:
-            await resources.enter_async_context(self.exporter.lease_connections(self.lease))
         executor = self.exporter.hook_executor
         warning = None
         try:
@@ -137,7 +163,7 @@ class LeaseReady:
     lease: LeaseContext
     warning: str | None = None
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> AfterLeaseHook | None:
+    async def run(self, inputs: Inputs) -> AfterLeaseHook | None:
         _update_client(inputs, self.key, self.lease)
         # Release, stop-now, or client EndSession: finish the session via after-hook.
         if _released(inputs, self.key) or _stop_now(inputs) or self.lease.end_session_requested:
@@ -169,9 +195,7 @@ class BeforeLeaseHookFailed:
     lease: LeaseContext
     error: Exception
 
-    async def run(
-        self, inputs: Inputs, resources: AsyncExitStack
-    ) -> ReleasingLease | AwaitingLeaseRelease | AfterLeaseHook | None:
+    async def run(self, inputs: Inputs) -> ReleasingLease | AwaitingLeaseRelease | AfterLeaseHook | None:
         if self.exporter.exporter_status != ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
             await self.exporter.report_status(
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
@@ -205,7 +229,7 @@ class AfterLeaseHook:
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> AwaitingLeaseRelease | AfterLeaseHookFailed:
+    async def run(self, inputs: Inputs) -> AwaitingLeaseRelease | AfterLeaseHookFailed:
         _update_client(inputs, self.key, self.lease)
         executor = self.exporter.hook_executor
         warning = None
@@ -233,7 +257,7 @@ class AfterLeaseHookFailed:
     Activity/policy state: publish ``AFTER_LEASE_HOOK_FAILED``. Explicit
     ``endLease`` failures go through ``ReleasingLease``; ``exit`` requests drain
     shutdown. All paths then reach ``AwaitingLeaseRelease`` (or release then
-    close) so reservation and transport teardown stay ordered.
+    exit) so reservation and transport teardown stay ordered.
     """
 
     exporter: Exporter
@@ -241,7 +265,7 @@ class AfterLeaseHookFailed:
     lease: LeaseContext
     error: Exception
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ReleasingLease | AwaitingLeaseRelease:
+    async def run(self, inputs: Inputs) -> ReleasingLease | AwaitingLeaseRelease:
         await self.exporter.report_status(
             ExporterStatus.AFTER_LEASE_HOOK_FAILED,
             f"afterLease hook failed: {self.error}",
@@ -264,15 +288,15 @@ class ReleasingLease:
     mode the single failed session is retained until stop
     (``AwaitingLeaseRelease``). Otherwise preserve the one-second
     failure-observation window for polling clients, attempt a named release when
-    still assigned, then proceed to ``ClosingLease``. Ordinary cleanup never
-    enters this state.
+    still assigned, then return ``ExitFSM`` so ``Leased`` closes the lease.
+    Ordinary cleanup never enters this state.
     """
 
     exporter: Exporter
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ClosingLease | AwaitingLeaseRelease:
+    async def run(self, inputs: Inputs) -> ExitFSM | AwaitingLeaseRelease:
         if self.exporter.standalone:
             # Direct mode retains its single failed session until the exporter stops.
             return AwaitingLeaseRelease(self.exporter, self.key, self.lease)
@@ -281,7 +305,7 @@ class ReleasingLease:
             await sleep(1)
             # Named ReleaseLease so a delayed retry cannot target a replacement.
             await self.exporter.request_lease_release(self.lease, self.key)
-        return ClosingLease(self.exporter, self.key, self.lease)
+        return ExitFSM()
 
 
 @dataclass
@@ -290,51 +314,22 @@ class AwaitingLeaseRelease:
 
     Waiting state: may report ``AVAILABLE`` while still holding the controller
     reservation—only ``Available`` admits another lease. Return ``None`` until
-    controller release/reassignment or stop-now; proceed to ``ClosingLease``
-    immediately if one already applies. EndSession (and drain alone) does not
-    release the reservation.
+    controller release/reassignment or stop-now; return ``ExitFSM`` immediately
+    if one already applies, so ``Leased`` closes the lease. EndSession (and
+    drain alone) does not release the reservation.
     """
 
     exporter: Exporter
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ClosingLease | None:
+    async def run(self, inputs: Inputs) -> ExitFSM | None:
         _update_client(inputs, self.key, self.lease)
         # Only controller release/reassignment or stop-now frees the reservation.
         if _released(inputs, self.key) or _stop_now(inputs):
-            return ClosingLease(self.exporter, self.key, self.lease)
+            return ExitFSM()
         # EndSession (and drain alone) does not release the controller reservation.
         return None
-
-
-@dataclass
-class ClosingLease:
-    """Tear down lease-scoped resources before admitting another lease or stopping.
-
-    Activity state: stop and join lease I/O, then await ``resources.aclose()`` for
-    the session, sockets, and drivers. A failed close does not free the admission
-    slot. Clear lease-local log context, then return ``Available(last_completed=key)``
-    to continue serving or ``Stopping`` when shutdown, exit-on-lease-end, or
-    standalone mode requires exit.
-    """
-
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
-
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> Available | Stopping:
-        # LIFO: stop and join lease I/O before closing its session, sockets, and drivers.
-        await resources.aclose()
-        clear_log_context()
-        set_log_context(exporter=self.exporter.exporter_name)
-        if self.exporter.exit_on_lease_end and not self.exporter.standalone:
-            self.exporter.stop(should_unregister=True)
-        # One-shot / standalone sessions exit after this lease; otherwise reopen Available.
-        if inputs.shutdown or self.exporter.exit_on_lease_end or self.exporter.standalone:
-            return Stopping(self.exporter)
-        # Available gets a fresh snapshot before it can admit any replacement.
-        return Available(self.exporter, last_completed=self.key)
 
 
 @dataclass
@@ -348,7 +343,7 @@ class Stopping:
 
     exporter: Exporter
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> ExitFSM:
+    async def run(self, inputs: Inputs) -> ExitFSM:
         # Offline status, unregister, telemetry, and sidecar cleanup live on Exporter.
         await self.exporter.finish_shutdown()
         return ExitFSM()

@@ -1163,7 +1163,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 root_device=self.device_factory(),
                 motd=self.motd,
             ) as session:
-                # Available sets session.lease_context after enter with the admitting lease.
+                # Leased sets session.lease_context after enter with its lease.
                 async with session.serve_tcp_and_unix_async(
                     host, port, hook_path_str,
                     tls_credentials=tls_credentials,

@@ -452,7 +452,7 @@ class TestReportStatusGrpcErrorHandling:
         assert report_calls == []
 
     async def test_request_lease_release_exhausts_retries(self):
-        """Release exhaustion returns to the caller so its ClosingLease state can finish locally."""
+        """Release exhaustion returns to the caller so its lease can finish locally."""
         exporter = _make_exporter_for_report_status()
         lease_ctx = LeaseContext(lease_name="test-lease", client_name="test-client")
         exporter.fsm.inputs.publish_lease_assignment(lease_ctx.lease_name)

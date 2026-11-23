@@ -22,7 +22,9 @@ modes. One task
 executes named states sequentially, while background tasks publish observations
 and requests without performing transitions. A state awaits its activity and
 returns a successor, returns `None` to let the runner wait for changed inputs, or
-returns `ExitFSM` to terminate. The accompanying implementation first establishes
+returns `ExitFSM` to terminate. A state that owns resources holds them in an
+`async with` block and runs the states that use them as a nested machine inside
+it. The accompanying implementation first establishes
 the reusable `jumpstarter.fsm` foundation, then migrates both exporter modes to
 the states in `jumpstarter.exporter.fsm`.
 
@@ -173,10 +175,11 @@ distinct after-hook, reservation wait, and transport-close phases below.
 `serve_standalone_tcp()` supplies its TCP/Unix session context to the same states.
 The runner is available as `exporter.fsm.runner` for current-state queries in either mode.
 
-All states use `run(inputs, resources)`. On failure the runner passes the exception
-to the stack's `__aexit__`, then re-raises it regardless of suppression, allowing
-exception-aware resource cleanup without hiding lifecycle failures. Successful
-exit closes remaining resources before publishing `ExitFSM`.
+All states use `run(inputs)`. `Leased` is the one composite state: it holds the
+lease's session and connection contexts in an `async with` block and runs the
+lease's own states inside it through `ExporterFSM.run_nested()`. A failure or
+cancellation in any of them unwinds through that block as ordinary Python, with
+the exception available to exception-aware resource cleanup.
 
 Both modes reuse existing hook execution and session transports. Standalone mode
 shares hook sequencing and resource ownership with controller mode, removing the
@@ -298,10 +301,13 @@ activities, and becomes `ExitFSM` on successful termination. Observers must not
 mutate it. Exceptions/cancellation propagate and leave the last state queryable;
 the runner rejects concurrent or repeated execution.
 
-Retain the last active state while final unwinding runs and publish the terminal
-`ExitFSM` state only after successful
-closure. A cleanup error must propagate rather than look like successful exit.
-Resource context managers must not suppress lifecycle exceptions/cancellation.
+While a state runs a nested machine, `current_state` is the innermost active
+state. Once the nested machine exits it is the owning state again, including
+while that state's resources close. A cleanup error propagates from the owning
+state rather than looking like a successful exit: the runner never reaches
+`ExitFSM`. The runner does not override a context manager that suppresses an
+exception, so resource contexts must not suppress lifecycle
+exceptions/cancellation.
 
 DEBUG logs under `jumpstarter.fsm` include the configured runner name and
 distinguish logical state entry/exit from individual `run()` evaluations.
@@ -411,12 +417,20 @@ The diagram shows the normal path; hook failure states retain the lease and
 failure outcome and own their policy-specific successors.
 
 - **Available:** honor shutdown before admission. Reject the completed assignment
-  key; otherwise prepare the session for the current assignment. Return `None`
-  when there is nothing admissible.
-- **BeforeLeaseHook:** await the existing execution-only hook method and select
-  `LeaseReady` or `BeforeLeaseHookFailed` directly from its outcome. Check the
-  latest assignment after session setup before starting Listen and hook work;
-  skip both hooks and close if setup completed for a revoked assignment.
+  key; otherwise admit the current assignment and transition to `Leased`. Return
+  `None` when there is nothing admissible.
+- **Leased:** composite state. Open the session, and in controller mode the
+  lease's Listen/dial tasks, in an `async with` block and run the lease's states
+  below as a nested machine inside it. Session setup awaits, so read the
+  assignment again once it is open: skip Listen and both hooks and close if
+  setup completed for a revoked assignment or stop-now applies. Leaving the
+  block stops and awaits lease I/O tasks, then closes the session, sockets, and
+  drivers, before returning `Available(last_completed=key)` or `Stopping`; a
+  failed close does not free the slot. A shutdown requested during the lease is
+  honored by `Available`, from a fresh snapshot.
+- **BeforeLeaseHook:** first nested state. Await the existing execution-only
+  hook method and select `LeaseReady` or `BeforeLeaseHookFailed` directly from
+  its outcome.
 - **LeaseReady:** inspect shutdown mode, revocation/reassignment, and this lease's
   EndSession request. Return `None` while normal service continues.
 - **AfterLeaseHook:** run eligible cleanup once, then select
@@ -430,7 +444,7 @@ failure outcome and own their policy-specific successors.
 
 `ReleasingLease` is reached only for an explicit `endLease` hook failure. It
 preserves the existing one-second failure-observation window, then attempts named
-release before local closure. Before-hook `exit`/`endLease` failures bypass the
+release before returning `ExitFSM` for local closure. Before-hook `exit`/`endLease` failures bypass the
 after-hook; successful or partially executed setup can require cleanup even when
 no client name was assigned.
 
@@ -465,10 +479,10 @@ resources are opened and closed:
 
 ```python
 # Inside Leased.run(inputs):
-async with exporter.session_for_lease() as (session, main_path, hook_path):
+async with self.session_context or exporter.session_for_lease() as (session, main_path, hook_path):
     ...  # Retain these references on the lease carried by the nested states.
     async with connections:  # Listen/dial tasks in controller mode
-        await runner.run_nested(BeforeLeaseHook(exporter, self.key, lease))
+        await exporter.fsm.run_nested(BeforeLeaseHook(exporter, self.key, lease))
 # Lease I/O is stopped and joined, then the session, sockets, and drivers are closed.
 return Available(exporter, last_completed=self.key)
 ```
@@ -599,8 +613,9 @@ the old approximately 18-minute unary-RPC retry sequence at a lease boundary.
 ### Standalone lifecycle
 
 Standalone TCP mode publishes a single `standalone` lease assignment and supplies its
-TCP/Unix session context through `Available.session_context`. It uses the same
-states and runner-owned stack, without controller connection tasks or RPCs.
+TCP/Unix session context through `Available.session_context`, which `Leased`
+enters in place of `session_for_lease()`. It uses the same states, without
+controller connection tasks or RPCs.
 `beforeLease` runs once at startup. EndSession runs eligible after-hook cleanup
 once and retains the server for final status/log access until the exporter stops.
 
@@ -630,7 +645,7 @@ stops with code 1. Explicit before-hook failures skip the after-hook in both mod
    | Scattered stop flags/checks | Persistent shutdown intent |
     | Hook completion messages and racing cleanup paths | Sequential activity awaits and successors |
     | `before_lease_hook`, `after_lease_hook_started`, `after_lease_hook_done`, `skip_after_lease_hook` | Hook states, successors, and session-status routing gate |
-    | `lease_ended` | Assignment generation checks and `ClosingLease` |
+    | `lease_ended` | Assignment generation checks and the exit of the machine nested in `Leased` |
     | `LeaseContext.current_status` / `status_message` | Session-owned status and message |
    | `LeaseFinished` | Awaited full resource teardown by the lifecycle task |
    | Multiple lifecycle status writers | One state/outcome publisher |
@@ -679,11 +694,12 @@ calls during both hook phases, and verifies producer and connection-task shutdow
 
 ### Static verification
 
-Positive `assert_type()` checks pass for Python 3.12 and 3.14 targets. Eight
-temporary negative probes reject invalid state/successor returns, shutdown mode,
-metadata types, writes to `current_state`, and mismatched state/input-source
-input types, including legacy state methods missing the resource-stack argument.
-Each diagnostic points to its intended statement.
+Positive `assert_type()` checks pass for Python 3.12 and 3.14 targets. On
+2026-10-28, eight temporary negative probes rejected invalid state/successor
+returns, shutdown mode, metadata types, writes to `current_state`, and
+mismatched state/input-source input types, each at its intended statement. One
+of them covered state methods missing the resource-stack argument, which no
+longer exists.
 
 From `python/`:
 
@@ -734,9 +750,11 @@ LeaseContext checks pass. Core and CLI package typing pass for Linux. Native ful
 The project's `--capture=no` setting is needed by shell tests that pass stdin to
 subprocesses.
 
-Verification on 2026-11-23 after replacing the resource stack with nested
-machines: the 15 foundation tests pass, package typing passes for Linux, and the
-documentation builds with warnings as errors.
+Verification on 2026-11-23 after replacing the resource stack with the composite
+`Leased` state: the core package suite (including doctests) has 1,124 passing
+tests and the same 20 XPASS cases; the exporter/shared-runner suite has 291
+passing tests. CLI run/signal checks have 13 passing cases. Core package typing
+passes for Linux, and the documentation builds with warnings as errors.
 
 ### Hardware-in-the-loop and manual verification
 
@@ -756,9 +774,9 @@ and `jumpstarter.exporter.fsm` to inspect evaluation timing and named transition
   provided and used by both exporter modes.
 - [x] Independent input sources, external state queries, safe debug tracing,
   behavioral checks, and positive/negative typing verification work.
-- [x] The runner-owned `AsyncExitStack` is passed to states; context lifetime,
-  same-task LIFO teardown, bounded cancellation-safe closing, and supervisor exit
-  pass the resource-stack checks above.
+- [x] `Leased` holds lease resources in an `async with` block around a nested
+  machine; context lifetime, same-task LIFO teardown, bounded cancellation-safe
+  closing, and supervisor exit pass the resource-scope checks above.
 - [x] Real lifecycle/failure states own hook sequencing, status publication, and
   resource teardown with one coherent exporter cutover.
 - [x] Reservation/final-log behavior, driver gating, shutdown deferral, and stream
@@ -775,9 +793,9 @@ messages, CRDs, CLI flags, configuration, or exported driver methods. The Python
 interfaces and lifecycle policy remain subject to JEP review. Standalone TCP mode
 now uses the same FSM, retaining its single-session lifetime and local hook access.
 
-Adding `resources: AsyncExitStack` changes the reference state method signature
-from `run(snapshot)` to `run(inputs, resources)`. Update all reference states and
-type examples together; the implementation and checks use the revised signature.
+State methods read `run(inputs)`. An earlier revision of this proposal passed a
+runner-owned `AsyncExitStack` as a second argument; that argument is gone, and
+states written against it drop it.
 
 The migration deliberately changes ordinary stop handling in both modes
 during activities: requests wait for a bounded activity boundary rather than
@@ -858,11 +876,10 @@ covered in DD-1 through DD-4.
   readiness polling, and all `LeaseContext` events and duplicated status. Retain
   EndSession as a boolean request; use session-status notification for routing.
 
-- 2026-11-23: Replace the runner-owned `AsyncExitStack` with nested machines
-  (`FSMRunner.run_nested`): a composite state holds resources in an `async with`
-  block and runs the states that use them inside it. State methods read
-  `run(inputs)`; the proposed `ClosingLease` state becomes the composite
-  `Leased` state.
+- 2026-11-23: Replace the runner-owned `AsyncExitStack` with a composite
+  `Leased` state that holds lease resources in an `async with` block and runs
+  the lease's states as a nested machine (`FSMRunner.run_nested`). State methods
+  read `run(inputs: Inputs)`; `ClosingLease` and `Available.admitting` are gone.
 
 ## References
 
