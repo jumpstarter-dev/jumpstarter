@@ -163,12 +163,9 @@ exporter modes. Hardware-backed acceptance remains a pre-merge check.
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm/input.py` | Immutable snapshots, shutdown merge policy, and coalescing input notifications |
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm/states.py` | Production lifecycle/failure states; class docstrings are the canonical phase descriptions |
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm/lease_context.py` | Live lease references, socket paths, and the EndSession request shared across states |
-| `python/packages/jumpstarter/jumpstarter/exporter/fsm/fsm_test.py` | Typed demonstration states and exporter-input checks using existing `LeaseContext` objects |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/fsm_test.py` | Exporter-input checks: snapshots, generations, shutdown merging, lease-local requests, and logging |
 | `python/packages/jumpstarter/jumpstarter/exporter/fsm/fsm_lifecycle_test.py` | Production lifecycle checks using real session sockets and controlled controller/hook operations |
 
-The demo does not open real sessions or transports. Its compact `Cleanup` state
-stands in for completion. Production states and integration checks implement the
-distinct after-hook, reservation wait, and transport-close phases below.
 `Exporter.serve()` now runs the lifecycle through `ExporterFSM`, the wrapper in
 `jumpstarter.exporter.fsm` that owns the input buffer and the single-use
 `FSMRunner`, after registration;
@@ -754,7 +751,9 @@ Verification on 2026-11-23 after replacing the resource stack with the composite
 `Leased` state: the core package suite (including doctests) has 1,124 passing
 tests and the same 20 XPASS cases; the exporter/shared-runner suite has 291
 passing tests. CLI run/signal checks have 13 passing cases. Core package typing
-passes for Linux, and the documentation builds with warnings as errors.
+passes for Linux, and the documentation builds with warnings as errors. The
+typed demonstration states were then removed from the exporter-input checks,
+which the production lifecycle suite covers with real states: 1,121 core tests.
 
 ### Hardware-in-the-loop and manual verification
 
