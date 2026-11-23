@@ -24,6 +24,7 @@ from anyio import (
     EndOfStream,
     Event,
     Lock,
+    create_task_group,
     current_time,
     fail_after,
     move_on_after,
@@ -201,8 +202,7 @@ class QemuPower(PowerInterface, Driver):
             try:
                 await self._start()
             except BaseException:
-                with CancelScope(shield=True):
-                    await self._stop(warn_if_off=False)
+                await self._stop(warn_if_off=False)
                 raise
 
     async def _start(self) -> None:  # noqa: C901
@@ -403,15 +403,18 @@ class QemuPower(PowerInterface, Driver):
                 except ConnectError:
                     await sleep(0.5)
 
-        if not self.parent.launcher_socket:
-            chardevs = await qmp.execute("query-chardev")
-            pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")  # ty: ignore[not-iterable]
-            Path(self.parent._pty).unlink(missing_ok=True)
-            Path(self.parent._pty).symlink_to(pty)
+            if not self.parent.launcher_socket:
+                chardevs = await qmp.execute("query-chardev")
+                pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")  # ty: ignore[not-iterable]
+                Path(self.parent._pty).unlink(missing_ok=True)
+                Path(self.parent._pty).symlink_to(pty)
 
-        await qmp.execute("system_reset")
-        await qmp.disconnect()
-        if getattr(self, "_process", None) is process and process.poll() is None:
+            await qmp.execute("system_reset")
+            await qmp.disconnect()
+        returncode = process.poll()
+        if returncode is not None:
+            raise RuntimeError(f"QEMU exited during startup (status {returncode})")
+        if getattr(self, "_process", None) is process:
             self._serial_process = process
             self._notify_serial_change()
 
@@ -426,23 +429,27 @@ class QemuPower(PowerInterface, Driver):
         await self._off(warn_if_off=True)
 
     async def _off(self, warn_if_off: bool) -> None:
-        async with self._power_lock:
-            await self._stop(warn_if_off=warn_if_off)
+        # gRPC cancels the handler directly; its child must finish before releasing the lock.
+        async with self._power_lock, create_task_group() as tasks:
+            tasks.start_soon(self._stop, warn_if_off)
 
-    async def _stop(self, *, warn_if_off: bool) -> None:
+    async def _stop(self, warn_if_off: bool) -> None:
         # Both callers hold _power_lock, including rollback of incomplete startup.
-        self._serial_process = None
-        self._notify_serial_change()
-        process = getattr(self, "_process", None)
-        if process is None or process.poll() is not None:
-            self.logger.log(logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request")
-        else:
-            process.terminate()
-            try:
-                await to_thread.run_sync(process.wait, 5)
-            except TimeoutExpired:
-                process.kill()
-        self._cleanup_power_off()
+        with CancelScope(shield=True):
+            self._serial_process = None
+            self._notify_serial_change()
+            process = getattr(self, "_process", None)
+            if process is None or process.poll() is not None:
+                self.logger.log(
+                    logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request"
+                )
+            else:
+                process.terminate()
+                try:
+                    await to_thread.run_sync(process.wait, 5)
+                except TimeoutExpired:
+                    process.kill()
+            self._cleanup_power_off()
 
     def _cleanup_power_off(self) -> None:
         if hasattr(self, "_process"):
@@ -465,6 +472,8 @@ class _QemuSerialStream(ObjectStream[bytes]):
     _stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False)
     _source: ObjectStream[bytes] | None = field(default=None, init=False)
     _process: Popen[bytes] | None = field(default=None, init=False)
+    # Reuse the readiness event as a generation token when release() invalidates the source.
+    _generation: Event | None = field(default=None, init=False)
     _closed: bool = field(default=False, init=False)
 
     def _current_process(self) -> Popen[bytes] | None:
@@ -474,6 +483,7 @@ class _QemuSerialStream(ObjectStream[bytes]):
     async def _disconnect(self) -> None:
         self._source = None
         self._process = None
+        self._generation = None
         await self._stack.aclose()
 
     async def receive(self) -> bytes:
@@ -485,9 +495,9 @@ class _QemuSerialStream(ObjectStream[bytes]):
                 await changed.wait()
                 continue
             try:
-                if process is not self._process:
+                if process is not self._process or changed is not self._generation:
                     await self._disconnect()
-                    if self._current_process() is not process:
+                    if self._current_process() is not process or self.power._serial_changed is not changed:
                         continue
                 with CancelScope() as scope:
                     self.power._serial_read_scope = scope
@@ -495,24 +505,29 @@ class _QemuSerialStream(ObjectStream[bytes]):
                         if process is not self._process:
                             self._source = await self._stack.enter_async_context(self.source_factory())
                             self._process = process
-                            # Power may have changed while the physical port was opening.
-                            if self._current_process() is not process:
+                            self._generation = changed
+                            # Power or release state may have changed while the physical port was opening.
+                            if self._current_process() is not process or self.power._serial_changed is not changed:
                                 continue
                         assert self._source is not None
                         data = await self._source.receive()
-                        if self._current_process() is process:
+                        if self._current_process() is process and self.power._serial_changed is changed:
                             return data
                     finally:
                         self.power._serial_read_scope = None
             except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream) as exc:
                 connected_process = self._process
                 await self._disconnect()
-                if self._current_process() is process and (
-                    connected_process is not process
-                    or (isinstance(exc, OSError) and exc.errno not in (None, errno.EIO))
+                if (
+                    self._current_process() is process
+                    and self.power._serial_changed is changed
+                    and (
+                        connected_process is not process
+                        or (isinstance(exc, OSError) and exc.errno not in (None, errno.EIO))
+                    )
                 ):
                     raise  # Initial-open failures and unrelated errors must stay visible.
-                # An established PTY hangup stays silent until the next power transition.
+                # An established PTY hangup stays silent until power or release state changes.
                 await changed.wait()
         raise ClosedResourceError
 
@@ -521,12 +536,18 @@ class _QemuSerialStream(ObjectStream[bytes]):
             raise ClosedResourceError
         source = self._source
         process = self._process
-        if source is None or process is None or self._current_process() is not process:
-            return  # An unpowered serial line silently discards input; never replay it.
+        generation = self._generation
+        if (
+            source is None
+            or process is None
+            or self._current_process() is not process
+            or generation is not self.power._serial_changed
+        ):
+            return  # An unavailable serial line silently discards input; never replay it.
         try:
             await source.send(item)
         except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
-            if self._current_process() is process:
+            if self._current_process() is process and generation is self.power._serial_changed:
                 raise
 
     async def send_eof(self) -> None:
@@ -541,6 +562,20 @@ class _QemuSerialStream(ObjectStream[bytes]):
 @dataclass(kw_only=True)
 class QemuConsole(PySerial):
     power: QemuPower
+
+    async def _wait_acquired(self):
+        changed = self.power._serial_changed
+        await super()._wait_acquired()
+        process = self.power._serial_process
+        if self.power._serial_changed is not changed or process is None or process.poll() is not None:
+            raise ClosedResourceError  # Recheck readiness before PySerial can open a stale PTY.
+
+    @export
+    async def release(self):
+        try:
+            await super().release()
+        finally:
+            self.power._notify_serial_change()
 
     @asynccontextmanager
     async def _open_source(self):
