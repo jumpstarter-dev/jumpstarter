@@ -5,7 +5,7 @@
 | **JEP**       | 0019                                                      |
 | **Title**     | Scale and Performance Testing                             |
 | **Author(s)** | @mangelajo (Miguel Angel Ajo Pelayo <miguelangel@ajo.es>) |
-| **Status**    | Draft                                                     |
+| **Status**    | Implementing                                              |
 | **Type**      | Standards Track                                           |
 | **Created**   | 2026-11-19                                                |
 | **Requires**  | None                                                      |
