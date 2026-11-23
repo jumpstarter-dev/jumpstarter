@@ -330,8 +330,10 @@ func (r *JumpstarterReconciler) observabilityRequeueAfter(
 		requeueAfter = telemetryCARequeueInterval
 	}
 	if requeueAfter > 2*time.Minute {
-		switch serviceMonitor.phase {
-		case serviceMonitorWaitingForCRD, serviceMonitorProbeFailed, serviceMonitorApplyFailed:
+		// Only the waiting phase can reach this point: a probe or apply failure
+		// always returns an error, and the caller returns before computing the
+		// requeue.
+		if serviceMonitor.phase == serviceMonitorWaitingForCRD {
 			requeueAfter = 2 * time.Minute
 		}
 	}

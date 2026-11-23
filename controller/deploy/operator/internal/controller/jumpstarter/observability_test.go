@@ -22,6 +22,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -422,5 +423,28 @@ func TestPodLabelsDoNotChangeSelector(t *testing.T) {
 	}
 	if router.Spec.Template.Labels[logScrapeLabel] != "true" || router.Spec.Template.Labels[logFormatLabel] != "json" {
 		t.Errorf("router pod template missing discovery labels: %v", router.Spec.Template.Labels)
+	}
+}
+
+func TestObservabilityRequeueAfterPhases(t *testing.T) {
+	// Probe and apply failures return an error, so the caller never reaches the
+	// requeue calculation; only the waiting phase shortens the interval here.
+	r := &JumpstarterReconciler{}
+	js := &operatorv1alpha1.Jumpstarter{}
+
+	tests := []struct {
+		phase serviceMonitorPhase
+		want  time.Duration
+	}{
+		{serviceMonitorActive, 30 * time.Minute},
+		{serviceMonitorDisabled, 30 * time.Minute},
+		{serviceMonitorWaitingForCRD, 2 * time.Minute},
+	}
+
+	for _, tc := range tests {
+		result := serviceMonitorResult{phase: tc.phase}
+		if got := r.observabilityRequeueAfter(context.Background(), js, result); got != tc.want {
+			t.Errorf("phase %v: requeue = %s, want %s", tc.phase, got, tc.want)
+		}
 	}
 }
