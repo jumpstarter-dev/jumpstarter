@@ -69,7 +69,16 @@ class Available:
 
 
 @dataclass
-class Leased:
+class _LeaseState:
+    """Fields shared by ``Leased`` and the states that run inside it."""
+
+    exporter: Exporter
+    key: LeaseKey
+    lease: LeaseContext
+
+
+@dataclass
+class Leased(_LeaseState):
     """Own one lease's session, sockets, drivers, and I/O for as long as it runs.
 
     Composite state: open the session, then run the lease's own states, from
@@ -86,9 +95,6 @@ class Leased:
     continue serving, or ``Stopping`` for exit-on-lease-end and standalone mode.
     """
 
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
     session_context: AbstractAsyncContextManager[tuple[Session, str, str]] | None = None
 
     async def run(self, inputs: Inputs) -> Available | Stopping:
@@ -116,7 +122,7 @@ class Leased:
 
 
 @dataclass
-class BeforeLeaseHook:
+class BeforeLeaseHook(_LeaseState):
     """Run the before-lease hook for an admitted assignment.
 
     Activity state: first state of the machine nested in ``Leased``, entered
@@ -124,10 +130,6 @@ class BeforeLeaseHook:
     execution-only before-lease hook under a shielded cancel scope, and select
     ``LeaseReady`` or ``BeforeLeaseHookFailed`` from the outcome.
     """
-
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
 
     async def run(self, inputs: Inputs) -> LeaseReady | BeforeLeaseHookFailed:
         _update_client(inputs, self.key, self.lease)
@@ -149,7 +151,7 @@ class BeforeLeaseHook:
 
 
 @dataclass
-class LeaseReady:
+class LeaseReady(_LeaseState):
     """Serve an active lease until the session needs finishing.
 
     Waiting state: inspect shutdown mode, revocation/reassignment, and this
@@ -158,9 +160,6 @@ class LeaseReady:
     ``AfterLeaseHook`` when the session must finish.
     """
 
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
     warning: str | None = None
 
     async def run(self, inputs: Inputs) -> AfterLeaseHook | None:
@@ -180,7 +179,7 @@ class LeaseReady:
 
 
 @dataclass
-class BeforeLeaseHookFailed:
+class BeforeLeaseHookFailed(_LeaseState):
     """Hold a failed before-lease hook outcome until cleanup policy applies.
 
     Waiting/policy state: publish ``BEFORE_LEASE_HOOK_FAILED``. Explicit
@@ -190,9 +189,6 @@ class BeforeLeaseHookFailed:
     release, stop-now, or EndSession requires ``AfterLeaseHook`` cleanup.
     """
 
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
     error: Exception
 
     async def run(self, inputs: Inputs) -> ReleasingLease | AwaitingLeaseRelease | AfterLeaseHook | None:
@@ -216,7 +212,7 @@ class BeforeLeaseHookFailed:
 
 
 @dataclass
-class AfterLeaseHook:
+class AfterLeaseHook(_LeaseState):
     """Run the after-lease cleanup hook once for this assignment.
 
     Activity state: await the execution-only after-lease hook under a shielded
@@ -224,10 +220,6 @@ class AfterLeaseHook:
     ``AfterLeaseHookFailed``. Reports ``AVAILABLE`` after a successful (or
     warning-only) cleanup; reservation retention still belongs to the successor.
     """
-
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
 
     async def run(self, inputs: Inputs) -> AwaitingLeaseRelease | AfterLeaseHookFailed:
         _update_client(inputs, self.key, self.lease)
@@ -251,7 +243,7 @@ class AfterLeaseHook:
 
 
 @dataclass
-class AfterLeaseHookFailed:
+class AfterLeaseHookFailed(_LeaseState):
     """Apply after-lease hook failure policy, then wait for release or close.
 
     Activity/policy state: publish ``AFTER_LEASE_HOOK_FAILED``. Explicit
@@ -260,9 +252,6 @@ class AfterLeaseHookFailed:
     exit) so reservation and transport teardown stay ordered.
     """
 
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
     error: Exception
 
     async def run(self, inputs: Inputs) -> ReleasingLease | AwaitingLeaseRelease:
@@ -281,7 +270,7 @@ class AfterLeaseHookFailed:
 
 
 @dataclass
-class ReleasingLease:
+class ReleasingLease(_LeaseState):
     """Request controller release after an explicit ``endLease`` hook failure.
 
     Activity state: reached only for ``endLease`` hook failures. In standalone
@@ -291,10 +280,6 @@ class ReleasingLease:
     still assigned, then return ``ExitFSM`` so ``Leased`` closes the lease.
     Ordinary cleanup never enters this state.
     """
-
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
 
     async def run(self, inputs: Inputs) -> ExitFSM | AwaitingLeaseRelease:
         if self.exporter.standalone:
@@ -309,7 +294,7 @@ class ReleasingLease:
 
 
 @dataclass
-class AwaitingLeaseRelease:
+class AwaitingLeaseRelease(_LeaseState):
     """Retain reservation and final-log access after hooks complete.
 
     Waiting state: may report ``AVAILABLE`` while still holding the controller
@@ -318,10 +303,6 @@ class AwaitingLeaseRelease:
     if one already applies, so ``Leased`` closes the lease. EndSession (and
     drain alone) does not release the reservation.
     """
-
-    exporter: Exporter
-    key: LeaseKey
-    lease: LeaseContext
 
     async def run(self, inputs: Inputs) -> ExitFSM | None:
         _update_client(inputs, self.key, self.lease)
