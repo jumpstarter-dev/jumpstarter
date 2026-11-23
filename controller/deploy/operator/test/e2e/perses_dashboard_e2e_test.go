@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -49,7 +50,12 @@ var _ = Describe("Perses dashboard integration", Ordered, func() {
 		}
 
 		if exec.Command("kubectl", "get", "crd", persesDashboardCRDName).Run() != nil {
-			crdPath := filepath.Join("..", "..", "config", "test", "perses", "persesdashboard-crd.yaml")
+			// Resolve from this file: utils.Run changes the process working
+			// directory to the module root, so a relative path is unreliable.
+			_, thisFile, _, _ := runtime.Caller(0)
+			crdPath := filepath.Join(
+				filepath.Dir(thisFile), "..", "..", "config", "test", "perses", "persesdashboard-crd.yaml",
+			)
 			out, err := exec.Command("kubectl", "apply", "-f", crdPath).CombinedOutput()
 			Expect(err).NotTo(HaveOccurred(), string(out))
 			installedByTest = true
