@@ -135,3 +135,19 @@ func (l *Lease) HasLostMember() bool {
 	}
 	return false
 }
+
+// MarkMemberLost sets the Bound member with this role name to Lost with a
+// reason and a message. Lost is final: the member keeps its exporterRef, and
+// the lease keeps its claim until it ends. It reports whether the status
+// changed; the caller writes the status. The lease controller then sets the
+// Degraded and Ready conditions and takes the lease away from the exporter.
+func (l *Lease) MarkMemberLost(name, reason, message string) bool {
+	m := l.MemberStatus(name)
+	if m == nil || m.State != LeaseMemberStateBound {
+		return false
+	}
+	m.State = LeaseMemberStateLost
+	m.Reason = reason
+	m.Message = message
+	return true
+}
