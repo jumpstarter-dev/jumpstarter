@@ -94,12 +94,12 @@ func TestParseRuntimeConfig_kvmEnabled(t *testing.T) {
 		},
 	}
 
-	kvm, devices := ParseRuntimeConfig(params)
-	if !kvm {
+	cfg := ParseRuntimeConfig(params)
+	if !cfg.KVM {
 		t.Error("kvm = false, want true")
 	}
-	if len(devices) != 0 {
-		t.Errorf("devices = %v, want empty", devices)
+	if len(cfg.ExtraDevices) != 0 {
+		t.Errorf("devices = %v, want empty", cfg.ExtraDevices)
 	}
 }
 
@@ -111,24 +111,35 @@ func TestParseRuntimeConfig_withDevices(t *testing.T) {
 		},
 	}
 
-	kvm, devices := ParseRuntimeConfig(params)
-	if !kvm {
+	cfg := ParseRuntimeConfig(params)
+	if !cfg.KVM {
 		t.Error("kvm = false, want true")
 	}
-	if len(devices) != 2 {
-		t.Fatalf("devices = %v, want 2 entries", devices)
+	if len(cfg.ExtraDevices) != 2 {
+		t.Fatalf("devices = %v, want 2 entries", cfg.ExtraDevices)
 	}
-	if devices[0] != "/dev/vhost-net" || devices[1] != "/dev/net/tun" {
-		t.Errorf("devices = %v", devices)
+	if cfg.ExtraDevices[0] != "/dev/vhost-net" || cfg.ExtraDevices[1] != "/dev/net/tun" {
+		t.Errorf("devices = %v", cfg.ExtraDevices)
 	}
 }
 
 func TestParseRuntimeConfig_missing(t *testing.T) {
-	kvm, devices := ParseRuntimeConfig(map[string]any{})
-	if kvm {
+	cfg := ParseRuntimeConfig(map[string]any{})
+	if cfg.KVM {
 		t.Error("kvm = true, want false")
 	}
-	if devices != nil {
-		t.Errorf("devices = %v, want nil", devices)
+	if cfg.ExtraDevices != nil {
+		t.Errorf("devices = %v, want nil", cfg.ExtraDevices)
+	}
+}
+
+func TestParseRuntimeConfig_hostNetwork(t *testing.T) {
+	cfg := ParseRuntimeConfig(map[string]any{
+		"runtime": map[string]any{
+			"host_network": true,
+		},
+	})
+	if !cfg.HostNetwork {
+		t.Error("host_network = false, want true")
 	}
 }

@@ -18,6 +18,7 @@ package exporterset
 
 import (
 	"context"
+	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
@@ -26,7 +27,7 @@ import (
 // Deployer is an optional interface that off-cluster provisioners
 // implement to manage exporter instances outside the Kubernetes
 // cluster. When a Provisioner also implements Deployer, the
-// reconciler calls Deploy/IsDeployed instead of creating Pods.
+// reconciler calls Deploy/DeployedAt instead of creating Pods.
 //
 // In-cluster provisioners (e.g. qemu.jumpstarter.dev) do not
 // implement this interface — they use RenderPod and standard Pod
@@ -45,10 +46,16 @@ type Deployer interface {
 		caBundle string,
 	) error
 
-	// IsDeployed reports whether the exporter instance is already
-	// running on its assigned remote host.
-	IsDeployed(
-		ctx context.Context,
+	// DeployedAt reports whether Deploy has completed for this exporter and,
+	// if so, when. The presence of a valid timestamp is itself the deployment
+	// marker — no separate boolean annotation is needed. A zero time with
+	// deployed=false means deployment has not completed yet. The reconciler
+	// measures the never-registered startup deadline from at, so a deployment
+	// that takes longer than the deadline is not recycled the moment it
+	// finishes. When at is zero but deployed is true (annotation present but
+	// unparsable), the caller falls back to the exporter's creation
+	// timestamp.
+	DeployedAt(
 		exporter *jumpstarterdevv1alpha1.Exporter,
-	) (bool, error)
+	) (at time.Time, deployed bool)
 }

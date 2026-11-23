@@ -96,7 +96,13 @@ func Connect(cfg SSHConnectConfig) (*SSHHost, error) {
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // lab hosts; TODO: make configurable
+		// TODO(security): accept any host key — fine for isolated lab networks,
+		// but a production deployment should verify keys. Options:
+		//   1. Store known host keys in the credentials Secret (ssh-known-hosts field)
+		//   2. Accept on first connect and pin (TOFU), rejecting changes
+		//   3. Let the VirtualTargetClass opt into insecure mode explicitly
+		// Track in a follow-up issue before promoting qemu-ssh to GA.
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec
 		Timeout:         defaultConnectTimeout,
 	}
 
@@ -344,8 +350,7 @@ func isNotExist(err error) bool {
 	if os.IsNotExist(err) || errors.Is(err, os.ErrNotExist) {
 		return true
 	}
-	var statusErr *sftp.StatusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*sftp.StatusError](err); ok {
 		return statusErr.FxCode() == sftp.ErrSSHFxNoSuchFile
 	}
 	return false

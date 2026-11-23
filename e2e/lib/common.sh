@@ -72,8 +72,9 @@ run_ginkgo() {
     shift || true
 
     local timeout="30m"
-    # Full suite and ExporterSet QEMU runs need TCG headroom (flash/boot when enabled).
-    # "!exporterset-qemu" also matches the positive substring, so check negation first.
+    # Full suite and ExporterSet QEMU runs need TCG headroom (flash/boot when
+    # enabled). "!exporterset-qemu" also matches the positive substring, so
+    # check negation first. exporterset-qemu-ssh matches here too (substring).
     if [[ "${label_filter}" != *"!exporterset-qemu"* ]] && \
        { [[ -z "${label_filter}" ]] || [[ "${label_filter}" == *"exporterset-qemu"* ]]; }; then
         timeout="60m"
