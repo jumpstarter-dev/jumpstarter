@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Protocol
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ExitFSM:
-    """Stop evaluating states; the runner closes remaining resources before exit."""
+    """Stop evaluating states; a nested machine returns to the state that runs it."""
 
 
 class InputSource[InputsT](Protocol):
@@ -26,7 +25,7 @@ class InputSource[InputsT](Protocol):
 
 
 class State[InputsT](Protocol):
-    async def run(self, inputs: InputsT, resources: AsyncExitStack) -> State[InputsT] | ExitFSM | None:
+    async def run(self, inputs: InputsT) -> State[InputsT] | ExitFSM | None:
         """Return a successor, ExitFSM to exit, or None to wait for changed inputs."""
         ...
 
@@ -45,11 +44,30 @@ class FSMRunner[InputsT]:
         self._inputs = inputs
         self._name = name
         self._started = False
+        self._nested: FSMRunner[InputsT] | None = None
 
     @property
     def current_state(self) -> State[InputsT] | ExitFSM:
-        """The initial/current/terminal object; observers must not mutate it."""
-        return self._state
+        """The initial/current/terminal object; observers must not mutate it.
+
+        While a state runs a nested machine, this is the innermost active state.
+        """
+        return self._nested.current_state if self._nested is not None else self._state
+
+    async def run_nested(self, initial: State[InputsT] | ExitFSM) -> None:
+        """Run a nested machine to its exit, from inside the current state's run().
+
+        A state that owns resources opens them with ``async with`` and runs the
+        states that use them here, so they live exactly as long as that block.
+        """
+        if self._nested is not None:
+            await self._nested.run_nested(initial)
+            return
+        nested = FSMRunner(initial, self._inputs, name=f"{self._name}/{type(self._state).__name__}")
+        self._nested = nested
+        await nested.run()
+        # Reached only on a successful exit: a failed nested state stays queryable.
+        self._nested = None
 
     async def run(self) -> None:
         """Run once; preserve the last state and propagate failures/cancellation."""
@@ -57,39 +75,27 @@ class FSMRunner[InputsT]:
             raise RuntimeError("FSMRunner can only be run once")
         self._started = True
         logger.info("FSM %s enter %s", self._name, type(self._state).__name__)
-        resources = AsyncExitStack()
         try:
-            try:
-                while not isinstance(self._state, ExitFSM):
-                    # State coroutines may return without yielding, starving cancellation and input producers.
-                    # Checkpoint before capturing inputs so the next evaluation sees their latest updates.
-                    await checkpoint()
-                    state = self._state
-                    state_name = type(state).__name__
-                    inputs, changed = self._inputs.snapshot_and_watch()
-                    started = perf_counter()
-                    logger.info("FSM %s run %s started", self._name, state_name)
-                    try:
-                        successor = await state.run(inputs, resources)
-                    finally:
-                        logger.info("FSM %s run %s ended in %.6fs", self._name, state_name, perf_counter() - started)
-                    if successor is None:
-                        logger.info("FSM %s wait %s for inputs", self._name, state_name)
-                        await changed.wait()
-                    else:
-                        if isinstance(successor, ExitFSM):
-                            # Keep the last active state queryable until cleanup has actually succeeded.
-                            await resources.aclose()
-                        logger.debug("FSM %s exit %s", self._name, state_name)
-                        self._state = successor
-                        logger.debug("FSM %s enter %s", self._name, type(successor).__name__)
-            except BaseException as error:
-                # Exception-aware resources need the failure (e.g. to roll back).
-                # Ignore suppression: a resource cannot turn a failed lifecycle into success.
-                await resources.__aexit__(type(error), error, error.__traceback__)
-                raise
-            else:
-                await resources.aclose()
+            while not isinstance(self._state, ExitFSM):
+                # State coroutines may return without yielding, starving cancellation and input producers.
+                # Checkpoint before capturing inputs so the next evaluation sees their latest updates.
+                await checkpoint()
+                state = self._state
+                state_name = type(state).__name__
+                inputs, changed = self._inputs.snapshot_and_watch()
+                started = perf_counter()
+                logger.info("FSM %s run %s started", self._name, state_name)
+                try:
+                    successor = await state.run(inputs)
+                finally:
+                    logger.info("FSM %s run %s ended in %.6fs", self._name, state_name, perf_counter() - started)
+                if successor is None:
+                    logger.info("FSM %s wait %s for inputs", self._name, state_name)
+                    await changed.wait()
+                else:
+                    logger.debug("FSM %s exit %s", self._name, state_name)
+                    self._state = successor
+                    logger.debug("FSM %s enter %s", self._name, type(successor).__name__)
         except BaseException as error:
             logger.error("FSM %s stopped in %s (%s)", self._name, type(self._state).__name__, type(error).__name__)
             raise

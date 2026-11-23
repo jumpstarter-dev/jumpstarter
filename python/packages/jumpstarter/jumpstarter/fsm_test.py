@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, assert_type
 
@@ -39,8 +39,8 @@ class Switch:
 
 if TYPE_CHECKING:
 
-    async def _check_types(state: State[bool], inputs: InputSource[bool], resources: AsyncExitStack) -> None:
-        assert_type(await state.run(False, resources), State[bool] | ExitFSM | None)
+    async def _check_types(state: State[bool], inputs: InputSource[bool]) -> None:
+        assert_type(await state.run(False), State[bool] | ExitFSM | None)
         assert_type(FSMRunner(state, inputs).current_state, State[bool] | ExitFSM)
 
 
@@ -60,7 +60,7 @@ async def test_named_runner_queries_waiting_transitions_and_timings(
     snapshots: list[bool] = []
 
     class Activity:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> ExitFSM:
+        async def run(self, inputs: bool) -> ExitFSM:
             assert inputs
             entered.set()
             await release.wait()
@@ -69,7 +69,7 @@ async def test_named_runner_queries_waiting_transitions_and_timings(
     activity = Activity()
 
     class Waiting:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> Activity | None:
+        async def run(self, inputs: bool) -> Activity | None:
             snapshots.append(inputs)
             evaluated.set()
             return activity if inputs else None
@@ -131,7 +131,7 @@ async def test_exit_fsm_can_be_the_initial_state() -> None:
 @pytest.mark.anyio
 async def test_already_cancelled_runner_does_not_evaluate_states() -> None:
     class Immediate:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> ExitFSM:
+        async def run(self, inputs: bool) -> ExitFSM:
             raise AssertionError("State ran despite pending cancellation")
 
     initial = Immediate()
@@ -152,7 +152,7 @@ async def test_immediate_transitions_allow_input_publication_and_cancellation() 
     snapshots: list[bool] = []
 
     class Immediate:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> Immediate:
+        async def run(self, inputs: bool) -> Immediate:
             snapshots.append(inputs)
             # A finite limit makes starvation fail instead of hanging the event loop.
             assert len(snapshots) < 100, "Immediate transitions starved the producer"
@@ -191,7 +191,7 @@ async def test_runner_preserves_state_and_propagates_failure_or_cancellation(
     error = RuntimeError("state failed")
 
     class Activity:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> ExitFSM:
+        async def run(self, inputs: bool) -> ExitFSM:
             entered.set()
             if cancel:
                 await sleep_forever()
@@ -232,11 +232,11 @@ async def test_runner_preserves_state_and_propagates_failure_or_cancellation(
 
 
 @pytest.mark.anyio
-async def test_resource_lifetime_across_transitions_waits_and_stack_reuse() -> None:
+async def test_nested_machine_scopes_resources_to_the_state_that_runs_it(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.DEBUG, logger="jumpstarter.fsm")
     inputs = Switch()
-    waiting = Event()
+    waiting = {"a": Event(), "b": Event()}
     trace: list[str] = []
-    stacks: list[AsyncExitStack] = []
     tasks: list[int] = []
 
     @asynccontextmanager
@@ -247,47 +247,89 @@ async def test_resource_lifetime_across_transitions_waits_and_stack_reuse() -> N
             yield
         finally:
             await checkpoint()
-            assert not isinstance(runner.current_state, ExitFSM)
+            # The nested machine has exited: the owning state is current again.
+            assert isinstance(runner.current_state, Scope)
             tasks.append(get_current_task().id)
             trace.append(f"close {name}")
 
-    class Open:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> Waiting:
-            stacks.append(resources)
-            await resources.enter_async_context(resource("first"))
-            await resources.enter_async_context(resource("second"))
-            return Waiting()
+    @dataclass
+    class Scope:
+        name: str
 
+        async def run(self, inputs: bool) -> Scope | ExitFSM:
+            async with resource(f"{self.name} first"), resource(f"{self.name} second"):
+                await runner.run_nested(Waiting(self.name))
+            # Both resources are closed before the successor can open its own.
+            trace.append(f"closed {self.name}")
+            return Scope("b") if self.name == "a" else ExitFSM()
+
+    @dataclass
     class Waiting:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> Close | None:
-            assert resources is stacks[0]
-            assert trace == ["open first", "open second"]
-            waiting.set()
-            return Close() if inputs else None
+        name: str
 
-    class Close:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> ExitFSM:
-            assert resources is stacks[0]
-            await resources.aclose()
-            assert trace == ["open first", "open second", "close second", "close first"]
-            await resources.enter_async_context(resource("third"))
-            return ExitFSM()
+        async def run(self, inputs: bool) -> ExitFSM | None:
+            assert trace[-2:] == [f"open {self.name} first", f"open {self.name} second"]
+            waiting[self.name].set()
+            return ExitFSM() if inputs == (self.name == "a") else None
 
-    runner = FSMRunner(Open(), inputs)
+    initial = Scope("a")
+    runner = FSMRunner(initial, inputs, name="outer")
     with fail_after(2):
         async with create_task_group() as tg:
             tg.start_soon(runner.run)
-            await waiting.wait()
-            assert isinstance(runner.current_state, Waiting)
+            await waiting["a"].wait()
+            # The innermost active state is the one observers see.
+            assert isinstance(runner.current_state, Waiting) and runner.current_state.name == "a"
             inputs.publish(True)
-    assert trace == ["open first", "open second", "close second", "close first", "open third", "close third"]
+            await waiting["b"].wait()
+            assert isinstance(runner.current_state, Waiting) and runner.current_state.name == "b"
+            inputs.publish(False)
+    assert trace == [
+        "open a first", "open a second", "close a second", "close a first", "closed a",
+        "open b first", "open b second", "close b second", "close b first", "closed b",
+    ]  # fmt: skip
     assert len(set(tasks)) == 1
     assert isinstance(runner.current_state, ExitFSM)
+    messages = [record.getMessage() for record in caplog.records if record.name == "jumpstarter.fsm"]
+    assert messages.count("FSM outer/Scope enter Waiting") == 2
+    assert messages.count("FSM outer/Scope exited") == 2
+    assert messages[-1] == "FSM outer exited"
+
+
+@pytest.mark.anyio
+async def test_nested_machines_nest_further() -> None:
+    seen: list[str] = []
+
+    class Leaf:
+        async def run(self, inputs: bool) -> ExitFSM:
+            assert runner.current_state is self
+            seen.append("leaf")
+            return ExitFSM()
+
+    class Middle:
+        async def run(self, inputs: bool) -> ExitFSM:
+            # The outer runner hands the request to its innermost machine.
+            await runner.run_nested(Leaf())
+            assert runner.current_state is self
+            seen.append("middle")
+            return ExitFSM()
+
+    class Outer:
+        async def run(self, inputs: bool) -> ExitFSM:
+            await runner.run_nested(Middle())
+            assert runner.current_state is self
+            seen.append("outer")
+            return ExitFSM()
+
+    runner = FSMRunner(Outer(), Switch())
+    with fail_after(2):
+        await runner.run()
+    assert seen == ["leaf", "middle", "outer"]
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("outcome", ["error", "setup_failure", "cancel_activity", "cancel_wait"])
-async def test_resources_finish_awaited_cleanup_on_failure_or_cancellation(outcome: str) -> None:
+async def test_scoped_resources_finish_awaited_cleanup_on_failure_or_cancellation(outcome: str) -> None:
     entered = Event()
     closed: list[str] = []
     scope = CancelScope()
@@ -304,10 +346,7 @@ async def test_resources_finish_awaited_cleanup_on_failure_or_cancellation(outco
                 closed.append(name)
 
     class Activity:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> None:
-            await resources.enter_async_context(resource("registered"))
-            if outcome == "setup_failure":
-                await resources.enter_async_context(resource("partial"))
+        async def run(self, inputs: bool) -> None:
             entered.set()
             if outcome == "error":
                 raise RuntimeError("activity failed")
@@ -315,7 +354,18 @@ async def test_resources_finish_awaited_cleanup_on_failure_or_cancellation(outco
                 await sleep_forever()
 
     activity = Activity()
-    runner = FSMRunner(activity, Switch())
+
+    class Scope:
+        async def run(self, inputs: bool) -> ExitFSM:
+            async with resource("entered"):
+                if outcome == "setup_failure":
+                    async with resource("partial"):
+                        raise AssertionError("Entered a context whose setup failed")
+                await runner.run_nested(activity)
+            return ExitFSM()
+
+    owner = Scope()
+    runner = FSMRunner(owner, Switch())
 
     async def cancel() -> None:
         await entered.wait()
@@ -328,13 +378,14 @@ async def test_resources_finish_awaited_cleanup_on_failure_or_cancellation(outco
             error = get_cancelled_exc_class() if outcome.startswith("cancel") else RuntimeError
             with scope, pytest.raises(error):
                 await runner.run()
-    assert closed == (["partial", "registered"] if outcome == "setup_failure" else ["registered"])
-    assert runner.current_state is activity
+    assert closed == (["partial", "entered"] if outcome == "setup_failure" else ["entered"])
+    # The last active state stays queryable: the nested one unless setup never reached it.
+    assert runner.current_state is (owner if outcome == "setup_failure" else activity)
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("timeout", [False, True])
-async def test_close_failure_preserves_state_and_closes_remaining_resources(timeout: bool) -> None:
+async def test_close_failure_stops_in_the_owning_state_and_closes_remaining_resources(timeout: bool) -> None:
     closed: list[str] = []
 
     @asynccontextmanager
@@ -348,40 +399,19 @@ async def test_close_failure_preserves_state_and_closes_remaining_resources(time
                     raise RuntimeError("close failed")
                 closed.append(name)
 
-    class Activity:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> ExitFSM:
-            await resources.enter_async_context(resource("first"))
-            await resources.enter_async_context(resource("broken"))
+    class Done:
+        async def run(self, inputs: bool) -> ExitFSM:
             return ExitFSM()
 
-    activity = Activity()
-    runner = FSMRunner(activity, Switch())
+    class Scope:
+        async def run(self, inputs: bool) -> ExitFSM:
+            async with resource("first"), resource("broken"):
+                await runner.run_nested(Done())
+            raise AssertionError("A failed close must not reach the successor")
+
+    owner = Scope()
+    runner = FSMRunner(owner, Switch())
     with fail_after(2), pytest.raises(TimeoutError if timeout else RuntimeError):
         await runner.run()
     assert closed == ["first"]
-    assert runner.current_state is activity
-
-
-@pytest.mark.anyio
-async def test_resource_observes_failure_but_cannot_suppress_it() -> None:
-    error = RuntimeError("activity failed")
-    observed: list[RuntimeError] = []
-
-    @asynccontextmanager
-    async def resource():
-        try:
-            yield
-        except RuntimeError as caught:
-            observed.append(caught)  # This context would suppress the exception in an async-with.
-
-    class Activity:
-        async def run(self, inputs: bool, resources: AsyncExitStack) -> ExitFSM:
-            await resources.enter_async_context(resource())
-            raise error
-
-    activity = Activity()
-    runner = FSMRunner(activity, Switch())
-    with pytest.raises(RuntimeError) as caught:
-        await runner.run()
-    assert caught.value is error and observed == [error]
-    assert runner.current_state is activity
+    assert runner.current_state is owner
