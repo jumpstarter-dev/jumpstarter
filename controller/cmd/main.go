@@ -24,8 +24,6 @@ import (
 	"net"
 	"os"
 
-	"github.com/gin-gonic/gin"
-
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
@@ -130,7 +128,7 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "controller"))
-	gin.SetMode(gin.ReleaseMode)
+	// gin release mode is set by the login service when it starts its engine.
 	klog.SetLogger(ctrl.Log.WithName("klog"))
 
 	// Print version information
