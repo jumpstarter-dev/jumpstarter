@@ -24,6 +24,7 @@ from jumpstarter.exporter.lease_hooks import (
     HookPlan,
     Restart,
     hook_failure_ended_lease,
+    resumed_ready_message,
 )
 from jumpstarter.fsm import ExitFSM
 from jumpstarter.logging import clear_log_context, set_log_context
@@ -35,38 +36,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger("jumpstarter.exporter.fsm")
 
 
-def _bind(lease: LeaseContext, session: Session, main_path: str, hook_path: str) -> None:
-    lease.session, lease.socket_path, lease.hook_socket_path = session, main_path, hook_path
-    session.lease_context = lease
-
-
-def _hand_off(exporter: Exporter, inputs: Inputs, key: LeaseKey, lease: LeaseContext) -> bool:
-    """A dying process leaves a live lease to the next one instead of ending it.
-
-    With the lease's hooks tracked by the controller, the next process resumes
-    it, or runs its afterLease hook if it ended meanwhile. A dying process
-    never cleans up a live lease, since it may not be able to report the
-    outcome.
-    """
-    if not (lease.hooks.tracked and not _released(inputs, key) and not lease.end_session_requested):
-        return False
-    exporter.hand_off_lease(lease.lease_name)
-    return True
-
-
-async def _setup_abandoned(exporter: Exporter, key: LeaseKey, lease: LeaseContext) -> AfterLeaseHook:
-    """Close a setup that will not run; cleanup runs only if its start was recorded."""
-    await exporter.setup_did_not_start(lease)
-    return AfterLeaseHook(exporter, key, lease)
-
-
 @dataclass
 class Starting:
-    """Registered; wait for the first status before admitting or taking over a lease."""
+    """Registered; wait for the first status before admitting or taking over a lease.
+
+    Waiting state: honor shutdown, then return ``None`` until the Status stream
+    has delivered its first observation. That observation carries the
+    controller's hook record, so the exporter knows whether a previous process
+    left hook work owed: go to ``RecoveringLease`` if it did and this exporter
+    records its hooks, otherwise to ``Available``.
+    """
 
     exporter: Exporter
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> Available | RecoveringLease | Stopping | None:
+    async def run(self, inputs: Inputs) -> Available | RecoveringLease | Stopping | None:
         if inputs.shutdown is not None:
             return Stopping(self.exporter)
         if not inputs.status_seen:
@@ -80,14 +63,21 @@ class Starting:
 
 @dataclass
 class RecoveringLease:
-    """Take over the lease a previous exporter process left, per the controller's hook record."""
+    """Take over the lease a previous exporter process left, per the controller's hook record.
+
+    Activity state: the record says what the lease still needs. A lease that
+    needs no more hooks is settled here, releasing it if a hook had failed with
+    ``endLease``, and goes to ``Available``, as does a record with nothing owed.
+    Any other lease goes to ``Leased``, which opens a session for it and starts
+    its states where the record left them: ``BeforeLeaseHook`` to finish a setup
+    the restart cut off, ``LeaseReady`` or ``BeforeLeaseHookFailed`` to resume a
+    lease whose setup had ended, ``AfterLeaseHook`` for a lease that owes cleanup.
+    """
 
     exporter: Exporter
     takeover: Takeover
 
-    async def run(
-        self, inputs: Inputs, resources: AsyncExitStack
-    ) -> Available | LeaseReady | BeforeLeaseHook | BeforeLeaseHookFailed | AfterLeaseHook | Stopping:
+    async def run(self, inputs: Inputs) -> Available | Leased | Stopping:
         exporter, takeover = self.exporter, self.takeover
         if inputs.shutdown is not None:
             return Stopping(exporter)
@@ -113,7 +103,6 @@ class RecoveringLease:
             lease_uid=takeover.lease_uid,
             hooks=HookPlan(tracked=True, recorded=True),
         )
-        exporter.lease_context = lease
         set_log_context(lease_id=lease.lease_name, exporter=exporter.exporter_name)
         set_log_context(client=lease.client_name)
         if restart is Restart.SETTLE:
@@ -122,42 +111,39 @@ class RecoveringLease:
             assert before is not None
             logger.info("Resuming lease %s after exporter restart (beforeLease hook did not finish)", lease.lease_name)
             lease.hooks.finish_cut_off("before_lease", before, exporter.on_interrupt("before_lease"), lease.lease_name)
-            _bind(lease, *await resources.enter_async_context(exporter.session_for_lease()))
-            return BeforeLeaseHook(exporter, key, lease)
+            return Leased(BeforeLeaseHook(exporter, key, lease))
         if restart is Restart.RESUME:
             assert before is not None
-            logger.info(
-                "Resuming lease %s after exporter restart (beforeLease hook %s before it)",
-                lease.lease_name,
-                LeaseHookPhase(before.phase).name.lower(),
-            )
-            lease.hooks.resume(before)
-            # A resumed lease is not set up again, so its device is not reset either.
-            _bind(lease, *await resources.enter_async_context(exporter.session_for_lease(reset_device=False)))
-            if not exporter.standalone:
-                await resources.enter_async_context(exporter.lease_connections(lease))
-            resumed = lease.hooks.resumed
-            assert resumed is not None
-            await exporter.report_status(*resumed, lease=lease)
-            if resumed[0] == ExporterStatus.LEASE_READY:
-                return LeaseReady(exporter, key, lease)
-            return BeforeLeaseHookFailed(
-                exporter, key, lease, RuntimeError(before.message or "beforeLease hook failed")
-            )
-        # Restart.CLEAN_UP: the lease owes its afterLease hook, first thing.
-        if takeover.assigned:
+            return self._resume(key, lease, before)
+        return await self._clean_up(key, lease, before, after)
+
+    def _resume(self, key: LeaseKey, lease: LeaseContext, before: jumpstarter_pb2.LeaseHookState) -> Leased:
+        """Resume a lease whose setup ran: it reports what it reported before the restart."""
+        logger.info(
+            "Resuming lease %s after exporter restart (beforeLease hook %s before it)",
+            lease.lease_name,
+            LeaseHookPhase(before.phase).name.lower(),
+        )
+        message = resumed_ready_message(before)
+        if message is None:
+            error = RuntimeError(before.message or "beforeLease hook failed")
+            return Leased(BeforeLeaseHookFailed(self.exporter, key, lease, error), resumed=True)
+        return Leased(LeaseReady(self.exporter, key, lease, message), resumed=True)
+
+    async def _clean_up(
+        self,
+        key: LeaseKey,
+        lease: LeaseContext,
+        before: jumpstarter_pb2.LeaseHookState | None,
+        after: jumpstarter_pb2.LeaseHookState | None,
+    ) -> Leased:
+        """Run the afterLease hook a lease owes, first thing, without setting it up again."""
+        exporter = self.exporter
+        if self.takeover.assigned:
             logger.info("Lease %s owes its afterLease hook; running it", lease.lease_name)
             lease.end_session_requested = True
         else:
             logger.info("Lease %s ended while the exporter was down; running its afterLease hook", lease.lease_name)
-        return await self._clean_up(resources, key, lease, before, after)
-
-    async def _clean_up(
-        self, resources: AsyncExitStack, key: LeaseKey, lease: LeaseContext,
-        before: jumpstarter_pb2.LeaseHookState | None, after: jumpstarter_pb2.LeaseHookState | None,
-    ) -> AfterLeaseHook:
-        """Serve a takeover whose lease owes cleanup, without setting it up again."""
-        exporter = self.exporter
         if before is not None and before.phase not in FINISHED_HOOK_PHASES:
             # The lease ended before the cut-off setup could run again.
             await exporter.record_lease_hook(
@@ -169,32 +155,27 @@ class RecoveringLease:
             )
         if after is not None:
             lease.hooks.finish_cut_off("after_lease", after, exporter.on_interrupt("after_lease"), lease.lease_name)
-        lease.hooks.resumed = (ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hook")
-        # Setup does not run again: the lease is in cleanup, so no client dials to serve.
-        _bind(lease, *await resources.enter_async_context(exporter.session_for_lease(reset_device=False)))
-        return AfterLeaseHook(exporter, key, lease)
+        # The lease is in cleanup, so no client dials to serve.
+        return Leased(AfterLeaseHook(exporter, key, lease), resumed=True, listen=False)
 
     async def _settle(
-        self, key: LeaseKey, lease: LeaseContext, before: jumpstarter_pb2.LeaseHookState | None,
+        self,
+        key: LeaseKey,
+        lease: LeaseContext,
+        before: jumpstarter_pb2.LeaseHookState | None,
         after: jumpstarter_pb2.LeaseHookState | None,
     ) -> Available:
         """Settle a recorded lease that needs no more hooks."""
         exporter = self.exporter
         if after is None:
             await exporter.record_lease_hook(lease, "after_lease", LeaseHookPhase.SKIPPED, "beforeLease hook failed")
-        exporter.lease_context = None
         if not self.takeover.assigned:
             return Available(exporter)
         # Never set it up again; ignore its leased ticks until the lease ends.
         if hook_failure_ended_lease(before) or hook_failure_ended_lease(after):
-            # Hold the slot so the release targets this lease, as the previous
-            # process would have done for a hook that failed with onFailure: endLease.
-            exporter.lease_context = lease
+            # As the previous process would have done for a hook that failed with onFailure: endLease.
             logger.info("Lease %s had a hook fail with onFailure: endLease; releasing it", lease.lease_name)
-            try:
-                await exporter.request_lease_release(lease, key)
-            finally:
-                exporter.lease_context = None
+            await exporter.request_lease_release(lease, key)
         else:
             logger.info("Lease %s is done with its hooks; leaving it to its client", lease.lease_name)
         return Available(exporter, last_completed=key)
@@ -242,71 +223,123 @@ class Available:
         )
         set_log_context(client=lease.client_name)
         logger.info("Starting new lease: %s", lease.lease_name)
-        # Keep admitting visible while the session context enters for test doubles.
-        self.admitting = lease
-        try:
-            context = self.session_context or self.exporter.session_for_lease()
-            # Register session/sockets on the runner stack so ClosingLease can tear them down.
-            session, main_path, hook_path = await resources.enter_async_context(context)
-        finally:
-            self.admitting = None
-        _bind(lease, session, main_path, hook_path)
-        session.update_status(ExporterStatus.BEFORE_LEASE_HOOK, "Preparing lease")
-        return BeforeLeaseHook(self.exporter, lease_assignment.key, lease)
+        return Leased(BeforeLeaseHook(self.exporter, lease_assignment.key, lease), session_context=self.session_context)
 
 
 @dataclass
 class _LeaseState:
-    """Fields shared by ``Leased`` and the states that run inside it."""
+    """Fields shared by the states that run inside ``Leased``."""
 
     exporter: Exporter
     key: LeaseKey
     lease: LeaseContext
 
-    async def run(
-        self, inputs: Inputs, resources: AsyncExitStack
-    ) -> LeaseReady | BeforeLeaseHookFailed | AfterLeaseHook | ClosingLease:
-        # Setup may have awaited while this assignment was revoked or replaced.
-        if _released(inputs, self.key) or _stop_now(inputs):
-            return await _setup_abandoned(self.exporter, self.key, self.lease)
-        _update_client(inputs, self.key, self.lease)
-        # Controller mode: start Listen/dial tasks for this lease on the resource stack.
-        if not self.exporter.standalone:
-            await resources.enter_async_context(self.exporter.lease_connections(self.lease))
+
+@dataclass
+class Leased:
+    """Own one lease's session, sockets, drivers, and I/O for as long as it runs.
+
+    Composite state: open the session, and in controller mode the lease's
+    Listen/dial tasks, then run the lease's own states as a nested machine
+    inside that ``async with`` block, from ``first`` until one of them returns
+    ``ExitFSM``. Leaving the block stops and joins lease I/O before closing the
+    session, sockets, and drivers, whether the lease's states exited, failed, or
+    were cancelled.
+
+    A new lease starts at ``BeforeLeaseHook``. A lease taken over after an
+    exporter restart starts where its hook record left it; one whose setup does
+    not run again is ``resumed``, so its device is not reset, and one that only
+    owes cleanup has no client to serve, so it does not ``listen``; neither does
+    a lease that ended while its session was being set up.
+
+    A failed close propagates and does not free the admission slot. Clear
+    lease-local log context, then return ``Available(last_completed=key)`` to
+    continue serving, or ``Stopping`` for exit-on-lease-end and standalone mode.
+    """
+
+    first: BeforeLeaseHook | LeaseReady | BeforeLeaseHookFailed | AfterLeaseHook
+    resumed: bool = False
+    listen: bool = True
+    session_context: AbstractAsyncContextManager[tuple[Session, str, str]] | None = None
+
+    @property
+    def lease(self) -> LeaseContext:
+        return self.first.lease
+
+    async def run(self, inputs: Inputs) -> Available | Stopping:
+        exporter, key, lease = self.first.exporter, self.first.key, self.first.lease
+        session_context = self.session_context or exporter.session_for_lease(reset_device=not self.resumed)
+        async with session_context as (session, main_path, hook_path):
+            lease.session, lease.socket_path, lease.hook_socket_path = session, main_path, hook_path
+            session.lease_context = lease
+            if not self.resumed:
+                # Remote dials stay buffered behind this status until setup has an outcome.
+                session.update_status(ExporterStatus.BEFORE_LEASE_HOOK, "Preparing lease")
+            # Controller mode: Listen/dial tasks for this lease, closed before its session.
+            # Not for a lease that ended during session setup: this state's snapshot predates it.
+            latest = exporter.fsm.inputs.snapshot()
+            ended = _released(latest, key) or _stop_now(latest)
+            serve_clients = self.listen and not exporter.standalone and not ended
+            async with exporter.lease_connections(lease) if serve_clients else nullcontext():
+                await exporter.fsm.run_nested(self.first)
+        clear_log_context()
+        set_log_context(exporter=exporter.exporter_name)
+        if exporter.exit_on_lease_end and not exporter.standalone:
+            exporter.stop(should_unregister=True)
+        # One-shot / standalone sessions exit after this lease.
+        if exporter.exit_on_lease_end or exporter.standalone:
+            return Stopping(exporter)
+        # Available gets a fresh snapshot: it honors shutdown before admitting any replacement.
+        return Available(exporter, last_completed=key)
+
+
+@dataclass
+class BeforeLeaseHook(_LeaseState):
+    """Run the before-lease hook for an admitted assignment.
+
+    Activity state: entered with the session open. Session setup awaits, so
+    check the latest assignment first: if it was revoked or stop-now applies,
+    the setup does not start and its record is closed through ``AfterLeaseHook``.
+    Otherwise record the hook's start with the controller, which can refuse it
+    (``ExitFSM``), await the execution-only before-lease hook under a shielded
+    cancel scope, record its outcome, and select ``LeaseReady`` or
+    ``BeforeLeaseHookFailed`` from it.
+    """
+
+    async def run(self, inputs: Inputs) -> LeaseReady | BeforeLeaseHookFailed | AfterLeaseHook | ExitFSM:
         exporter, lease = self.exporter, self.lease
+        if _released(inputs, self.key) or _stop_now(inputs):
+            # Close a setup that will not run; cleanup runs only if its start was recorded.
+            await exporter.setup_did_not_start(lease)
+            return AfterLeaseHook(exporter, self.key, lease)
+        _update_client(inputs, self.key, lease)
         executor = exporter.hook_executor
         warning = None
         try:
             if executor is None or executor.config.before_lease is None:
                 # No setup hook: the record must still show the lease as set up.
                 if not await exporter.record_lease_hook(lease, "before_lease", LeaseHookPhase.SKIPPED):
-                    lease.skip_after_lease_hook = True
-                    return ClosingLease(exporter, self.key, lease)
+                    return ExitFSM()
             else:
+                # The record's retries stop by themselves once this lease ends.
                 if not await exporter.record_start(lease, "before_lease"):
                     await exporter.setup_did_not_start(lease)
-                    return ClosingLease(exporter, self.key, lease)
-                # Recording can wait on the controller while this lease ends: a late
-                # acknowledgement must not run setup for a lease that no longer holds it.
-                if _released(inputs, self.key) or _stop_now(inputs):
-                    return await _setup_abandoned(exporter, self.key, lease)
-                await exporter.report_status(
-                    ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook", lease=lease
-                )
+                    return ExitFSM()
+                await exporter.report_status(ExporterStatus.BEFORE_LEASE_HOOK, "Running beforeLease hook", lease=lease)
                 # Ordinary stop/release updates are inputs. External cancellation also
                 # leaves this bounded hook time to finish before its session is closed.
                 with CancelScope(shield=True):
                     warning = await executor.execute_before_lease_hook(lease)
                 await exporter.record_outcome(lease, "before_lease", warning)
         except HookExecutionError as error:
-            await exporter.record_lease_hook(
-                lease, "before_lease", LeaseHookPhase.FAILED, str(error), error.on_failure
-            )
+            await exporter.record_lease_hook(lease, "before_lease", LeaseHookPhase.FAILED, str(error), error.on_failure)
             return BeforeLeaseHookFailed(exporter, self.key, lease, error)
         except Exception as error:  # noqa: BLE001 - failure policy is the successor state's
             await exporter.record_lease_hook(lease, "before_lease", LeaseHookPhase.FAILED, str(error))
             return BeforeLeaseHookFailed(exporter, self.key, lease, error)
-        return LeaseReady(exporter, self.key, lease, warning)
+        if warning:
+            return LeaseReady(exporter, self.key, lease, f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {warning}")
+        return LeaseReady(exporter, self.key, lease)
 
 
 @dataclass
@@ -314,29 +347,26 @@ class LeaseReady(_LeaseState):
     """Serve an active lease until the session needs finishing.
 
     Waiting state: inspect shutdown mode, revocation/reassignment, and this
-    lease's EndSession request. Report ``LEASE_READY`` (including any before-hook
-    warning) while normal service continues and return ``None``. Transition to
-    ``AfterLeaseHook`` when the session must finish.
+    lease's EndSession request. Report ``LEASE_READY`` with ``message`` (a
+    before-hook warning, or that the lease was resumed) while normal service
+    continues and return ``None``. Transition to ``AfterLeaseHook`` when the
+    session must finish. On stop-now, a lease whose hooks the controller tracks
+    is left in place for the next exporter process instead (``ExitFSM``).
     """
 
-    warning: str | None = None
+    message: str = "Ready for commands"
 
-    async def run(self, inputs: Inputs, resources: AsyncExitStack) -> AfterLeaseHook | ClosingLease | None:
+    async def run(self, inputs: Inputs) -> AfterLeaseHook | ExitFSM | None:
         _update_client(inputs, self.key, self.lease)
         if _released(inputs, self.key) or self.lease.end_session_requested:
             return AfterLeaseHook(self.exporter, self.key, self.lease)
         if _stop_now(inputs):
             if _hand_off(self.exporter, inputs, self.key, self.lease):
-                return ClosingLease(self.exporter, self.key, self.lease)
+                return ExitFSM()
             return AfterLeaseHook(self.exporter, self.key, self.lease)
-        # Still serving: publish LEASE_READY once (including any before-hook warning).
+        # Still serving: publish LEASE_READY once.
         if self.exporter.exporter_status != ExporterStatus.LEASE_READY:
-            message = (
-                f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {self.warning}"
-                if self.warning
-                else "Ready for commands"
-            )
-            await self.exporter.report_status(ExporterStatus.LEASE_READY, message, lease=self.lease)
+            await self.exporter.report_status(ExporterStatus.LEASE_READY, self.message, lease=self.lease)
         return None
 
 
@@ -348,14 +378,14 @@ class BeforeLeaseHookFailed(_LeaseState):
     ``HookExecutionError`` outcomes never run the after-hook: ``endLease`` goes
     to ``ReleasingLease``; ``exit`` requests drain shutdown and waits in
     ``AwaitingLeaseRelease``. Unexpected failures retain the failed status until
-    release, stop-now, or EndSession requires ``AfterLeaseHook`` cleanup.
+    release, stop-now, or EndSession requires ``AfterLeaseHook`` cleanup. On
+    stop-now, a lease whose hooks the controller tracks is left in place for the
+    next exporter process instead (``ExitFSM``).
     """
 
     error: Exception
 
-    async def run(
-        self, inputs: Inputs, resources: AsyncExitStack
-    ) -> ReleasingLease | AwaitingLeaseRelease | AfterLeaseHook | ClosingLease | None:
+    async def run(self, inputs: Inputs) -> ReleasingLease | AwaitingLeaseRelease | AfterLeaseHook | ExitFSM | None:
         if self.exporter.exporter_status != ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
             await self.exporter.report_status(
                 ExporterStatus.BEFORE_LEASE_HOOK_FAILED,
@@ -379,7 +409,7 @@ class BeforeLeaseHookFailed(_LeaseState):
             return AfterLeaseHook(self.exporter, self.key, self.lease)
         if _stop_now(inputs):
             if _hand_off(self.exporter, inputs, self.key, self.lease):
-                return ClosingLease(self.exporter, self.key, self.lease)
+                return ExitFSM()
             return AfterLeaseHook(self.exporter, self.key, self.lease)
         return None
 
@@ -388,9 +418,12 @@ class BeforeLeaseHookFailed(_LeaseState):
 class AfterLeaseHook(_LeaseState):
     """Run the after-lease cleanup hook once for this assignment.
 
-    Activity state: await the execution-only after-lease hook under a shielded
-    cancel scope, then select ``AwaitingLeaseRelease`` or
-    ``AfterLeaseHookFailed``. Reports ``AVAILABLE`` after a successful (or
+    Activity state: record the hook's start with the controller, await the
+    execution-only after-lease hook under a shielded cancel scope, record its
+    outcome, then select ``AwaitingLeaseRelease`` or ``AfterLeaseHookFailed``.
+    The hook is recorded as skipped, and does not run, when none is configured
+    or the lease's setup never ran; it does not run either if the controller
+    refuses its start. Reports ``AVAILABLE`` after a successful (or
     warning-only) cleanup; reservation retention still belongs to the successor.
     """
 
@@ -407,9 +440,7 @@ class AfterLeaseHook(_LeaseState):
                 # Close the lease's record, so it owes no cleanup.
                 await exporter.record_lease_hook(lease, "after_lease", LeaseHookPhase.SKIPPED, reason)
             else:
-                await exporter.report_status(
-                    ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hook", lease=lease
-                )
+                await exporter.report_status(ExporterStatus.AFTER_LEASE_HOOK, "Running afterLease hook", lease=lease)
                 if not await exporter.record_start(lease, "after_lease"):
                     # Another lease has the board now, or the next process runs the
                     # hook; this one must not touch the board.
@@ -532,3 +563,17 @@ def _update_client(inputs: Inputs, key: LeaseKey, lease: LeaseContext) -> None:
     if inputs.lease_assignment and inputs.lease_assignment.key == key:
         lease.client_name = inputs.lease_assignment.client_name
         set_log_context(client=lease.client_name)
+
+
+def _hand_off(exporter: Exporter, inputs: Inputs, key: LeaseKey, lease: LeaseContext) -> bool:
+    """A dying process leaves a live lease to the next one instead of ending it.
+
+    With the lease's hooks tracked by the controller, the next process resumes
+    it, or runs its afterLease hook if it ended meanwhile. A dying process
+    never cleans up a live lease, since it may not be able to report the
+    outcome.
+    """
+    if not (lease.hooks.tracked and not _released(inputs, key) and not lease.end_session_requested):
+        return False
+    exporter.hand_off_lease(lease.lease_name)
+    return True

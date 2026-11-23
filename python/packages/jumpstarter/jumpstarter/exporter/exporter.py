@@ -74,6 +74,8 @@ _RPC_MAX_RETRIES = 20
 _RPC_BACKOFF_BASE = 1.0
 _RPC_BACKOFF_CAP = 30.0
 _RPC_TIMEOUT = 30
+_TOKEN_REFRESH_CHECK_INTERVAL = 3600.0
+_TOKEN_ROTATION_RETRY_INTERVAL = 3600.0
 # The controller refused a hook transition: it is out of date (FAILED_PRECONDITION)
 # or invalid (INVALID_ARGUMENT). Sending it again cannot succeed.
 _LEASE_HOOK_REFUSED_CODES = frozenset({grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.INVALID_ARGUMENT})
@@ -339,9 +341,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
     _handed_off_lease: str | None = field(init=False, default=None)
     """Live lease this process left in place for the next exporter process, if any."""
-
-    lease_context: LeaseContext | None = field(init=False, default=None)
-    """Lease being worked on, if any; holds the release slot during a takeover."""
 
     _standalone: bool = field(init=False, default=False)
     """When True, exporter runs without a controller (TCP listener only).
@@ -798,7 +797,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         logger.error("Failed to %s: %s", description, e)
                         return False, None
                     error = e
-                backoff = min(_RPC_BACKOFF_BASE * (2 ** min(attempt, 16)), _RPC_BACKOFF_CAP)
+                backoff = _rpc_backoff(attempt)
                 logger.warning(
                     "Transient error %s (attempt %s), retrying in %.1fs: %s",
                     description,

@@ -327,7 +327,8 @@ behavioral checks establish those properties.
 | Fact or request | Owner / representation |
 | --- | --- |
 | Controller lease assignment | Immutable latest `LeaseAssignment` with lease key, client name, and copied read-only string metadata |
-| Lease key | Lease name and publisher-assigned local generation |
+| Lease key | Lease name, publisher-assigned local generation, and the lease UID when the controller sends it |
+| Hook record of a previous process | `Takeover`, latched from the first Status observation only, with what that lease still needs |
 | Shutdown | Persistent mode, optional exit code, reason, and controller-cleanup policy |
 | Active lease/resources | Current state's lease reference, not a global input registry |
 | Lease resource lifetime | The `async with` block in `Leased.run()`, around the nested lease states |
@@ -394,11 +395,17 @@ must retain backoff rather than repeatedly returning to immediate admission.
 
 ```{mermaid}
 stateDiagram-v2
-    [*] --> Available
+    [*] --> Starting
+    Starting --> Available: First status, no hook work owed
+    Starting --> RecoveringLease: First status, a previous process left hook work
+    Starting --> Stopping: Shutdown requested
+    RecoveringLease --> Leased: Finish setup, resume, or run owed cleanup
+    RecoveringLease --> Available: Nothing owed, or lease settled
+    RecoveringLease --> Stopping: Shutdown requested
     Available --> Leased: Assignment admitted
     Available --> Stopping: Shutdown requested
     state Leased {
-        [*] --> BeforeLeaseHook: Session open, assignment still held
+        [*] --> BeforeLeaseHook: New lease, or setup cut off by a restart
         BeforeLeaseHook --> LeaseReady: Success or warning
         LeaseReady --> AfterLeaseHook: Session needs finishing
         AfterLeaseHook --> AwaitingLeaseRelease: Cleanup hook completed
@@ -411,27 +418,47 @@ stateDiagram-v2
 ```
 
 The diagram shows the normal path; hook failure states retain the lease and
-failure outcome and own their policy-specific successors.
+failure outcome and own their policy-specific successors. A lease taken over
+after an exporter restart can also enter `Leased` at `LeaseReady`,
+`BeforeLeaseHookFailed`, or `AfterLeaseHook`.
+
+- **Starting:** wait for the first Status observation, which carries the
+  controller's record of the latest lease's hooks. Go to `RecoveringLease` if a
+  previous exporter process left hook work owed and this exporter records its
+  hooks; otherwise to `Available`, which is where `AVAILABLE` is first reported.
+- **RecoveringLease:** read the record against the lease assigned now. Settle a
+  lease that needs no more hooks, releasing it after an `endLease` failure, and
+  go to `Available`. Otherwise hand the lease to `Leased` with the state its
+  nested machine starts at: `BeforeLeaseHook` to finish a setup the restart cut
+  off (run again or failed, per `onInterrupt`), `LeaseReady` or
+  `BeforeLeaseHookFailed` to resume a lease whose setup had ended, and
+  `AfterLeaseHook` for a lease that owes cleanup.
 
 - **Available:** honor shutdown before admission. Reject the completed assignment
   key; otherwise admit the current assignment and transition to `Leased`. Return
   `None` when there is nothing admissible.
 - **Leased:** composite state. Open the session, and in controller mode the
   lease's Listen/dial tasks, in an `async with` block and run the lease's states
-  below as a nested machine inside it. Session setup awaits, so read the
-  assignment again once it is open: skip Listen and both hooks and close if
-  setup completed for a revoked assignment or stop-now applies. Leaving the
+  below as a nested machine inside it, starting at `first`. A resumed lease's
+  session does not reset the device, and a lease that only owes cleanup, or
+  that ended during session setup, gets no Listen/dial tasks. Leaving the
   block stops and awaits lease I/O tasks, then closes the session, sockets, and
   drivers, before returning `Available(last_completed=key)` or `Stopping`; a
   failed close does not free the slot. A shutdown requested during the lease is
   honored by `Available`, from a fresh snapshot.
-- **BeforeLeaseHook:** first nested state. Await the existing execution-only
-  hook method and select `LeaseReady` or `BeforeLeaseHookFailed` directly from
-  its outcome.
+- **BeforeLeaseHook:** first nested state of a new lease. Check the latest
+  assignment, since session setup awaited: a setup for a revoked assignment does
+  not start, and its record is closed through `AfterLeaseHook`. Otherwise record
+  the hook's start with the controller, await the existing execution-only hook
+  method, record its outcome, and select `LeaseReady` or `BeforeLeaseHookFailed`
+  from it. A start the controller refuses ends the nested machine.
 - **LeaseReady:** inspect shutdown mode, revocation/reassignment, and this lease's
-  EndSession request. Return `None` while normal service continues.
-- **AfterLeaseHook:** run eligible cleanup once, then select
-  `AwaitingLeaseRelease` or `AfterLeaseHookFailed`.
+  EndSession request. Return `None` while normal service continues. On stop-now,
+  a lease whose hooks the controller tracks is left in place for the next
+  exporter process: the nested machine ends without cleanup or release.
+- **AfterLeaseHook:** record and run eligible cleanup once, then select
+  `AwaitingLeaseRelease` or `AfterLeaseHookFailed`. Cleanup is recorded as
+  skipped when none is configured or the lease's setup never ran.
 - **AwaitingLeaseRelease:** retain reservation, status, and final-log access after
   hook completion. Return `None` until controller release/reassignment or
   stop-now; return `ExitFSM` immediately if one already applies, which ends the
@@ -882,6 +909,11 @@ covered in DD-1 through DD-4.
   `Leased` state that holds lease resources in an `async with` block and runs
   the lease's states as a nested machine (`FSMRunner.run_nested`). State methods
   read `run(inputs: Inputs)`; `ClosingLease` and `Available.admitting` are gone.
+
+- 2026-11-23: Keep the lease across exporter restarts: `Starting` waits for the
+  controller's hook record, `RecoveringLease` hands a lease a previous process
+  left to `Leased` at the state its record calls for, and hook transitions are
+  recorded with the controller before the exporter moves on.
 
 ## References
 

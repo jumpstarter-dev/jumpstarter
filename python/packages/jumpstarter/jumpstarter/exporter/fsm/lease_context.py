@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
 from jumpstarter.exporter.lease_hooks import HookPlan
 
 if TYPE_CHECKING:

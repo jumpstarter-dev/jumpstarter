@@ -45,6 +45,7 @@ __all__ = [
     "LeaseContext",
     "LeaseKey",
     "LeaseReady",
+    "Leased",
     "RecoveringLease",
     "ReleasingLease",
     "ShutdownMode",

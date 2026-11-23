@@ -3,7 +3,7 @@
 import pytest
 from jumpstarter_protocol import jumpstarter_pb2
 
-from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LeaseHookPhase
+from jumpstarter.common import HOOK_WARNING_PREFIX, LeaseHookPhase
 from jumpstarter.config.exporter import MAX_HOOK_ATTEMPTS
 from jumpstarter.exporter.lease_hooks import (
     HOOK_FAILURE_ACTIONS,
@@ -11,6 +11,7 @@ from jumpstarter.exporter.lease_hooks import (
     Restart,
     decide_restart,
     hook_failure_ended_lease,
+    resumed_ready_message,
 )
 
 WARN = HOOK_FAILURE_ACTIONS["warn"]
@@ -85,14 +86,12 @@ def test_hook_failure_ended_lease_only_for_end_lease(phase, on_failure):
     assert hook_failure_ended_lease(None) is False
 
 
-def test_resume_reports_what_the_setup_reported():
-    plan = HookPlan()
-    plan.resume(SUCCEEDED)
-    assert plan.resumed == (ExporterStatus.LEASE_READY, "Ready for commands (lease resumed after exporter restart)")
-    plan.resume(FAILED_WARN)
-    assert plan.resumed == (ExporterStatus.LEASE_READY, f"{HOOK_WARNING_PREFIX}beforeLease hook warning: boom")
-    plan.resume(FAILED_END_LEASE)
-    assert plan.resumed == (ExporterStatus.BEFORE_LEASE_HOOK_FAILED, "beforeLease hook failed: boom")
+def test_resumed_lease_reports_what_its_setup_reported():
+    assert resumed_ready_message(SUCCEEDED) == "Ready for commands (lease resumed after exporter restart)"
+    assert resumed_ready_message(FAILED_WARN) == f"{HOOK_WARNING_PREFIX}beforeLease hook warning: boom"
+    # A setup that failed without 'warn' is not ready: the lease resumes as failed.
+    assert resumed_ready_message(FAILED_END_LEASE) is None
+
 
 
 @pytest.mark.parametrize("on_interrupt", ["rerun", "fail", None])

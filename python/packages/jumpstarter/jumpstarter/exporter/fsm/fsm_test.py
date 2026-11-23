@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, assert_type
 
 import pytest
 from anyio import Event, create_task_group, fail_after
-from anyio.lowlevel import checkpoint
 from jumpstarter_protocol import jumpstarter_pb2
 from jumpstarter_protocol.jumpstarter.v1.jumpstarter_pb2 import LEASE_HOOK_PHASE_RUNNING as RUNNING_STATE
 

@@ -14,7 +14,7 @@ from typing import Literal
 
 from jumpstarter_protocol import jumpstarter_pb2
 
-from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus, LeaseHookPhase
+from jumpstarter.common import HOOK_WARNING_PREFIX, LeaseHookPhase
 from jumpstarter.config.exporter import MAX_HOOK_ATTEMPTS
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,15 @@ def hook_failure_ended_lease(state: jumpstarter_pb2.LeaseHookState | None) -> bo
         and state.phase == LeaseHookPhase.FAILED
         and HOOK_FAILURE_ACTION_NAMES.get(state.on_failure, "") == "endLease"
     )
+
+
+def resumed_ready_message(before: jumpstarter_pb2.LeaseHookState) -> str | None:
+    """What a lease whose setup ran in an earlier process reports as ready; None if that setup failed."""
+    if before.phase != LeaseHookPhase.FAILED:
+        return "Ready for commands (lease resumed after exporter restart)"
+    if before.on_failure == jumpstarter_pb2.LEASE_HOOK_FAILURE_ACTION_WARN:
+        return f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {before.message}"
+    return None
 
 
 class Restart(Enum):
@@ -89,8 +98,6 @@ class HookPlan:
         tracked: hook transitions are recorded with the controller, so the lease can
             outlive this process (see Exporter.record_lease_hook)
         recorded: the controller holds a hook record for this lease
-        resumed: the status to report for a lease whose setup ran in an earlier
-            process, or that is in cleanup; None if setup runs in this one
         attempts: the attempt each hook runs (or fails) as; 1 unless a restart cut it off
         started: the attempt the record shows as started, per hook
         cut_off: failure message per hook a restart cut off that fails instead of running again
@@ -98,7 +105,6 @@ class HookPlan:
 
     tracked: bool = False
     recorded: bool = False
-    resumed: tuple[ExporterStatus, str] | None = None
     attempts: dict[HookType, int] = field(default_factory=dict)
     started: dict[HookType, int] = field(default_factory=dict)
     cut_off: dict[HookType, str] = field(default_factory=dict)
@@ -106,16 +112,6 @@ class HookPlan:
     def attempt(self, hook: HookType) -> int:
         """The attempt the hook runs (or fails) as."""
         return self.attempts.get(hook, 1)
-
-    def resume(self, before: jumpstarter_pb2.LeaseHookState) -> None:
-        """Resume a lease whose setup ran: report what it reported before the restart."""
-        if before.phase != LeaseHookPhase.FAILED:
-            self.resumed = (ExporterStatus.LEASE_READY, "Ready for commands (lease resumed after exporter restart)")
-        elif before.on_failure == jumpstarter_pb2.LEASE_HOOK_FAILURE_ACTION_WARN:
-            warning = f"{HOOK_WARNING_PREFIX}beforeLease hook warning: {before.message}"
-            self.resumed = (ExporterStatus.LEASE_READY, warning)
-        else:
-            self.resumed = (ExporterStatus.BEFORE_LEASE_HOOK_FAILED, f"beforeLease hook failed: {before.message}")
 
     def finish_cut_off(
         self, hook: HookType, state: jumpstarter_pb2.LeaseHookState, on_interrupt: str | None, lease_name: str

@@ -78,9 +78,10 @@ class LocalExporter(Exporter):
 
     @asynccontextmanager
     async def session_for_lease(self, reset_device: bool = True):
+        # Leased, the state that owns this session, is current while it opens.
         state = self.fsm.runner.current_state if self.fsm.runner else None
-        lease = getattr(state, "admitting", None) or self.lease_context
-        assert isinstance(lease, LeaseContext)
+        assert isinstance(state, Leased)
+        lease = state.lease
         self.trace.append(("open", lease.lease_name))
         try:
             async with super().session_for_lease(reset_device=reset_device) as session:
@@ -193,6 +194,7 @@ async def test_drain_while_idle_stops_immediately():
     with fail_after(5):
         async with create_task_group() as tg:
             tg.start_soon(exporter.serve)
+            exporter.fsm.inputs.publish_lease_assignment(None)
             await exporter.wait_status(ExporterStatus.AVAILABLE)
             exporter.stop(wait_for_lease_exit=True, should_unregister=True)
     assert exporter.leases == []
@@ -545,8 +547,8 @@ async def test_release_during_setup_skips_hooks_and_listen(monkeypatch):
     monkeypatch.setattr(executor, "execute_after_lease_hook", after)
 
     @asynccontextmanager
-    async def prepare():
-        async with session_for_lease() as session:
+    async def prepare(**kwargs):
+        async with session_for_lease(**kwargs) as session:
             prepared.set()
             await finish_setup.wait()
             yield session
