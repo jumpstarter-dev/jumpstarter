@@ -232,9 +232,8 @@ func (r *JumpstarterReconciler) reconcileTelemetryDeployment(ctx context.Context
 	log := logf.FromContext(ctx)
 
 	tlsSecretHash, err := r.getTelemetryTLSSecretHash(ctx, jumpstarter)
-	if err != nil {
-		log.Error(err, "Failed to compute telemetry TLS secret hash")
-		return err
+	if err != nil && !suspendedWithoutTLSSecret(telemetryReplicas(jumpstarter.Spec.Telemetry), err) {
+		return r.waitForTLSSecret(ctx, jumpstarter, "telemetry", err)
 	}
 
 	lokiPod, err := r.telemetryLokiPodPlan(ctx, jumpstarter)

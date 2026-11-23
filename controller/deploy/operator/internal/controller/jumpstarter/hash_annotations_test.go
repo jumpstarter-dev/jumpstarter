@@ -252,7 +252,7 @@ var _ = Describe("getControllerTLSSecretHash", func() {
 		Expect(hash).To(BeEmpty())
 	})
 
-	It("should return empty hash when secret does not exist yet", func() {
+	It("should report a secret that does not exist yet", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test",
@@ -268,9 +268,8 @@ var _ = Describe("getControllerTLSSecretHash", func() {
 				},
 			},
 		}
-		hash, err := r.getControllerTLSSecretHash(ctx, js)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(hash).To(BeEmpty())
+		_, err := r.getControllerTLSSecretHash(ctx, js)
+		Expect(err).To(MatchError(&tlsSecretMissingError{name: "nonexistent-secret"}))
 	})
 
 	It("should return hash when secret exists", func() {
@@ -329,7 +328,7 @@ var _ = Describe("getRouterTLSSecretHash", func() {
 		Expect(hash).To(BeEmpty())
 	})
 
-	It("should return empty hash when secret does not exist yet", func() {
+	It("should report a secret that does not exist yet", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test",
@@ -345,9 +344,8 @@ var _ = Describe("getRouterTLSSecretHash", func() {
 				},
 			},
 		}
-		hash, err := r.getRouterTLSSecretHash(ctx, js, 0)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(hash).To(BeEmpty())
+		_, err := r.getRouterTLSSecretHash(ctx, js, 0)
+		Expect(err).To(MatchError(&tlsSecretMissingError{name: "nonexistent-router-secret"}))
 	})
 
 	It("should return hash when shared CertSecret exists", func() {
@@ -424,9 +422,8 @@ var _ = Describe("getRouterTLSSecretHash", func() {
 		Expect(hash).To(HaveLen(64))
 
 		// Different replica looks up a different secret name
-		hashMissing, err := r.getRouterTLSSecretHash(ctx, js, 1)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(hashMissing).To(BeEmpty())
+		_, err = r.getRouterTLSSecretHash(ctx, js, 1)
+		Expect(err).To(MatchError(&tlsSecretMissingError{name: GetRouterCertSecretName(js, 1)}))
 	})
 })
 
@@ -456,7 +453,7 @@ var _ = Describe("getTelemetryTLSSecretHash", func() {
 		Expect(hash).To(BeEmpty())
 	})
 
-	It("should return empty hash when cert-manager secret does not exist yet", func() {
+	It("should report a cert-manager secret that does not exist yet", func() {
 		js := &operatorv1alpha1.Jumpstarter{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-telemetry-hash",
@@ -466,9 +463,8 @@ var _ = Describe("getTelemetryTLSSecretHash", func() {
 				CertManager: operatorv1alpha1.CertManagerConfig{Enabled: true},
 			},
 		}
-		hash, err := r.getTelemetryTLSSecretHash(ctx, js)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(hash).To(BeEmpty())
+		_, err := r.getTelemetryTLSSecretHash(ctx, js)
+		Expect(err).To(MatchError(&tlsSecretMissingError{name: GetTelemetryCertSecretName(js)}))
 	})
 
 	It("should return hash when cert-manager telemetry TLS secret exists", func() {

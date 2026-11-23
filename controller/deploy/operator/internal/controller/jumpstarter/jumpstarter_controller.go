@@ -23,6 +23,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	goerrors "errors"
 	"fmt"
 	"hash"
 	"maps"
@@ -236,14 +237,8 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	configMapHash := configMapDataHash(desiredConfigMap)
 
-	// Compute TLS secret hashes so that certificate renewals trigger rolling restarts.
-	controllerTLSHash, err := r.getControllerTLSSecretHash(ctx, &jumpstarter)
-	if err != nil {
-		log.Error(err, "Failed to compute controller TLS secret hash")
-		return ctrl.Result{}, err
-	}
 	// Reconcile Controller Deployment
-	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash, controllerTLSHash); err != nil {
+	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash); err != nil {
 		log.Error(err, "Failed to reconcile Controller Deployment")
 		return ctrl.Result{}, err
 	}
@@ -339,8 +334,13 @@ func (r *JumpstarterReconciler) getRouterTLSSecretHash(ctx context.Context, jump
 }
 
 // reconcileControllerDeployment reconciles the controller deployment
-func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string) error {
+func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) error {
 	log := logf.FromContext(ctx)
+	// The TLS secret hash makes certificate renewals roll the controller.
+	tlsSecretHash, err := r.getControllerTLSSecretHash(ctx, jumpstarter)
+	if err != nil && !suspendedWithoutTLSSecret(controllerReplicas(&jumpstarter.Spec.Controller), err) {
+		return r.waitForTLSSecret(ctx, jumpstarter, "controller", err)
+	}
 	desiredDeployment := r.createControllerDeployment(jumpstarter, configMapHash, tlsSecretHash)
 
 	existingDeployment := &appsv1.Deployment{}
@@ -753,8 +753,50 @@ func secretDataHash(secret *corev1.Secret) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// getTLSSecretHash fetches a TLS secret by name and returns its data hash.
-// Returns an empty string if the secret does not exist yet.
+// tlsSecretMissingError is returned for a TLS secret that a Deployment mounts
+// but that does not exist yet.
+type tlsSecretMissingError struct {
+	name string
+}
+
+func (e *tlsSecretMissingError) Error() string {
+	return fmt.Sprintf("TLS secret %s does not exist yet", e.name)
+}
+
+// waitForTLSSecret returns nil for a TLS secret that does not exist yet, which
+// leaves the component's Deployment as it is, and any other error unchanged.
+//
+// The Deployment's pods mount the secret and its hash is part of their
+// template, so pods created before the secret exists cannot start, and are
+// replaced as soon as it does. On a fresh install that replaces the
+// controller pod that has just taken the leader lease, and the new pod waits
+// for the lease while the old one shuts down. The Secret watch reconciles
+// again once the secret exists.
+func (r *JumpstarterReconciler) waitForTLSSecret(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, component string, err error) error {
+	var missing *tlsSecretMissingError
+	if !goerrors.As(err, &missing) {
+		return err
+	}
+	logf.FromContext(ctx).Info("Waiting for TLS secret before reconciling deployment",
+		"component", component, "secret", missing.name)
+	r.emitEventf(jumpstarter, corev1.EventTypeNormal, "WaitingForTLSSecret",
+		"The %s deployment waits for TLS secret %s", component, missing.name)
+	return nil
+}
+
+// suspendedWithoutTLSSecret reports whether err is a TLS secret that does not
+// exist yet for a Deployment scaled to zero. That Deployment is reconciled
+// with an empty hash instead of waiting: it runs no pods, so nothing mounts
+// the secret, and the hash it gets once the secret exists changes a template
+// that has no pods to replace.
+func suspendedWithoutTLSSecret(replicas int32, err error) bool {
+	var missing *tlsSecretMissingError
+	return replicas == 0 && goerrors.As(err, &missing)
+}
+
+// getTLSSecretHash fetches a TLS secret by name and returns its data hash, or
+// an empty string when no secret is configured. A secret that does not exist
+// yet is a *tlsSecretMissingError.
 func (r *JumpstarterReconciler) getTLSSecretHash(ctx context.Context, namespace, name string) (string, error) {
 	if name == "" {
 		return "", nil
@@ -762,7 +804,7 @@ func (r *JumpstarterReconciler) getTLSSecretHash(ctx context.Context, namespace,
 	var secret corev1.Secret
 	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret); err != nil {
 		if errors.IsNotFound(err) {
-			return "", nil
+			return "", &tlsSecretMissingError{name: name}
 		}
 		return "", fmt.Errorf("failed to get TLS secret %s: %w", name, err)
 	}
@@ -1569,9 +1611,8 @@ func (r *JumpstarterReconciler) reconcileRouterDeploymentReplica(
 	if !ok {
 		var err error
 		routerTLSHash, err = r.getTLSSecretHash(ctx, jumpstarter.Namespace, secretName)
-		if err != nil {
-			log.Error(err, "Failed to compute router TLS secret hash", "replica", i)
-			return err
+		if err != nil && !suspendedWithoutTLSSecret(routerReplicas(&jumpstarter.Spec.Routers), err) {
+			return r.waitForTLSSecret(ctx, jumpstarter, fmt.Sprintf("router %d", i), err)
 		}
 		tlsHashBySecret[secretName] = routerTLSHash
 	}
