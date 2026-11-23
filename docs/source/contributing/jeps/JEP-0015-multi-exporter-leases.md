@@ -2072,8 +2072,8 @@ These items are not part of this JEP:
 
 - [JEP-0014: Virtual Scalable Exporters](JEP-0014-virtual-scalable-exporters.md)
 - [JEP-0013: Metrics, Tracing, and Log Observability](JEP-0013-observability-telemetry-logs.md)
-- JEP-0016: Multi-Exporter Port Forwarding (the second part of the first
-  version of this JEP)
+- [JEP-0016: Multi-Exporter Port Forwarding](JEP-0016-multi-exporter-port-forwarding.md)
+  (the second part of the first version of this JEP)
 - ExporterClass Mechanism (draft, not submitted)
 - [jumpstarter-dev/jumpstarter#47](https://github.com/jumpstarter-dev/jumpstarter/issues/47)
   — `LeaseTemplate`
