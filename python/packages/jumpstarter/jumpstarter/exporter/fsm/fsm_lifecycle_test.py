@@ -187,6 +187,18 @@ async def test_drain_alone_does_not_finish_active_lease():
     assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
 
 
+async def test_drain_while_idle_stops_immediately():
+    """An idle exporter has no lease to wait for (#1364): Available honors the drain at once."""
+    exporter = make_exporter()
+    with fail_after(5):
+        async with create_task_group() as tg:
+            tg.start_soon(exporter.serve)
+            await exporter.wait_status(ExporterStatus.AVAILABLE)
+            exporter.stop(wait_for_lease_exit=True, should_unregister=True)
+    assert exporter.leases == []
+    assert exporter.fsm.runner is not None and isinstance(exporter.fsm.runner.current_state, ExitFSM)
+
+
 @pytest.mark.parametrize("replacement", ["A", "C"])
 async def test_reassignment_waits_for_hooks_and_full_teardown(monkeypatch, replacement):
     executor = hooks()

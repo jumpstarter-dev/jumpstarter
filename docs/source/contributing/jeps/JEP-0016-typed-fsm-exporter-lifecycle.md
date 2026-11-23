@@ -754,6 +754,9 @@ passing tests. CLI run/signal checks have 13 passing cases. Core package typing
 passes for Linux, and the documentation builds with warnings as errors. The
 typed demonstration states were then removed from the exporter-input checks,
 which the production lifecycle suite covers with real states: 1,121 core tests.
+Rebased onto `main` the same day, with token refresh started next to the Status
+stream and driver `serving()` contexts held around the session server: 1,307
+core tests.
 
 ### Hardware-in-the-loop and manual verification
 

@@ -397,7 +397,7 @@ async def test_unsupported_rotation_warns_once(caplog):
 
 
 @pytest.mark.anyio
-async def test_control_plane_starts_token_refresh_loop():
+async def test_background_tasks_start_token_refresh_loop():
     exporter = _exporter_with_token(_make_jwt({"iat": 0, "exp": 1}))
     refresh_started = anyio.Event()
 
@@ -408,13 +408,12 @@ async def test_control_plane_starts_token_refresh_loop():
     async def status_stream(*args, **kwargs):
         await anyio.sleep_forever()
 
-    send, receive = anyio.create_memory_object_stream()
     with (
         patch.object(exporter, "_token_refresh_loop", side_effect=refresh),
         patch.object(exporter, "_retry_stream", side_effect=status_stream),
     ):
         async with anyio.create_task_group() as tasks:
-            tasks.start_soon(exporter._run_control_plane, send, receive)
+            tasks.start_soon(exporter._serve_background)
             with anyio.fail_after(2):
                 await refresh_started.wait()
             tasks.cancel_scope.cancel()

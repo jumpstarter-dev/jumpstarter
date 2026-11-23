@@ -6,7 +6,17 @@ from typing import TYPE_CHECKING, Self
 from uuid import UUID
 
 import grpc
-from anyio import ContextManagerMixin, Event, TypedAttributeLookupError, fail_after, sleep
+from anyio import (
+    TASK_STATUS_IGNORED,
+    ContextManagerMixin,
+    Event,
+    TypedAttributeLookupError,
+    create_task_group,
+    fail_after,
+    sleep,
+    sleep_forever,
+)
+from anyio.abc import TaskStatus
 from anyio.from_thread import start_blocking_portal
 from jumpstarter_protocol import (
     jumpstarter_pb2,
@@ -209,23 +219,24 @@ class Session(
     @asynccontextmanager
     async def _serve_grpc_server_async(self, server, grace: float | None = 1.0):
         """Register servicers, start server, yield, then shut down gracefully."""
-        try:
-            jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
-            router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
-            await server.start()
-            yield
-        finally:
-            logger.info("Stopping session server...")
+        jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(self, server)
+        router_pb2_grpc.add_RouterServiceServicer_to_server(self, server)
+        async with self._drivers_serving():
             try:
-                with fail_after(_SERVER_CLOSE_TIMEOUT, shield=True):
-                    await server.stop(grace=grace)
-                    if grace is not None:
-                        await sleep(0.1)
-            except TimeoutError:
-                with fail_after(_SERVER_CLOSE_TIMEOUT, shield=True):
-                    await server.stop(grace=None)
-                raise
-            logger.info("Session server stopped")
+                await server.start()
+                yield
+            finally:
+                logger.info("Stopping session server...")
+                try:
+                    with fail_after(_SERVER_CLOSE_TIMEOUT, shield=True):
+                        await self._stop(server, grace=grace)
+                        if grace is not None:
+                            await sleep(0.1)
+                except TimeoutError:
+                    with fail_after(_SERVER_CLOSE_TIMEOUT, shield=True):
+                        await server.stop(grace=None)
+                    raise
+                logger.info("Session server stopped")
 
     def _add_tcp_port(
         self,

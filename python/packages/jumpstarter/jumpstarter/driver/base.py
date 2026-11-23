@@ -154,6 +154,10 @@ class Driver(
                 child.close()
             except Exception as error:  # noqa: BLE001 - finish sibling cleanup before propagating failures
                 errors.append(error)
+        # Remove the per-instance name filter added in __post_init__ so it does
+        # not leak on the (global) logger when the driver is torn down.
+        # Python retains the logger itself for the process lifetime.
+        self.logger.removeFilter(self._logger_filter)
         if errors:
             raise ExceptionGroup("Child driver cleanup failed", errors)
 

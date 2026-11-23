@@ -15,7 +15,7 @@ import anyio.lowlevel
 from anyio import to_thread
 
 from jumpstarter.common import LogSource
-from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JMP_MOTD_FILE, JUMPSTARTER_HOST
+from jumpstarter.config.env import JMP_MOTD_FILE
 from jumpstarter.config.exporter import HookConfigV1Alpha1, HookInstanceConfigV1Alpha1
 from jumpstarter.exporter.session import Session
 

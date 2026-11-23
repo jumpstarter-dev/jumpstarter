@@ -4,6 +4,7 @@ import logging
 import threading
 import time
 from contextlib import ExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, MagicMock
 
 import grpc
@@ -34,7 +35,7 @@ from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetad
 from jumpstarter.common.utils import serve
 from jumpstarter.driver import Driver, export, session_env
 from jumpstarter.exporter.auth import PASSPHRASE_METADATA_KEY, PassphraseInterceptor
-from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
 from jumpstarter.streams.common import forward_stream
 from jumpstarter.streams.fanout import FanOutStreamMixin
@@ -1230,7 +1231,7 @@ class SessionEnvDriver(Driver):
 async def test_driver_calls_get_the_session_env_during_a_lease():
     """Driver calls see the env hooks get, pointing at the hook socket, and only while they run."""
     driver = SessionEnvDriver()
-    lease = LeaseContext(lease_name="test-lease", before_lease_hook=Event(), client_name="test-client")
+    lease = LeaseContext(lease_name="test-lease", client_name="test-client")
     with Session(uuid=driver.uuid, labels=driver.labels, root_device=driver) as session:
         session.lease_context = lease
         session.update_status(ExporterStatus.LEASE_READY)

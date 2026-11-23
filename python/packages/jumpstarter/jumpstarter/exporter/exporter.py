@@ -50,6 +50,11 @@ from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.metrics_stream import MetricsStreamClient
 from jumpstarter.exporter.session import Session
 from jumpstarter.exporter.telemetry import TelemetryLogHandler
+from jumpstarter.exporter.token_refresh import (
+    calculate_token_refresh_sleep,
+    calculate_token_rotation_retry_sleep,
+    is_internal_exporter_token,
+)
 from jumpstarter.logging import clear_log_context, set_log_context
 
 if TYPE_CHECKING:
@@ -877,7 +882,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         logger.info("Unregistering exporter with controller")
         try:
             with move_on_after(10, shield=True):
-                channel = await self.channel_factory()
+                channel = await self.channel_factory(self.token)
                 try:
                     controller = jumpstarter_pb2_grpc.ControllerServiceStub(channel)
                     await self.report_status(ExporterStatus.OFFLINE, "Exporter shutting down")
@@ -1054,6 +1059,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     self._run_stream, "Status", self._status_stream_factory(), self.fsm.inputs,
                     self.status_stream_retry_timeout,
                 )
+                background.start_soon(self._token_refresh_loop)
                 task_status.started()
                 await anyio.sleep_forever()
         finally:
@@ -1101,6 +1107,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 await self._telemetry_channel.close()
             self._telemetry_channel = None
         self._metrics_stream = None
+        self._telemetry_credential = None
         if self.exit_on_lease_end and not self._standalone:
             with CancelScope(shield=True):
                 await to_thread.run_sync(shutdown_runtime_sidecar)
