@@ -17,6 +17,11 @@ from jumpstarter_driver_qemu.driver import Qemu, QemuFlasher
 from jumpstarter.common.oci import OciCredentials
 from jumpstarter.common.utils import serve
 
+# .github/workflows/python-tests.yaml downloads and caches the same image for CI,
+# under FEDORA_CLOUD_VERSION too; Renovate bumps both together.
+# renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
+FEDORA_CLOUD_VERSION = "43-1.6"
+
 
 @pytest.fixture
 def anyio_backend():
@@ -75,13 +80,15 @@ def test_driver_qemu(tmp_path, ovmf):
         username = qemu.username
         password = qemu.password
 
-        cached_image = Path(__file__).parent.parent / "images" / f"Fedora-Cloud-Base-Generic-43-1.6.{arch}.qcow2"
+        release = FEDORA_CLOUD_VERSION.split("-")[0]
+        image = f"Fedora-Cloud-Base-Generic-{FEDORA_CLOUD_VERSION}.{arch}.qcow2"
+        cached_image = Path(__file__).parent.parent / "images" / image
 
         if cached_image.exists():
             qemu.flasher.flash(cached_image.resolve())
         else:
             qemu.flasher.flash(
-                f"https://download.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/{arch}/images/Fedora-Cloud-Base-Generic-43-1.6.{arch}.qcow2",
+                f"https://download.fedoraproject.org/pub/fedora/linux/releases/{release}/Cloud/{arch}/images/{image}",
             )
 
         qemu.power.on()
@@ -100,7 +107,8 @@ def test_driver_qemu(tmp_path, ovmf):
             p.expect_exact(f"[{username}@{hostname} ~]$")
 
         with qemu.shell() as s:
-            assert s.run("uname -r").stdout.strip() == f"6.17.1-300.fc43.{arch}"
+            # The kernel build differs from image to image; its release and arch do not.
+            assert s.run("uname -r").stdout.strip().endswith(f".fc{release}.{arch}")
 
         qemu.power.off()
 
