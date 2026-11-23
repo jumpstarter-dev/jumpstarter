@@ -480,14 +480,20 @@ class DialRequest(google.protobuf.message.Message):
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     LEASE_NAME_FIELD_NUMBER: builtins.int
+    MEMBER_NAME_FIELD_NUMBER: builtins.int
     lease_name: builtins.str
     """Name of the lease to connect through."""
+    member_name: builtins.str
+    """Role name of the member to connect to. Necessary for a lease with members."""
     def __init__(
         self,
         *,
         lease_name: builtins.str = ...,
+        member_name: builtins.str | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["lease_name", b"lease_name"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["_member_name", b"_member_name", "member_name", b"member_name"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_member_name", b"_member_name", "lease_name", b"lease_name", "member_name", b"member_name"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["_member_name", b"_member_name"]) -> typing.Literal["member_name"] | None: ...
 
 Global___DialRequest: typing_extensions.TypeAlias = DialRequest
 

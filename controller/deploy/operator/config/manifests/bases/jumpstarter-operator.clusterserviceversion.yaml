@@ -60,7 +60,7 @@ metadata:
     containerImage: quay.io/jumpstarter-dev/jumpstarter-operator:latest
     description: Jumpstarter is a cloud-native framework for Hardware-in-the-Loop
       (HIL) testing and development
-    operators.operatorframework.io/internal-objects: '["clients.jumpstarter.dev","exporters.jumpstarter.dev","leases.jumpstarter.dev","exporteraccesspolicies.jumpstarter.dev"]'
+    operators.operatorframework.io/internal-objects: '["clients.jumpstarter.dev","exporters.jumpstarter.dev","leases.jumpstarter.dev","exporteraccesspolicies.jumpstarter.dev","exporterclaims.jumpstarter.dev"]'
     repository: https://github.com/jumpstarter-dev/jumpstarter
     support: The Jumpstarter Community
   labels:
@@ -93,6 +93,18 @@ spec:
       displayName: ExporterAccessPolicy
       kind: ExporterAccessPolicy
       name: exporteraccesspolicies.jumpstarter.dev
+      version: v1alpha1
+    - description: ExporterClaim shows that one lease holds one exporter or one
+        exclusion group. Only the controller writes claims.
+      displayName: ExporterClaim
+      kind: ExporterClaim
+      name: exporterclaims.jumpstarter.dev
+      version: v1alpha1
+    - description: LeaseTemplate is a named definition of lease members that a
+        lab administrator publishes.
+      displayName: LeaseTemplate
+      kind: LeaseTemplate
+      name: leasetemplates.jumpstarter.dev
       version: v1alpha1
     - description: Jumpstarter is the Schema for the jumpstarters API.
       displayName: Jumpstarter

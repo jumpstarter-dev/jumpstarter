@@ -869,7 +869,8 @@ func (*UpdateLeaseHooksRequest_AfterLease) isUpdateLeaseHooksRequest_Hook() {}
 // Request to dial an exporter through the router.
 type DialRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	LeaseName     string                 `protobuf:"bytes,1,opt,name=lease_name,json=leaseName,proto3" json:"lease_name,omitempty"` // Name of the lease to connect through.
+	LeaseName     string                 `protobuf:"bytes,1,opt,name=lease_name,json=leaseName,proto3" json:"lease_name,omitempty"`          // Name of the lease to connect through.
+	MemberName    *string                `protobuf:"bytes,2,opt,name=member_name,json=memberName,proto3,oneof" json:"member_name,omitempty"` // Role name of the member to connect to. Necessary for a lease with members.
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -907,6 +908,13 @@ func (*DialRequest) Descriptor() ([]byte, []int) {
 func (x *DialRequest) GetLeaseName() string {
 	if x != nil {
 		return x.LeaseName
+	}
+	return ""
+}
+
+func (x *DialRequest) GetMemberName() string {
+	if x != nil && x.MemberName != nil {
+		return *x.MemberName
 	}
 	return ""
 }
@@ -2532,10 +2540,13 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\vafter_lease\x18\x03 \x01(\v2\x1e.jumpstarter.v1.LeaseHookStateH\x00R\n" +
 	"afterLease\x12\x1b\n" +
 	"\tlease_uid\x18\x04 \x01(\tR\bleaseUidB\x06\n" +
-	"\x04hook\",\n" +
+	"\x04hook\"b\n" +
 	"\vDialRequest\x12\x1d\n" +
 	"\n" +
-	"lease_name\x18\x01 \x01(\tR\tleaseName\"Z\n" +
+	"lease_name\x18\x01 \x01(\tR\tleaseName\x12$\n" +
+	"\vmember_name\x18\x02 \x01(\tH\x00R\n" +
+	"memberName\x88\x01\x01B\x0e\n" +
+	"\f_member_name\"Z\n" +
 	"\fDialResponse\x12'\n" +
 	"\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n" +
 	"\frouter_token\x18\x02 \x01(\tR\vrouterToken\"\xb4\x01\n" +
@@ -2859,6 +2870,7 @@ func file_jumpstarter_v1_jumpstarter_proto_init() {
 		(*UpdateLeaseHooksRequest_BeforeLease)(nil),
 		(*UpdateLeaseHooksRequest_AfterLease)(nil),
 	}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[12].OneofWrappers = []any{}
 	file_jumpstarter_v1_jumpstarter_proto_msgTypes[14].OneofWrappers = []any{}
 	file_jumpstarter_v1_jumpstarter_proto_msgTypes[22].OneofWrappers = []any{}
 	file_jumpstarter_v1_jumpstarter_proto_msgTypes[26].OneofWrappers = []any{}

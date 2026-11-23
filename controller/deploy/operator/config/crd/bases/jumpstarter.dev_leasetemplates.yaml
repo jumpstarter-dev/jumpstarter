@@ -1,0 +1,242 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: leasetemplates.jumpstarter.dev
+spec:
+  group: jumpstarter.dev
+  names:
+    kind: LeaseTemplate
+    listKind: LeaseTemplateList
+    plural: leasetemplates
+    singular: leasetemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.description
+      name: Description
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          LeaseTemplate is the Schema for the leasetemplates API. It gives a name to
+          a set of lease members and constraints. It has no status.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              LeaseTemplateSpec is a named definition of lease members and constraints
+              that a lab administrator publishes. A client requests it by its name, and
+              the client service copies it into the new lease.
+            properties:
+              constraints:
+                description: Constraints are rules for sets of members.
+                items:
+                  description: LeaseConstraint is a rule for a set of members of a
+                    lease.
+                  properties:
+                    members:
+                      description: Members are the role names that the rule applies
+                        to.
+                      items:
+                        maxLength: 63
+                        type: string
+                      maxItems: 8
+                      minItems: 2
+                      type: array
+                      x-kubernetes-list-type: set
+                    sameLabel:
+                      description: |-
+                        SameLabel is a label key, for example "bus" or "rf-domain". The exporters
+                        that the members bind must have the same value of this label. The
+                        controller selects the value at bind time.
+                      maxLength: 317
+                      minLength: 1
+                      type: string
+                  required:
+                  - members
+                  - sameLabel
+                  type: object
+                maxItems: 4
+                type: array
+              defaults:
+                description: |-
+                  Defaults are the values that the controller uses when a request does
+                  not give them.
+                properties:
+                  duration:
+                    description: Duration of a lease whose request gives none.
+                    type: string
+                  sharedWith:
+                    description: |-
+                      SharedWith lists the clients that a lease is shared with when its
+                      request gives no list. The same rules as LeaseSpec.SharedWith apply.
+                    items:
+                      type: string
+                    maxItems: 10
+                    type: array
+                    x-kubernetes-list-type: set
+                type: object
+              description:
+                description: Description is a short description for persons.
+                maxLength: 1024
+                type: string
+              docs:
+                description: Docs are documentation links. The controller does not
+                  read them.
+                items:
+                  maxLength: 2048
+                  type: string
+                maxItems: 16
+                type: array
+              image:
+                description: Image is a link to an image of the setup. The controller
+                  does not read it.
+                maxLength: 2048
+                type: string
+              instructions:
+                description: Instructions are plain text for persons. Clients show
+                  them and never run them.
+                maxLength: 8192
+                type: string
+              members:
+                description: Members are the members of a lease that uses this template.
+                items:
+                  description: |-
+                    LeaseMember is one member of a member-form lease: a role name and the
+                    selection of one exporter.
+                  properties:
+                    allowDisabled:
+                      description: AllowDisabled permits a disabled exporter when
+                        used with ExporterRef.
+                      type: boolean
+                    excluded:
+                      description: |-
+                        Excluded tells the controller not to bind this optional member. Only
+                        template expansion sets it, for a request that leaves the role out.
+                      type: boolean
+                    exporterRef:
+                      description: ExporterRef pins the member to a specific exporter
+                        name.
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    name:
+                      description: Name is the role name of the member, for example
+                        "phone". It is a DNS label.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    optional:
+                      description: Optional lets the lease become ready without this
+                        member.
+                      type: boolean
+                    selector:
+                      description: Selector selects the exporter of the member by
+                        its labels.
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: |-
+                              A label selector requirement is a selector that contains values, a key, and an operator that
+                              relates the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: |-
+                                  operator represents a key's relationship to a set of values.
+                                  Valid operators are In, NotIn, Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: |-
+                                  values is an array of string values. If the operator is In or NotIn,
+                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                  the values array must be empty. This array is replaced during a strategic
+                                  merge patch.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                            map is equivalent to an element of matchExpressions, whose key field is "key", the
+                            operator is "In", and the values array contains only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  required:
+                  - name
+                  type: object
+                  x-kubernetes-validations:
+                  - message: only an optional member can be excluded
+                    rule: '!has(self.excluded) || !self.excluded || (has(self.optional)
+                      && self.optional)'
+                  - message: exactly one of selector or exporterRef.name is required
+                    rule: '(((has(self.selector) && ((has(self.selector.matchLabels)
+                      && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions)
+                      && size(self.selector.matchExpressions) > 0))) ? 1 : 0) + ((has(self.exporterRef)
+                      && has(self.exporterRef.name) && size(self.exporterRef.name)
+                      > 0) ? 1 : 0)) == 1'
+                maxItems: 8
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+            required:
+            - members
+            type: object
+            x-kubernetes-validations:
+            - message: a template member cannot set excluded
+              rule: self.members.all(m, !has(m.excluded) || !m.excluded)
+            - message: constraints must reference declared members
+              rule: '!has(self.constraints) || self.constraints.all(c, c.members.all(n,
+                self.members.exists(m, m.name == n)))'
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

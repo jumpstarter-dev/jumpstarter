@@ -65,6 +65,17 @@ service ClientService {
     option (google.api.method_signature) = "name";
   }
 
+  // Retrieve a single lease template by resource name.
+  rpc GetLeaseTemplate(GetLeaseTemplateRequest) returns (LeaseTemplate) {
+    option (google.api.http) = {get: "/v1/{name=namespaces/*/leasetemplates/*}"};
+    option (google.api.method_signature) = "name";
+  }
+  // List the lease templates in a namespace.
+  rpc ListLeaseTemplates(ListLeaseTemplatesRequest) returns (ListLeaseTemplatesResponse) {
+    option (google.api.http) = {get: "/v1/{parent=namespaces/*}/leasetemplates"};
+    option (google.api.method_signature) = "parent";
+  }
+
   // Rotate the authentication token for the client.
   rpc RotateToken(RotateTokenRequest) returns (RotateTokenResponse) {
     option (google.api.http) = {
@@ -115,10 +126,8 @@ message Lease {
   string name = 1 [(google.api.field_behavior) = IDENTIFIER];
 
   // The label selector expression used to match an exporter.
-  string selector = 2 [
-    (google.api.field_behavior) = REQUIRED,
-    (google.api.field_behavior) = IMMUTABLE
-  ];
+  // Necessary only for a scalar lease: a lease with members or a template has none.
+  string selector = 2 [(google.api.field_behavior) = IMMUTABLE];
   // The requested duration of the lease.
   optional google.protobuf.Duration duration = 3;
   // The server-computed effective duration of the lease.
@@ -137,6 +146,7 @@ message Lease {
     (google.api.resource_reference) = {type: "jumpstarter.dev/Client"}
   ];
   // The resource name of the exporter assigned to this lease.
+  // The controller sets it only for a scalar lease; see member_statuses.
   optional string exporter = 10 [
     (google.api.field_behavior) = OUTPUT_ONLY,
     (google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}
@@ -162,6 +172,157 @@ message Lease {
   // existence. A name present in shared_with but absent here was denied by
   // policy or does not exist. Use this for access decisions and display.
   repeated string effective_shared_with = 18 [(google.api.field_behavior) = OUTPUT_ONLY];
+  // The members of a member-form lease. Each member has a role name and selects one exporter.
+  repeated LeaseMember members = 19 [(google.api.field_behavior) = IMMUTABLE];
+  // Rules for sets of members.
+  repeated LeaseConstraint constraints = 20 [(google.api.field_behavior) = IMMUTABLE];
+  // The lease template that the controller expands into members and constraints.
+  optional LeaseTemplateUse template = 21 [(google.api.field_behavior) = IMMUTABLE];
+  // The state of each member of a member-form lease.
+  repeated LeaseMemberStatus member_statuses = 22 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The state of one member of a lease.
+enum LeaseMemberState {
+  // The state is not known.
+  LEASE_MEMBER_STATE_UNSPECIFIED = 0;
+  // The member has no exporter at this time.
+  LEASE_MEMBER_STATE_PENDING = 1;
+  // The member has an exporter.
+  LEASE_MEMBER_STATE_BOUND = 2;
+  // An optional member has no exporter.
+  LEASE_MEMBER_STATE_OMITTED = 3;
+  // A bound member lost its exporter.
+  LEASE_MEMBER_STATE_LOST = 4;
+}
+
+// A member of a lease: a role name and the selection of one exporter.
+message LeaseMember {
+  // The role name of the member. It is a DNS label.
+  string name = 1;
+  // The source of the exporter.
+  oneof selection {
+    // A label selector, as in Lease.selector.
+    string selector = 2;
+    // The name of a specific exporter.
+    string exporter_name = 3;
+  }
+  // The lease can become ready without this member.
+  bool optional = 4;
+  // Allow a disabled exporter. Only effective with exporter_name.
+  bool allow_disabled = 5;
+  // Template expansion sets this field. CreateLease rejects a request that sets it.
+  bool excluded = 6 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A rule for a set of members of a lease.
+message LeaseConstraint {
+  // The role names of the members that the rule applies to.
+  repeated string member_names = 1;
+  // The rule.
+  oneof rule {
+    // A label key. The exporters of the members must have the same value of this label.
+    string same_label = 2;
+  }
+}
+
+// How a lease request uses a lease template.
+message LeaseTemplateUse {
+  // The name of the template: a bare name, or a resource name in the namespace of the request.
+  string template = 1 [(google.api.resource_reference) = {type: "jumpstarter.dev/LeaseTemplate"}];
+  // Optional roles that the lease does not bind.
+  repeated string excluded_members = 2 [(google.api.field_behavior) = INPUT_ONLY];
+  // Role name to label selector. The controller adds it to the template selector with AND.
+  map<string, string> member_selectors = 3 [(google.api.field_behavior) = INPUT_ONLY];
+  // The metadata.generation of the template that the controller expanded.
+  int64 generation = 4 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// The state of one member of a lease.
+message LeaseMemberStatus {
+  // The role name of the member.
+  string name = 1;
+  // The state of the member.
+  LeaseMemberState state = 2;
+  // The resource name of the exporter of the member.
+  optional string exporter = 3 [(google.api.resource_reference) = {type: "jumpstarter.dev/Exporter"}];
+  // A machine-readable reason for the state.
+  optional string reason = 4;
+  // A human-readable message for the state.
+  optional string message = 5;
+  // The priority of the member from the access policy.
+  int32 priority = 6;
+  // Whether the member was granted with spot access.
+  bool spot_access = 7;
+}
+
+// A member of a lease template, with its current availability.
+message LeaseTemplateMember {
+  // The member definition.
+  LeaseMember member = 1;
+  // The number of exporters that the client can lease now for this member.
+  int32 available = 2 [(google.api.field_behavior) = OUTPUT_ONLY];
+}
+
+// A named definition of lease members that a lab administrator publishes.
+message LeaseTemplate {
+  option (google.api.resource) = {
+    type: "jumpstarter.dev/LeaseTemplate"
+    pattern: "namespaces/{namespace}/leasetemplates/{leasetemplate}"
+    singular: "leaseTemplate"
+    plural: "leaseTemplates"
+  };
+
+  // The resource name of the lease template.
+  string name = 1 [(google.api.field_behavior) = IDENTIFIER];
+  // A short description for persons.
+  string description = 2;
+  // Documentation links.
+  repeated string docs = 3;
+  // A link to an image of the setup.
+  optional string image = 4;
+  // Plain text instructions for persons.
+  optional string instructions = 5;
+  // The members of the template.
+  repeated LeaseTemplateMember members = 6;
+  // Rules for sets of members.
+  repeated LeaseConstraint constraints = 7;
+  // The duration of a lease whose request gives none.
+  optional google.protobuf.Duration default_duration = 8;
+  // The metadata.generation of the template.
+  int64 generation = 9;
+  // The clients that a lease is shared with when its request gives none.
+  repeated string default_shared_with = 10;
+}
+
+// Request to retrieve a lease template.
+message GetLeaseTemplateRequest {
+  // The resource name of the lease template.
+  string name = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {type: "jumpstarter.dev/LeaseTemplate"}
+  ];
+}
+
+// Request to list lease templates.
+message ListLeaseTemplatesRequest {
+  // The parent resource name (namespace).
+  string parent = 1 [
+    (google.api.field_behavior) = REQUIRED,
+    (google.api.resource_reference) = {child_type: "jumpstarter.dev/LeaseTemplate"}
+  ];
+  // Maximum number of results to return.
+  int32 page_size = 2 [(google.api.field_behavior) = OPTIONAL];
+  // Token for retrieving the next page of results.
+  string page_token = 3 [(google.api.field_behavior) = OPTIONAL];
+}
+
+// Response containing a list of lease templates.
+message ListLeaseTemplatesResponse {
+  // The list of lease templates.
+  repeated LeaseTemplate lease_templates = 1;
+  // Token for the next page of results.
+  string next_page_token = 2;
 }
 
 // Request to retrieve an exporter.

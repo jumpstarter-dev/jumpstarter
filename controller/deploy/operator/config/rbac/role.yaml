@@ -140,6 +140,24 @@ rules:
   - patch
   - update
 - apiGroups:
+  - jumpstarter.dev
+  resources:
+  - exporterclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - jumpstarter.dev
+  resources:
+  - leasetemplates
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - monitoring.coreos.com
   resources:
   - servicemonitors

@@ -61,6 +61,14 @@ spec:
                   Useful for temporarily taking an exporter offline for maintenance without deleting it,
                   or for graceful scale-down of virtual exporter pools.
                 type: boolean
+              exclusionGroup:
+                description: |-
+                  ExclusionGroup names the DUT that this exporter serves. Exporters with
+                  the same value serve the same DUT: only one lease can hold the group,
+                  and that lease can bind one or more of its exporters. It cannot change
+                  while a lease holds the exporter.
+                maxLength: 63
+                type: string
               username:
                 description: Username is the identity of the exporter, used for authentication
                   and authorization.
@@ -332,6 +340,12 @@ spec:
                 type: string
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: spec.exclusionGroup cannot change while a lease holds the exporter
+          rule: '!has(self.status) || !has(self.status.leaseRef) || ((has(self.spec)
+            && has(self.spec.exclusionGroup)) == (has(oldSelf.spec) && has(oldSelf.spec.exclusionGroup))
+            && (!(has(self.spec) && has(self.spec.exclusionGroup)) || self.spec.exclusionGroup
+            == oldSelf.spec.exclusionGroup))'
     served: true
     storage: true
     subresources:

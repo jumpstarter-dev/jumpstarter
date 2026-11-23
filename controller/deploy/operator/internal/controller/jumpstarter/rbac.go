@@ -198,6 +198,26 @@ func (r *JumpstarterReconciler) createRole(jumpstarter *operatorv1alpha1.Jumpsta
 				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 			},
 			{
+				// One claim for each held exporter or exclusion group. A claim
+				// is immutable: the controller creates and deletes it.
+				APIGroups: []string{"jumpstarter.dev"},
+				Resources: []string{"exporterclaims"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete"},
+			},
+			{
+				// Administrators write lease templates; the controller reads them.
+				APIGroups: []string{"jumpstarter.dev"},
+				Resources: []string{"leasetemplates"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				// A lease member that selects the exporters of an ExporterSet
+				// waits for the set to create one.
+				APIGroups: []string{"virtualtarget.jumpstarter.dev"},
+				Resources: []string{"exportersets"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
 				APIGroups: []string{"jumpstarter.dev"},
 				Resources: []string{"clients/status", "exporters/status", "leases/status", "exporteraccesspolicies/status"},
 				Verbs:     []string{"get", "update", "patch"},

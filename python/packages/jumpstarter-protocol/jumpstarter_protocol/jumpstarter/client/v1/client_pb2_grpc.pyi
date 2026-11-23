@@ -54,6 +54,10 @@ class ClientServiceStub:
     """Update an existing lease."""
     DeleteLease: _grpc.UnaryUnaryMultiCallable[_client_pb2.DeleteLeaseRequest, _empty_pb2.Empty]
     """Delete a lease by resource name."""
+    GetLeaseTemplate: _grpc.UnaryUnaryMultiCallable[_client_pb2.GetLeaseTemplateRequest, _client_pb2.LeaseTemplate]
+    """Retrieve a single lease template by resource name."""
+    ListLeaseTemplates: _grpc.UnaryUnaryMultiCallable[_client_pb2.ListLeaseTemplatesRequest, _client_pb2.ListLeaseTemplatesResponse]
+    """List the lease templates in a namespace."""
     RotateToken: _grpc.UnaryUnaryMultiCallable[_client_pb2.RotateTokenRequest, _client_pb2.RotateTokenResponse]
     """Rotate the authentication token for the client."""
 
@@ -76,6 +80,10 @@ class ClientServiceAsyncStub(ClientServiceStub):
     """Update an existing lease."""
     DeleteLease: _aio.UnaryUnaryMultiCallable[_client_pb2.DeleteLeaseRequest, _empty_pb2.Empty]  # type: ignore[assignment]
     """Delete a lease by resource name."""
+    GetLeaseTemplate: _aio.UnaryUnaryMultiCallable[_client_pb2.GetLeaseTemplateRequest, _client_pb2.LeaseTemplate]  # type: ignore[assignment]
+    """Retrieve a single lease template by resource name."""
+    ListLeaseTemplates: _aio.UnaryUnaryMultiCallable[_client_pb2.ListLeaseTemplatesRequest, _client_pb2.ListLeaseTemplatesResponse]  # type: ignore[assignment]
+    """List the lease templates in a namespace."""
     RotateToken: _aio.UnaryUnaryMultiCallable[_client_pb2.RotateTokenRequest, _client_pb2.RotateTokenResponse]  # type: ignore[assignment]
     """Rotate the authentication token for the client."""
 
@@ -130,6 +138,20 @@ class ClientServiceServicer:
         context: _ServicerContext,
     ) -> _typing.Union[_empty_pb2.Empty, _abc.Awaitable[_empty_pb2.Empty]]:
         """Delete a lease by resource name."""
+
+    def GetLeaseTemplate(
+        self,
+        request: _client_pb2.GetLeaseTemplateRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_client_pb2.LeaseTemplate, _abc.Awaitable[_client_pb2.LeaseTemplate]]:
+        """Retrieve a single lease template by resource name."""
+
+    def ListLeaseTemplates(
+        self,
+        request: _client_pb2.ListLeaseTemplatesRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_client_pb2.ListLeaseTemplatesResponse, _abc.Awaitable[_client_pb2.ListLeaseTemplatesResponse]]:
+        """List the lease templates in a namespace."""
 
     def RotateToken(
         self,

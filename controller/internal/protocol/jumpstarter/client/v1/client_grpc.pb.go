@@ -27,14 +27,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ClientService_GetExporter_FullMethodName   = "/jumpstarter.client.v1.ClientService/GetExporter"
-	ClientService_ListExporters_FullMethodName = "/jumpstarter.client.v1.ClientService/ListExporters"
-	ClientService_GetLease_FullMethodName      = "/jumpstarter.client.v1.ClientService/GetLease"
-	ClientService_ListLeases_FullMethodName    = "/jumpstarter.client.v1.ClientService/ListLeases"
-	ClientService_CreateLease_FullMethodName   = "/jumpstarter.client.v1.ClientService/CreateLease"
-	ClientService_UpdateLease_FullMethodName   = "/jumpstarter.client.v1.ClientService/UpdateLease"
-	ClientService_DeleteLease_FullMethodName   = "/jumpstarter.client.v1.ClientService/DeleteLease"
-	ClientService_RotateToken_FullMethodName   = "/jumpstarter.client.v1.ClientService/RotateToken"
+	ClientService_GetExporter_FullMethodName        = "/jumpstarter.client.v1.ClientService/GetExporter"
+	ClientService_ListExporters_FullMethodName      = "/jumpstarter.client.v1.ClientService/ListExporters"
+	ClientService_GetLease_FullMethodName           = "/jumpstarter.client.v1.ClientService/GetLease"
+	ClientService_ListLeases_FullMethodName         = "/jumpstarter.client.v1.ClientService/ListLeases"
+	ClientService_CreateLease_FullMethodName        = "/jumpstarter.client.v1.ClientService/CreateLease"
+	ClientService_UpdateLease_FullMethodName        = "/jumpstarter.client.v1.ClientService/UpdateLease"
+	ClientService_DeleteLease_FullMethodName        = "/jumpstarter.client.v1.ClientService/DeleteLease"
+	ClientService_GetLeaseTemplate_FullMethodName   = "/jumpstarter.client.v1.ClientService/GetLeaseTemplate"
+	ClientService_ListLeaseTemplates_FullMethodName = "/jumpstarter.client.v1.ClientService/ListLeaseTemplates"
+	ClientService_RotateToken_FullMethodName        = "/jumpstarter.client.v1.ClientService/RotateToken"
 )
 
 // ClientServiceClient is the client API for ClientService service.
@@ -57,6 +59,10 @@ type ClientServiceClient interface {
 	UpdateLease(ctx context.Context, in *UpdateLeaseRequest, opts ...grpc.CallOption) (*Lease, error)
 	// Delete a lease by resource name.
 	DeleteLease(ctx context.Context, in *DeleteLeaseRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Retrieve a single lease template by resource name.
+	GetLeaseTemplate(ctx context.Context, in *GetLeaseTemplateRequest, opts ...grpc.CallOption) (*LeaseTemplate, error)
+	// List the lease templates in a namespace.
+	ListLeaseTemplates(ctx context.Context, in *ListLeaseTemplatesRequest, opts ...grpc.CallOption) (*ListLeaseTemplatesResponse, error)
 	// Rotate the authentication token for the client.
 	RotateToken(ctx context.Context, in *RotateTokenRequest, opts ...grpc.CallOption) (*RotateTokenResponse, error)
 }
@@ -139,6 +145,26 @@ func (c *clientServiceClient) DeleteLease(ctx context.Context, in *DeleteLeaseRe
 	return out, nil
 }
 
+func (c *clientServiceClient) GetLeaseTemplate(ctx context.Context, in *GetLeaseTemplateRequest, opts ...grpc.CallOption) (*LeaseTemplate, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LeaseTemplate)
+	err := c.cc.Invoke(ctx, ClientService_GetLeaseTemplate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *clientServiceClient) ListLeaseTemplates(ctx context.Context, in *ListLeaseTemplatesRequest, opts ...grpc.CallOption) (*ListLeaseTemplatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListLeaseTemplatesResponse)
+	err := c.cc.Invoke(ctx, ClientService_ListLeaseTemplates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *clientServiceClient) RotateToken(ctx context.Context, in *RotateTokenRequest, opts ...grpc.CallOption) (*RotateTokenResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RotateTokenResponse)
@@ -169,6 +195,10 @@ type ClientServiceServer interface {
 	UpdateLease(context.Context, *UpdateLeaseRequest) (*Lease, error)
 	// Delete a lease by resource name.
 	DeleteLease(context.Context, *DeleteLeaseRequest) (*emptypb.Empty, error)
+	// Retrieve a single lease template by resource name.
+	GetLeaseTemplate(context.Context, *GetLeaseTemplateRequest) (*LeaseTemplate, error)
+	// List the lease templates in a namespace.
+	ListLeaseTemplates(context.Context, *ListLeaseTemplatesRequest) (*ListLeaseTemplatesResponse, error)
 	// Rotate the authentication token for the client.
 	RotateToken(context.Context, *RotateTokenRequest) (*RotateTokenResponse, error)
 	mustEmbedUnimplementedClientServiceServer()
@@ -201,6 +231,12 @@ func (UnimplementedClientServiceServer) UpdateLease(context.Context, *UpdateLeas
 }
 func (UnimplementedClientServiceServer) DeleteLease(context.Context, *DeleteLeaseRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteLease not implemented")
+}
+func (UnimplementedClientServiceServer) GetLeaseTemplate(context.Context, *GetLeaseTemplateRequest) (*LeaseTemplate, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetLeaseTemplate not implemented")
+}
+func (UnimplementedClientServiceServer) ListLeaseTemplates(context.Context, *ListLeaseTemplatesRequest) (*ListLeaseTemplatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListLeaseTemplates not implemented")
 }
 func (UnimplementedClientServiceServer) RotateToken(context.Context, *RotateTokenRequest) (*RotateTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RotateToken not implemented")
@@ -352,6 +388,42 @@ func _ClientService_DeleteLease_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ClientService_GetLeaseTemplate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLeaseTemplateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClientServiceServer).GetLeaseTemplate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClientService_GetLeaseTemplate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClientServiceServer).GetLeaseTemplate(ctx, req.(*GetLeaseTemplateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ClientService_ListLeaseTemplates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListLeaseTemplatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ClientServiceServer).ListLeaseTemplates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ClientService_ListLeaseTemplates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ClientServiceServer).ListLeaseTemplates(ctx, req.(*ListLeaseTemplatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ClientService_RotateToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RotateTokenRequest)
 	if err := dec(in); err != nil {
@@ -404,6 +476,14 @@ var ClientService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteLease",
 			Handler:    _ClientService_DeleteLease_Handler,
+		},
+		{
+			MethodName: "GetLeaseTemplate",
+			Handler:    _ClientService_GetLeaseTemplate_Handler,
+		},
+		{
+			MethodName: "ListLeaseTemplates",
+			Handler:    _ClientService_ListLeaseTemplates_Handler,
 		},
 		{
 			MethodName: "RotateToken",

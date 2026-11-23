@@ -1,0 +1,107 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: exporterclaims.jumpstarter.dev
+spec:
+  group: jumpstarter.dev
+  names:
+    kind: ExporterClaim
+    listKind: ExporterClaimList
+    plural: exporterclaims
+    singular: exporterclaim
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.exporter
+      name: Exporter
+      type: string
+    - jsonPath: .spec.exclusionGroup
+      name: Group
+      type: string
+    - jsonPath: .spec.leaseRef.name
+      name: Lease
+      type: string
+    - jsonPath: .spec.leaseRef.attempt
+      name: Attempt
+      priority: 1
+      type: integer
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ExporterClaim is the Schema for the exporterclaims API. A claim shows that
+          one lease holds one exporter or one exclusion group. Only the controller
+          writes claims.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ExporterClaimSpec says that one lease holds one exporter or one exclusion
+              group. The object name comes from the exporter name or the group name, so
+              the API server lets only one claim for it exist.
+            properties:
+              exclusionGroup:
+                description: ExclusionGroup is the exclusion group that the lease
+                  holds.
+                maxLength: 63
+                minLength: 1
+                type: string
+              exporter:
+                description: Exporter is the name of the exporter that the lease holds.
+                maxLength: 253
+                minLength: 1
+                type: string
+              leaseRef:
+                description: LeaseRef is the lease that holds the claim.
+                properties:
+                  attempt:
+                    description: Attempt is status.bindAttempt of the lease when it
+                      created the claim.
+                    format: int64
+                    type: integer
+                  name:
+                    description: Name of the lease.
+                    maxLength: 253
+                    type: string
+                  uid:
+                    description: UID of the lease. A lease name can be used again
+                      after the lease is deleted.
+                    type: string
+                required:
+                - attempt
+                - name
+                - uid
+                type: object
+            required:
+            - leaseRef
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: self == oldSelf
+            - message: exactly one of exporter or exclusionGroup is required
+              rule: has(self.exporter) != has(self.exclusionGroup)
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}

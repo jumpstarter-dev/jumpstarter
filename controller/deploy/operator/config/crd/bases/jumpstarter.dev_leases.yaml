@@ -77,6 +77,37 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              constraints:
+                description: Constraints are rules for sets of members. Immutable
+                  after creation.
+                items:
+                  description: LeaseConstraint is a rule for a set of members of a
+                    lease.
+                  properties:
+                    members:
+                      description: Members are the role names that the rule applies
+                        to.
+                      items:
+                        maxLength: 63
+                        type: string
+                      maxItems: 8
+                      minItems: 2
+                      type: array
+                      x-kubernetes-list-type: set
+                    sameLabel:
+                      description: |-
+                        SameLabel is a label key, for example "bus" or "rf-domain". The exporters
+                        that the members bind must have the same value of this label. The
+                        controller selects the value at bind time.
+                      maxLength: 317
+                      minLength: 1
+                      type: string
+                  required:
+                  - members
+                  - sameLabel
+                  type: object
+                maxItems: 4
+                type: array
               context:
                 additionalProperties:
                   type: string
@@ -111,6 +142,116 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              members:
+                description: |-
+                  Members makes this a member-form lease: each member has a role name and
+                  selects one exporter. The controller binds all the required members or
+                  none. Members cannot be used with the top-level selector or exporterRef.
+                  Immutable after creation.
+                items:
+                  description: |-
+                    LeaseMember is one member of a member-form lease: a role name and the
+                    selection of one exporter.
+                  properties:
+                    allowDisabled:
+                      description: AllowDisabled permits a disabled exporter when
+                        used with ExporterRef.
+                      type: boolean
+                    excluded:
+                      description: |-
+                        Excluded tells the controller not to bind this optional member. Only
+                        template expansion sets it, for a request that leaves the role out.
+                      type: boolean
+                    exporterRef:
+                      description: ExporterRef pins the member to a specific exporter
+                        name.
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    name:
+                      description: Name is the role name of the member, for example
+                        "phone". It is a DNS label.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    optional:
+                      description: Optional lets the lease become ready without this
+                        member.
+                      type: boolean
+                    selector:
+                      description: Selector selects the exporter of the member by
+                        its labels.
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: |-
+                              A label selector requirement is a selector that contains values, a key, and an operator that
+                              relates the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: |-
+                                  operator represents a key's relationship to a set of values.
+                                  Valid operators are In, NotIn, Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: |-
+                                  values is an array of string values. If the operator is In or NotIn,
+                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                  the values array must be empty. This array is replaced during a strategic
+                                  merge patch.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                            map is equivalent to an element of matchExpressions, whose key field is "key", the
+                            operator is "In", and the values array contains only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  required:
+                  - name
+                  type: object
+                  x-kubernetes-validations:
+                  - message: only an optional member can be excluded
+                    rule: '!has(self.excluded) || !self.excluded || (has(self.optional)
+                      && self.optional)'
+                  - message: exactly one of selector or exporterRef.name is required
+                    rule: '(((has(self.selector) && ((has(self.selector.matchLabels)
+                      && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions)
+                      && size(self.selector.matchExpressions) > 0))) ? 1 : 0) + ((has(self.exporterRef)
+                      && has(self.exporterRef.name) && size(self.exporterRef.name)
+                      > 0) ? 1 : 0)) == 1'
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               release:
                 description: The release flag requests the controller to end the lease
                   now
@@ -179,16 +320,52 @@ spec:
                   Maximum 10 entries. Keys must be simple names (no slashes) conforming to Kubernetes label rules.
                 maxProperties: 10
                 type: object
+              templateRef:
+                description: |-
+                  TemplateRef records the LeaseTemplate that this lease was expanded from.
+                  The client service sets it; the controller does not read it at bind time.
+                properties:
+                  generation:
+                    description: Generation is the metadata.generation of the template
+                      at expansion.
+                    format: int64
+                    type: integer
+                  name:
+                    description: Name of the LeaseTemplate.
+                    maxLength: 253
+                    type: string
+                required:
+                - generation
+                - name
+                type: object
             required:
             - clientRef
             - selector
             type: object
             x-kubernetes-validations:
-            - message: one of selector or exporterRef.name is required
+            - message: one of selector or exporterRef.name is required, or members
+                for a lease of more than one exporter
               rule: ((has(self.selector.matchLabels) && size(self.selector.matchLabels)
                 > 0) || (has(self.selector.matchExpressions) && size(self.selector.matchExpressions)
                 > 0)) || (has(self.exporterRef) && has(self.exporterRef.name) && size(self.exporterRef.name)
-                > 0)
+                > 0) || (has(self.members) && size(self.members) > 0)
+            - message: members cannot be used with selector or exporterRef
+              rule: '!(has(self.members) && size(self.members) > 0) || !(((has(self.selector.matchLabels)
+                && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions)
+                && size(self.selector.matchExpressions) > 0)) || (has(self.exporterRef)
+                && has(self.exporterRef.name) && size(self.exporterRef.name) > 0))'
+            - message: constraints must reference declared members
+              rule: '!has(self.constraints) || (has(self.members) && self.constraints.all(c,
+                c.members.all(n, self.members.exists(m, m.name == n))))'
+            - message: members are immutable after creation
+              rule: has(self.members) == has(oldSelf.members) && (!has(self.members)
+                || self.members == oldSelf.members)
+            - message: constraints are immutable after creation
+              rule: has(self.constraints) == has(oldSelf.constraints) && (!has(self.constraints)
+                || self.constraints == oldSelf.constraints)
+            - message: templateRef is immutable after creation
+              rule: has(self.templateRef) == has(oldSelf.templateRef) && (!has(self.templateRef)
+                || self.templateRef == oldSelf.templateRef)
             - message: tags are immutable after creation
               rule: '!has(oldSelf.tags) || self.tags == oldSelf.tags'
             - message: context is immutable after creation
@@ -203,6 +380,12 @@ spec:
                 description: BeginTime is the actual start time of the lease.
                 format: date-time
                 type: string
+              bindAttempt:
+                description: |-
+                  BindAttempt counts the bind attempts of this lease. Each ExporterClaim
+                  of the lease records the attempt that created it.
+                format: int64
+                type: integer
               conditions:
                 description: Conditions represent the latest available observations
                   of the lease state.
@@ -268,9 +451,17 @@ spec:
               ended:
                 description: Ended indicates whether the lease has been terminated.
                 type: boolean
+              exclusionGroups:
+                description: ExclusionGroups are the exclusion groups that this lease
+                  holds.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: set
               exporterRef:
-                description: ExporterRef is a reference to the exporter assigned to
-                  this lease.
+                description: |-
+                  ExporterRef is a reference to the exporter assigned to this lease.
+                  It stays nil for a member-form lease: see Members.
                 properties:
                   name:
                     default: ""
@@ -283,6 +474,61 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              members:
+                description: Members is the state of each member of a member-form
+                  lease, in spec order.
+                items:
+                  description: LeaseMemberStatus is the observed state of one member
+                    of a lease.
+                  properties:
+                    exporterRef:
+                      description: ExporterRef is the exporter of the member. A Lost
+                        member keeps it.
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    message:
+                      description: Message is a human-readable message for the state.
+                      type: string
+                    name:
+                      description: Name is the role name of the member.
+                      type: string
+                    priority:
+                      description: Priority is the priority of the member from the
+                        access policy.
+                      type: integer
+                    reason:
+                      description: Reason is a machine-readable reason for the state.
+                      type: string
+                    spotAccess:
+                      description: SpotAccess indicates whether the member was granted
+                        with spot access.
+                      type: boolean
+                    state:
+                      description: State of the member.
+                      enum:
+                      - Pending
+                      - Bound
+                      - Omitted
+                      - Lost
+                      type: string
+                  required:
+                  - name
+                  - state
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               priority:
                 description: Priority is the effective priority of the lease from
                   the access policy.

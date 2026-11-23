@@ -126,6 +126,8 @@ type JumpstarterReconciler struct {
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporteraccesspolicies/finalizers,verbs=update
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=exporterclaims,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=jumpstarter.dev,resources=leasetemplates,verbs=get;list;watch
 
 // virtualtarget.jumpstarter.dev CRD resources (needed to grant permissions to managed
 // exporter-set provisioner controllers, see exporterSetPolicyRules)

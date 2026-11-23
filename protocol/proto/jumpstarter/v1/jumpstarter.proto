@@ -160,6 +160,7 @@ message UpdateLeaseHooksRequest {
 // Request to dial an exporter through the router.
 message DialRequest {
   string lease_name = 1; // Name of the lease to connect through.
+  optional string member_name = 2; // Role name of the member to connect to. Necessary for a lease with members.
 }
 
 // Response containing router connection details for the dialed exporter.

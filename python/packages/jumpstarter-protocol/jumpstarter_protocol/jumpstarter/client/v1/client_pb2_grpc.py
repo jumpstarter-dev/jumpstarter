@@ -51,6 +51,16 @@ class ClientServiceStub:
                 request_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.DeleteLeaseRequest.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
+        self.GetLeaseTemplate = channel.unary_unary(
+                '/jumpstarter.client.v1.ClientService/GetLeaseTemplate',
+                request_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.GetLeaseTemplateRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.LeaseTemplate.FromString,
+                _registered_method=True)
+        self.ListLeaseTemplates = channel.unary_unary(
+                '/jumpstarter.client.v1.ClientService/ListLeaseTemplates',
+                request_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.ListLeaseTemplatesRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.ListLeaseTemplatesResponse.FromString,
+                _registered_method=True)
         self.RotateToken = channel.unary_unary(
                 '/jumpstarter.client.v1.ClientService/RotateToken',
                 request_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.RotateTokenRequest.SerializeToString,
@@ -111,6 +121,20 @@ class ClientServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetLeaseTemplate(self, request, context):
+        """Retrieve a single lease template by resource name.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListLeaseTemplates(self, request, context):
+        """List the lease templates in a namespace.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def RotateToken(self, request, context):
         """Rotate the authentication token for the client.
         """
@@ -155,6 +179,16 @@ def add_ClientServiceServicer_to_server(servicer, server):
                     servicer.DeleteLease,
                     request_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.DeleteLeaseRequest.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'GetLeaseTemplate': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetLeaseTemplate,
+                    request_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.GetLeaseTemplateRequest.FromString,
+                    response_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.LeaseTemplate.SerializeToString,
+            ),
+            'ListLeaseTemplates': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListLeaseTemplates,
+                    request_deserializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.ListLeaseTemplatesRequest.FromString,
+                    response_serializer=jumpstarter_dot_client_dot_v1_dot_client__pb2.ListLeaseTemplatesResponse.SerializeToString,
             ),
             'RotateToken': grpc.unary_unary_rpc_method_handler(
                     servicer.RotateToken,
@@ -352,6 +386,60 @@ class ClientService:
             '/jumpstarter.client.v1.ClientService/DeleteLease',
             jumpstarter_dot_client_dot_v1_dot_client__pb2.DeleteLeaseRequest.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetLeaseTemplate(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.client.v1.ClientService/GetLeaseTemplate',
+            jumpstarter_dot_client_dot_v1_dot_client__pb2.GetLeaseTemplateRequest.SerializeToString,
+            jumpstarter_dot_client_dot_v1_dot_client__pb2.LeaseTemplate.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListLeaseTemplates(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.client.v1.ClientService/ListLeaseTemplates',
+            jumpstarter_dot_client_dot_v1_dot_client__pb2.ListLeaseTemplatesRequest.SerializeToString,
+            jumpstarter_dot_client_dot_v1_dot_client__pb2.ListLeaseTemplatesResponse.FromString,
             options,
             channel_credentials,
             insecure,
