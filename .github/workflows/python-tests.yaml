@@ -139,6 +139,9 @@ jobs:
             sudo modprobe "$mod" 2>/dev/null || true
           done
 
+      # The portable build bundles its .NET runtime. The .deb pulled the runtime,
+      # GTK, WebKit and gcc through apt, which took up to 14 minutes on runners
+      # with a slow mirror; the tests run Renode headless and need none of them.
       - name: Install Renode (Linux)
         if: runner.os == 'Linux'
         env:
@@ -146,8 +149,10 @@ jobs:
           RENODE_VERSION: v1.17.0
         run: |
           RENODE_TAG="${RENODE_VERSION#v}"
-          wget "https://github.com/renode/renode/releases/download/${RENODE_VERSION}/renode_${RENODE_TAG}_amd64.deb" -O /tmp/renode.deb
-          sudo apt-get install -y /tmp/renode.deb
+          wget "https://github.com/renode/renode/releases/download/${RENODE_VERSION}/renode-${RENODE_TAG}.linux-portable.tar.gz" -O /tmp/renode.tar.gz
+          mkdir -p "${RUNNER_TEMP}/renode"
+          tar -xzf /tmp/renode.tar.gz -C "${RUNNER_TEMP}/renode" --strip-components=1
+          echo "${RUNNER_TEMP}/renode" >> "$GITHUB_PATH"
 
       - name: Install Qemu (macOS)
         if: runner.os == 'macOS'
