@@ -352,7 +352,7 @@ class TestDescribeClient:
 
 class TestDescribeGroup:
     def test_subcommands_registered(self):
-        assert set(describe.commands) == {"exporter", "lease", "client"}
+        assert set(describe.commands) == {"exporter", "lease", "lease-template", "client"}
 
     def test_desc_alias(self):
         from jumpstarter_cli.jmp import jmp

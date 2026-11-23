@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio  # noqa: TID251
 import os
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import AbstractContextManager, asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, Self, overload
 
 import grpc
 import yaml
@@ -33,6 +33,10 @@ from jumpstarter.common.exceptions import (
     FileNotFoundError,
 )
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
+
+if TYPE_CHECKING:
+    from jumpstarter.client.grpc import LeaseConstraint, LeaseMember
+    from jumpstarter.client.lease import Lease, LeaseMembers, MembersLease
 
 
 def _blocking_compat(f):
@@ -145,16 +149,94 @@ class ClientConfigV1Alpha1(BaseSettings):
 
         return aio_secure_channel(self.endpoint, credentials, self.grpcOptions)
 
-    @contextmanager
+    @overload
+    def lease[M: LeaseMembers](
+        self,
+        selector: type[M],
+        exporter_name: None = None,
+        lease_name: str | None = None,
+        duration: timedelta | None = None,
+        *,
+        member_selectors: dict[str, str] | None = None,
+    ) -> AbstractContextManager[MembersLease[M]]: ...
+
+    @overload
+    def lease(
+        self,
+        selector: None = None,
+        exporter_name: None = None,
+        lease_name: str | None = None,
+        duration: timedelta | None = None,
+        *,
+        template: str,
+        member_selectors: dict[str, str] | None = None,
+    ) -> AbstractContextManager[MembersLease[LeaseMembers]]: ...
+
+    @overload
     def lease(
         self,
         selector: str | None = None,
         exporter_name: str | None = None,
         lease_name: str | None = None,
-        duration: timedelta = timedelta(minutes=30),
+        duration: timedelta | None = None,
+    ) -> AbstractContextManager[Lease]: ...
+
+    def lease(
+        self,
+        selector=None,
+        exporter_name=None,
+        lease_name=None,
+        duration=None,
+        *,
+        template=None,
+        member_selectors=None,
     ):
+        """Request a lease, or attach to one with `lease_name`.
+
+        The form of the request sets the result of `connect()`:
+
+        - `lease(Projection)`, a `LeaseMembers` subclass: an instance of that
+          class. The class names the lease template.
+        - `lease(template="ivi")`: a `LeaseMembers` object; use `by_role`.
+        - `lease(selector=...)` or a selector string: one driver client.
+
+        A string is a selector, never a template name. `member_selectors`
+        adds labels to the selector of a role of the template. `duration`
+        defaults to the default of the template, or to 30 minutes.
+        """
+        return self._lease(selector, exporter_name, lease_name, duration, template, member_selectors)
+
+    @contextmanager
+    def _lease(self, selector, exporter_name, lease_name, duration, template, member_selectors):
+        members_class = selector if isinstance(selector, type) else None
+        if members_class is None and template is None:
+            if member_selectors:
+                raise ValueError("member_selectors needs a lease template: pass a LeaseMembers class or template=")
+            with start_blocking_portal() as portal, portal.wrap_async_context_manager(
+                self.lease_async(selector, exporter_name, lease_name, duration or timedelta(minutes=30), portal)
+            ) as lease:
+                yield lease
+            return
+
+        if selector is not None and members_class is None:
+            raise ValueError("a selector cannot be used with template=: the template has the selectors")
+        if exporter_name is not None:
+            raise ValueError("exporter_name cannot be used with a lease template: the template selects the exporters")
+        if members_class is not None and template is not None:
+            declared = members_class.__lease_template__
+            if declared is not None and declared != template:
+                raise ValueError(
+                    f"{members_class.__name__} is declared for the template '{declared}', not '{template}'"
+                )
         with start_blocking_portal() as portal, portal.wrap_async_context_manager(
-            self.lease_async(selector, exporter_name, lease_name, duration, portal)
+            self.lease_members_async(
+                portal=portal,
+                members_class=members_class,
+                template=template,
+                member_selectors=member_selectors,
+                lease_name=lease_name,
+                duration=duration,
+            )
         ) as lease:
             yield lease
 
@@ -231,6 +313,11 @@ class ClientConfigV1Alpha1(BaseSettings):
                 latest_condition = lease.conditions[-1]
                 if latest_condition.type == "Ready" and latest_condition.status == "True":
                     lease_map[lease.exporter] = lease
+            elif lease.members and lease.effective_begin_time and not lease.effective_end_time:
+                # A lease with members holds one exporter for each bound role.
+                for status in lease.member_statuses:
+                    if status.bound:
+                        lease_map[status.exporter] = lease
 
         result.include_leases = True
         result.exporters = [
@@ -243,7 +330,7 @@ class ClientConfigV1Alpha1(BaseSettings):
     @_handle_connection_error
     async def create_lease(
         self,
-        duration: timedelta,
+        duration: timedelta | None,
         selector: str | None = None,
         exporter_name: str | None = None,
         begin_time: datetime | None = None,
@@ -252,8 +339,24 @@ class ClientConfigV1Alpha1(BaseSettings):
         allow_disabled: bool = False,
         context: dict[str, str] | None = None,
         shared_with: list[str] | None = None,  # ty: ignore[invalid-type-form]
+        template: str | None = None,
+        excluded_members: list[str] | None = None,  # ty: ignore[invalid-type-form]
+        member_selectors: dict[str, str] | None = None,
+        members: list[LeaseMember] | None = None,  # ty: ignore[invalid-type-form]
+        constraints: list[LeaseConstraint] | None = None,  # ty: ignore[invalid-type-form]
     ):
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
+        member_form: dict[str, Any] = {
+            key: value
+            for key, value in {
+                "template": template,
+                "excluded_members": excluded_members,
+                "member_selectors": member_selectors,
+                "members": members,
+                "constraints": constraints,
+            }.items()
+            if value is not None
+        }
         return await svc.CreateLease(
             selector=selector,
             exporter_name=exporter_name,
@@ -264,7 +367,30 @@ class ClientConfigV1Alpha1(BaseSettings):
             allow_disabled=allow_disabled,
             context=context,
             shared_with=shared_with,
+            **member_form,
         )
+
+    @_blocking_compat
+    @_handle_connection_error
+    async def get_lease_template(self, name: str):
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
+        return await svc.GetLeaseTemplate(name=name)
+
+    @_blocking_compat
+    @_handle_connection_error
+    async def list_lease_templates(self, page_size: int = 100):
+        from jumpstarter.client.grpc import LeaseTemplateList
+
+        svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
+        templates = []
+        page_token = None
+        while True:
+            page = await svc.ListLeaseTemplates(page_size=page_size, page_token=page_token)
+            templates.extend(page.lease_templates)
+            if not page.next_page_token:
+                break
+            page_token = page.next_page_token
+        return LeaseTemplateList(lease_templates=templates, next_page_token=None)
 
     @_blocking_compat
     @_handle_connection_error
@@ -387,6 +513,73 @@ class ClientConfigV1Alpha1(BaseSettings):
                 yield lease
 
         # decorator doesn't work with asynccontextmanager, so we use the same helper
+        except ConnectionError as e:
+            _attach_config_if_expired_token(e, self)
+            raise
+
+    @asynccontextmanager
+    async def lease_members_async(
+        self,
+        *,
+        portal: BlockingPortal,
+        members_class: type[LeaseMembers] | None = None,
+        template: str | None = None,
+        member_selectors: dict[str, str] | None = None,
+        excluded_members: list[str] | None = None,  # ty: ignore[invalid-type-form]
+        members: list[LeaseMember] | None = None,  # ty: ignore[invalid-type-form]
+        constraints: list[LeaseConstraint] | None = None,  # ty: ignore[invalid-type-form]
+        lease_name: str | None = None,
+        duration: timedelta | None = None,
+        acquisition_timeout: timedelta | None = None,
+        retry_timeout: timedelta | None = None,
+        dial_timeout: timedelta | None = None,
+    ):
+        """Request a lease with members, or attach to one with `lease_name`.
+
+        The lease comes from a template (`template`, or the template of
+        `members_class`) or from ad-hoc `members` with `constraints`. Only the
+        CLI makes ad-hoc members; test code names a template.
+        """
+        from jumpstarter.client.lease import LeaseMembers, MembersLease
+
+        lease_name = lease_name or os.environ.get(JMP_LEASE, "")
+        release_lease = lease_name == ""
+        try:
+            async with MembersLease(
+                channel=await self.channel(),
+                namespace=self.metadata.namespace or "",
+                name=lease_name,
+                duration=duration,
+                template=template,
+                member_selectors=dict(member_selectors or {}),
+                excluded_members=list(excluded_members or []),
+                requested_members=list(members or []),
+                constraints=list(constraints or []),
+                members_class=members_class or LeaseMembers,
+                portal=portal,
+                allow=self.drivers.allow,
+                unsafe=self.drivers.unsafe,
+                release=release_lease,
+                tls_config=self.tls,
+                grpc_options=self.grpcOptions or {},
+                client_name=self.metadata.name,
+                acquisition_timeout=(
+                    int(acquisition_timeout.total_seconds())
+                    if acquisition_timeout is not None
+                    else self.leases.acquisition_timeout
+                ),
+                dial_timeout=(
+                    dial_timeout.total_seconds()
+                    if dial_timeout is not None
+                    else float(os.environ.get(JMP_DIAL_TIMEOUT, self.leases.dial_timeout))
+                ),
+                retry_timeout=(
+                    retry_timeout.total_seconds()
+                    if retry_timeout is not None
+                    else float(os.environ.get(JMP_RETRY_TIMEOUT, self.leases.retry_timeout))
+                ),
+            ) as lease:
+                yield lease
         except ConnectionError as e:
             _attach_config_if_expired_token(e, self)
             raise

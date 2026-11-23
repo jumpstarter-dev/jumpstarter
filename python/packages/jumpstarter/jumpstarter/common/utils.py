@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shlex
@@ -22,15 +23,16 @@ from jumpstarter.config.env import (
     JMP_GRPC_INSECURE,
     JMP_GRPC_PASSPHRASE,
     JMP_LEASE,
+    JMP_LEASE_MEMBERS,
     JUMPSTARTER_HOST,
 )
 from jumpstarter.exporter import Session
-from jumpstarter.utils.env import ExporterMetadata, env, env_with_metadata
+from jumpstarter.utils.env import ExporterMetadata, env, env_members, env_with_metadata
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
 
-__all__ = ["ExporterMetadata", "env", "env_with_metadata"]
+__all__ = ["ExporterMetadata", "env", "env_members", "env_with_metadata"]
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +162,29 @@ def _build_common_env(
     return env
 
 
+def _build_members_env(
+    members: dict[str, dict | None],
+    allow: list[str],
+    unsafe: bool,
+    *,
+    lease=None,
+) -> dict[str, str]:
+    """Build the environment of a shell on a lease with members.
+
+    The variables that describe one exporter are removed, also when an outer
+    shell set them: no single exporter stands for this lease.
+    """
+    env = dict(os.environ)
+    for name in (JUMPSTARTER_HOST, JMP_EXPORTER, JMP_EXPORTER_LABELS, JMP_GRPC_INSECURE, JMP_GRPC_PASSPHRASE):
+        env.pop(name, None)
+    env[JMP_LEASE_MEMBERS] = json.dumps(members)
+    env[JMP_DRIVERS_ALLOW] = "UNSAFE" if unsafe else ",".join(allow)
+    env["_JMP_SUPPRESS_DRIVER_WARNINGS"] = "1"
+    if lease is not None and lease.name:
+        env[JMP_LEASE] = lease.name
+    return env
+
+
 def _bash_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
     """Build the bash ``PS1`` for the jmp shell prompt."""
     if no_color:
@@ -262,12 +287,52 @@ def launch_shell(
         The exit code of the shell or command process
     """
 
-    shell = os.environ.get("SHELL", "bash")
-    shell_name = os.path.basename(shell)
-
     common_env = _build_common_env(
         host, allow, unsafe, lease=lease, insecure=insecure, passphrase=passphrase
     )
+    return _launch_shell_with_env(common_env, context, use_profiles, command=command, lease=lease, motd=motd)
+
+
+def launch_members_shell(
+    members: dict[str, dict | None],
+    context: str,
+    allow: list[str],
+    unsafe: bool,
+    use_profiles: bool,
+    *,
+    command: tuple[str, ...] | None = None,
+    lease=None,
+) -> int:
+    """Launch a shell for a lease with members.
+
+    Args:
+        members: Each role with its `exporter`, `labels` and `socket`, or None
+            for a role without an exporter. It becomes JMP_LEASE_MEMBERS.
+        context: The context of the shell prompt (the lease name)
+        allow: List of allowed drivers
+        unsafe: Whether to allow drivers outside of the allow list
+        use_profiles: Whether to load shell profile files
+        command: Optional command to run instead of launching an interactive shell
+        lease: Optional Lease object to set up lease ending callback
+
+    Returns:
+        The exit code of the shell or command process
+    """
+    common_env = _build_members_env(members, allow, unsafe, lease=lease)
+    return _launch_shell_with_env(common_env, context, use_profiles, command=command, lease=lease)
+
+
+def _launch_shell_with_env(
+    common_env: dict[str, str],
+    context: str,
+    use_profiles: bool,
+    *,
+    command: tuple[str, ...] | None = None,
+    lease=None,
+    motd: str | None = None,
+) -> int:
+    shell = os.environ.get("SHELL", "bash")
+    shell_name = os.path.basename(shell)
 
     if command:
         return _run_process(list(command), common_env, lease)

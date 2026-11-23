@@ -10,6 +10,7 @@ from jumpstarter_cli_common.print import model_print
 from .common import opt_allow_disabled, opt_begin_time, opt_duration_partial, opt_exporter_name, opt_selector
 from .formatter import RSTStrippingCommand
 from .login import relogin_client
+from .members import opt_members, parse_member_request
 
 
 def _parse_key_value_pairs(
@@ -47,7 +48,8 @@ def create():
 @opt_config(exporter=False)
 @opt_selector
 @opt_exporter_name
-@opt_duration_partial(required=True)
+@opt_members
+@opt_duration_partial(required=False)
 @opt_begin_time
 @click.option(
     "--lease-id",
@@ -82,7 +84,7 @@ def create_lease(
     config,
     selector: str | None,
     exporter_name: str | None,
-    duration: timedelta,
+    duration: timedelta | None,
     begin_time: datetime | None,
     lease_id: str | None,
     tags: tuple[str, ...],
@@ -90,6 +92,10 @@ def create_lease(
     context_entries: tuple[str, ...],
     share_with: str | None,
     output: OutputType,
+    lease_template: str | None = None,
+    without: tuple[str, ...] = (),
+    member_entries: tuple[str, ...] = (),
+    same_label_entries: tuple[str, ...] = (),
 ):
     """
     Create a lease
@@ -127,10 +133,38 @@ def create_lease(
         $ jmp create lease -l foo=bar --duration 1h \\
             --context build_id=nightly-42 --context image_digest=sha256:abc
 
+    Request the exporters of a lease template, which a lab administrator
+    published (see ``jmp get lease-templates``). ``--duration`` and ``--share``
+    replace the defaults of the template:
+
+    .. code-block:: bash
+
+        $ jmp create lease -t ivi --duration 4h --without phone --member headunit=soc=sa8775p
+
+    Request more than one exporter without a template:
+
+    .. code-block:: bash
+
+        $ jmp create lease --member phone=device-type=phone --member headunit=device-type=headunit \\
+            --same-label rf-domain=phone,headunit --duration 45m
+
     """
 
-    if not selector and not exporter_name:
-        raise click.UsageError("one of --selector/-l or --name/-n is required")
+    request = parse_member_request(
+        lease_template=lease_template,
+        without=without,
+        member_entries=member_entries,
+        same_label_entries=same_label_entries,
+        selector=selector,
+        exporter_name=exporter_name,
+        allow_disabled=allow_disabled,
+    )
+
+    if request is None and not selector and not exporter_name:
+        raise click.UsageError(
+            "one of --selector/-l or --name/-n is required, or --lease-template/-t or --member for a lease "
+            "with members"
+        )
 
     parsed_tags = _parse_key_value_pairs(tags, "tag")
     parsed_context = _parse_key_value_pairs(
@@ -143,17 +177,38 @@ def create_lease(
         if any(not name for name in shared_clients):
             raise click.UsageError("--share must not contain empty client names")
 
-    lease = config.create_lease(
-        selector=selector,
-        exporter_name=exporter_name,
-        duration=duration,
-        begin_time=begin_time,
-        lease_id=lease_id,
-        tags=parsed_tags or None,
-        allow_disabled=allow_disabled,
-        context=parsed_context or None,
-        shared_with=shared_clients,
-    )
+    if request is not None and request.template is not None:
+        template = config.get_lease_template(request.template)
+        request.check_template(template)
+        if duration is None and template.default_duration is None:
+            raise click.UsageError(
+                f"--duration is required: the lease template '{template.name}' has no default duration"
+            )
+    elif duration is None:
+        raise click.MissingParameter(param_hint="'--duration'", param_type="option")
+
+    if request is not None:
+        lease = config.create_lease(
+            duration=duration,
+            begin_time=begin_time,
+            lease_id=lease_id,
+            tags=parsed_tags or None,
+            context=parsed_context or None,
+            shared_with=shared_clients,
+            **request.create_kwargs(),
+        )
+    else:
+        lease = config.create_lease(
+            selector=selector,
+            exporter_name=exporter_name,
+            duration=duration,
+            begin_time=begin_time,
+            lease_id=lease_id,
+            tags=parsed_tags or None,
+            allow_disabled=allow_disabled,
+            context=parsed_context or None,
+            shared_with=shared_clients,
+        )
 
     for label_key, message in lease.deprecated_labels.items():
         warning = f"selector label '{label_key}' is deprecated"

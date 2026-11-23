@@ -10,7 +10,7 @@ from jumpstarter_cli_common.print import model_print
 from pydantic import BaseModel, ConfigDict, Field
 
 from .login import relogin_client
-from jumpstarter.client.grpc import Lease
+from jumpstarter.client.grpc import Lease, LeaseConstraint
 from jumpstarter.client.introspect import describe_drivers
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
@@ -90,7 +90,7 @@ def _holding_lease(config, exporter: str):
     who has it, which is the main reason to ask.
     """
     for lease in config.list_leases(only_active=True).leases:
-        if lease.exporter == exporter:
+        if lease.holds_exporter(exporter):
             return lease
     return None
 
@@ -218,24 +218,109 @@ def describe_lease(config, name: str, show_drivers: bool, output: OutputType):
             model_print(lease, output)
         return
 
-    _print_fields(
-        [
-            ("Name", lease.name),
-            ("Namespace", lease.namespace),
-            ("Selector", lease.selector),
-            ("Exporter", lease.exporter),
-            ("Client", lease.client),
-            ("Status", lease.get_status()),
-            ("Duration", lease.duration),
-            ("Effective Begin Time", lease.effective_begin_time),
-            ("Effective End Time", lease.effective_end_time),
-        ]
-    )
+    fields = [
+        ("Name", lease.name),
+        ("Namespace", lease.namespace),
+        ("Selector", lease.selector),
+        ("Exporter", lease.exporter),
+        ("Client", lease.client),
+        ("Status", lease.get_status()),
+        ("Duration", lease.duration),
+        ("Effective Begin Time", lease.effective_begin_time),
+        ("Effective End Time", lease.effective_end_time),
+    ]
+    if lease.members:
+        fields[2:4] = [("Template", lease.template.template if lease.template else None)]
+    _print_fields(fields)
+    if lease.members:
+        _print_lease_members(lease)
+        _print_constraints(lease.constraints)
     _print_mapping("Tags", lease.tags)
     _print_mapping("Context", lease.context)
     _print_conditions(lease.conditions)
     if driver_tree is not None:
         _print_drivers(driver_tree)
+
+
+def _print_lease_members(lease: Lease) -> None:
+    rows = []
+    for member in lease.members:
+        status = lease.member_status(member.name)
+        rows.append(
+            [
+                member.name + ("*" if member.optional else ""),
+                member.selection(),
+                _format_value(status.state if status else "Pending"),
+                _format_value(status.exporter if status else None),
+                _format_value(status.reason if status else None),
+            ]
+        )
+    _print_table("Members", ["Role", "Selector", "State", "Exporter", "Reason"], rows)
+
+
+def _print_constraints(constraints: list[LeaseConstraint]) -> None:
+    _print_table(
+        "Constraints",
+        ["Members", "Same Label"],
+        [[", ".join(constraint.member_names), _format_value(constraint.same_label)] for constraint in constraints],
+    )
+
+
+@describe.command(name="lease-template")
+@opt_config(exporter=False)
+@click.argument("name")
+@opt_output
+@handle_exceptions_with_reauthentication(relogin_client)
+def describe_lease_template(config, name: str, output: OutputType):
+    """
+    Show details of a specific lease template
+
+    A * marks an optional member. Available is the number of exporters that
+    you can lease now for a member.
+    """
+
+    template = config.get_lease_template(name)
+
+    if output:
+        model_print(template, output)
+        return
+
+    _print_fields(
+        [
+            ("Name", template.name),
+            ("Namespace", template.namespace),
+            ("Description", template.description),
+            ("Image", template.image),
+            ("Available", f"{template.available_summary()} members"),
+            ("Default Duration", template.default_duration),
+            ("Default Shared With", ", ".join(template.default_shared_with)),
+        ]
+    )
+    if template.docs:
+        click.echo("Docs:")
+        for link in template.docs:
+            click.echo(f"  {link}")
+    else:
+        click.echo("Docs:  <none>")
+    if template.instructions:
+        click.echo("Instructions:")
+        for line in template.instructions.rstrip().splitlines():
+            click.echo(f"  {line}")
+    else:
+        click.echo("Instructions:  <none>")
+    _print_table(
+        "Members",
+        ["Role", "Selector", "Available"],
+        [
+            [
+                entry.member.name + ("*" if entry.member.optional else ""),
+                entry.member.selection(),
+                str(entry.available),
+            ]
+            for entry in template.members
+        ],
+    )
+    _print_constraints(template.constraints)
 
 
 class ClientDescription(BaseModel):

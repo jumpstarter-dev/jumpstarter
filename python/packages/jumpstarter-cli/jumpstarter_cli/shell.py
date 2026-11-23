@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 import time
-from contextlib import ExitStack
+from contextlib import AsyncExitStack, ExitStack
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -35,6 +35,7 @@ from .common import (
 )
 from .formatter import RSTStrippingCommand
 from .login import relogin_client
+from .members import MemberRequest, opt_members, parse_member_request
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path, fetch_motd
 from jumpstarter.client.exceptions import LeaseError
@@ -45,7 +46,7 @@ from jumpstarter.common.exceptions import (
     ExporterOfflineError,
     ExporterUnreachableError,
 )
-from jumpstarter.common.utils import launch_shell
+from jumpstarter.common.utils import launch_members_shell, launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -778,10 +779,176 @@ async def _shell_with_signal_handling(  # noqa: C901
     return exit_code
 
 
+async def _monitor_lost_members(lease, cancel_scope) -> None:
+    """Tell the user when a member of the lease loses its exporter.
+
+    The lease keeps its other members (DD-8), so the session goes on.
+    """
+    reported: set[str] = set()
+    while not cancel_scope.cancel_called:
+        try:
+            fresh = await lease.get()
+        except Exception:
+            logger.debug("lost-member monitor: could not refresh lease %s", lease.name, exc_info=True)
+            await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
+            continue
+        if fresh.effective_end_time is not None:
+            return
+        for status in fresh.lost_members():
+            lease.lost[status.name] = status.describe_loss()
+            if status.name not in reported:
+                reported.add(status.name)
+                click.echo(
+                    click.style(
+                        f"\nLease {lease.name}: {status.describe_loss()}. The other members stay usable.",
+                        fg="yellow",
+                        bold=True,
+                    )
+                )
+        await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
+
+
+def _members_environment(lease, paths: dict[str, str | None]) -> dict[str, dict | None]:
+    """What JMP_LEASE_MEMBERS says: the exporter, its labels and the local socket of each role."""
+    members: dict[str, dict | None] = {}
+    for role, path in paths.items():
+        if path is None:
+            members[role] = None
+            continue
+        members[role] = {
+            "exporter": lease.member_exporter(role),
+            "labels": dict(lease.member_labels.get(role, {})),
+            "socket": path,
+        }
+    return members
+
+
+async def _run_members_shell_session(lease, exporter_logs, config, command) -> int:
+    """Serve each member of the lease on its own socket and run the shell.
+
+    The lease is Ready, so the beforeLease hook of each member is complete
+    (DD-16) and there is no hook to wait for here. The exporters run their
+    afterLease hooks when the lease ends; this session does not wait for them.
+    """
+    async with lease.serve_unix_async() as paths, lease.monitor_async():
+        with ExitStack() as stack:
+            async with AsyncExitStack() as logs:
+                if exporter_logs:
+                    for path in paths.values():
+                        if path is None:
+                            continue
+                        client = await logs.enter_async_context(
+                            client_from_path(path, lease.portal, stack, allow=lease.allow, unsafe=lease.unsafe)
+                        )
+                        await logs.enter_async_context(client.log_stream_async(show_all_logs=True))
+                return await _launch_members_shell(lease, config, command, paths)
+
+
+async def _launch_members_shell(lease, config, command, paths) -> int:
+    members = _members_environment(lease, paths)
+    if not command:
+        for role, entry in members.items():
+            click.echo(f"  {role}: {entry['exporter'] if entry else '(no exporter)'}", err=True)
+    return await anyio.to_thread.run_sync(
+        lambda: launch_members_shell(
+            members,
+            lease.name,
+            config.drivers.allow,
+            config.drivers.unsafe,
+            config.shell.use_profiles,
+            command=command,
+            lease=lease,
+        )
+    )
+
+
+async def _members_shell_with_signal_handling(
+    config,
+    request: MemberRequest | None,
+    lease_name,
+    duration,
+    exporter_logs,
+    command,
+    acquisition_timeout,
+    retry_timeout=None,
+    dial_timeout=None,
+):
+    """Acquire or attach to a lease with members and run the shell, with signal handling.
+
+    Ctrl+C at any point releases a lease that this command created. An
+    exporter that cannot be reached ends the command: the lease is not
+    requested again, because its other members are bound.
+    """
+    exit_code = 0
+    cancelled_exc_class = get_cancelled_exc_class()
+    token_state = {"expired_unrecovered": False}
+
+    token = getattr(config, "token", None)
+    if token:
+        remaining = get_token_remaining_seconds(token)
+        if remaining is not None and remaining <= 0:
+            err = ConnectionError("token is expired")
+            err.set_config(config)
+            raise err
+
+    async with create_task_group() as tg:
+        tg.start_soon(signal_handler, tg.cancel_scope)
+        try:
+            async with anyio.from_thread.BlockingPortal() as portal, config.lease_members_async(
+                portal=portal,
+                lease_name=lease_name,
+                duration=duration,
+                acquisition_timeout=acquisition_timeout,
+                retry_timeout=retry_timeout,
+                dial_timeout=dial_timeout,
+                **(request.create_kwargs() if request is not None else {}),
+            ) as lease:
+                tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope, token_state)
+                tg.start_soon(_monitor_shared_access, lease, tg.cancel_scope)
+                tg.start_soon(_monitor_lost_members, lease, tg.cancel_scope)
+                exit_code = await _run_members_shell_session(lease, exporter_logs, config, command)
+                if lease.release and lease.name and token_state["expired_unrecovered"]:
+                    _warn_about_expired_token(lease.name, None)
+        except BaseExceptionGroup as eg:
+            if find_exception_in_group(eg, cancelled_exc_class):
+                exit_code = 2
+            else:
+                for exc_type in (TimeoutError, LeaseError, ExporterUnreachableError, ExporterOfflineError):
+                    if found := find_exception_in_group(eg, exc_type):
+                        raise found from None
+                raise
+        except cancelled_exc_class:
+            exit_code = 2
+        finally:
+            if not tg.cancel_scope.cancel_called:
+                tg.cancel_scope.cancel()
+
+    return exit_code
+
+
+def _is_member_form_lease(config, lease_name: str) -> bool:
+    """Whether an existing lease has members, so the shell serves one socket for each role.
+
+    Any failure to read the lease answers no: the usual path then reports it.
+    """
+    try:
+        existing = config.get_lease(name=lease_name)
+    except Exception:
+        logger.debug("Could not read lease %s before attaching", lease_name, exc_info=True)
+        return False
+    members = getattr(existing, "members", None)
+    return isinstance(members, list) and bool(members)
+
+
 def _format_lease_display(lease, viewer: str | None = None) -> str:
     parts = []
     if viewer and viewer != lease.client and lease.is_accessible_by(viewer):
         parts.append(f"shared by {lease.client}")
+    if lease.members:
+        if lease.template:
+            parts.append(f"template={lease.template.template}")
+        exporters = lease.member_exporters()
+        parts.append("members=" + ",".join(f"{role}={exporters[role] or '-'}" for role in exporters))
     if lease.exporter:
         parts.append(f"exporter={lease.exporter}")
     if lease.selector:
@@ -879,6 +1046,34 @@ async def _shell_direct_async(
     return exit_code
 
 
+def _members_shell(
+    config, request, lease_name, duration, exporter_logs, command, acquisition_timeout, retry_timeout, dial_timeout
+) -> int:
+    if request is not None and request.template is not None:
+        template = config.get_lease_template(request.template)
+        request.check_template(template)
+        # --duration has a default here. Without the option, the default of the template applies.
+        ctx = click.get_current_context(silent=True)
+        explicit = ctx is not None and ctx.get_parameter_source("duration") in (
+            click.core.ParameterSource.COMMANDLINE,
+            click.core.ParameterSource.ENVIRONMENT,
+        )
+        if not explicit and template.default_duration is not None:
+            duration = None
+    return anyio.run(
+        _members_shell_with_signal_handling,
+        config,
+        request,
+        lease_name,
+        duration,
+        exporter_logs,
+        command,
+        acquisition_timeout,
+        retry_timeout,
+        dial_timeout,
+    )
+
+
 @click.command("shell", cls=RSTStrippingCommand)
 @opt_config(allow_missing=True)
 @click.argument("command", nargs=-1)
@@ -892,6 +1087,7 @@ async def _shell_direct_async(
 )
 @opt_selector
 @opt_exporter_name
+@opt_members
 @opt_duration_partial(default=timedelta(minutes=30), show_default="00:30:00")
 @click.option("--exporter-logs", is_flag=True, help="Enable exporter log streaming")
 @opt_allow_disabled
@@ -934,6 +1130,10 @@ def shell(
     tls_grpc_address,
     tls_grpc_insecure,
     passphrase,
+    lease_template=None,
+    without=(),
+    member_entries=(),
+    same_label_entries=(),
 ):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
@@ -946,7 +1146,27 @@ def shell(
 
         $ jmp shell --exporter foo -- python bar.py
         $ jmp shell --tls-grpc exporter.host.name:1234
+
+    With a lease template (-t), or with --member, the lease has one exporter
+    for each role, and each role is a top-level name of the j command:
+
+    .. code-block:: bash
+
+        $ jmp shell -t ivi --without phone
+        $$ j headunit power on
     """
+
+    request = parse_member_request(
+        lease_template=lease_template,
+        without=without,
+        member_entries=member_entries,
+        same_label_entries=same_label_entries,
+        selector=selector,
+        exporter_name=exporter_name,
+        allow_disabled=allow_disabled,
+    )
+    if request is not None and tls_grpc_address is not None:
+        raise click.UsageError("--lease-template/-t and --member cannot be used with --tls-grpc")
 
     if tls_grpc_address is not None:
         exit_code = anyio.run(
@@ -966,9 +1186,19 @@ def shell(
 
     match config:
         case ClientConfigV1Alpha1():
+            if request is not None:
+                if lease_name:
+                    raise click.UsageError("--lease attaches to a lease that exists: it cannot be used with "
+                                           "--lease-template/-t or --member")
+                sys.exit(_members_shell(config, request, None, duration, exporter_logs, command,
+                                        acquisition_timeout, retry_timeout, dial_timeout))
             has_existing_lease = bool(lease_name or os.environ.get(JMP_LEASE))
             if not selector and not exporter_name and not has_existing_lease:
                 lease_name = anyio.run(_resolve_lease_from_active_async, config)
+            existing_name = lease_name or os.environ.get(JMP_LEASE)
+            if not selector and not exporter_name and existing_name and _is_member_form_lease(config, existing_name):
+                sys.exit(_members_shell(config, None, existing_name, None, exporter_logs, command,
+                                        acquisition_timeout, retry_timeout, dial_timeout))
             exit_code = anyio.run(
                 _shell_with_signal_handling,
                 config,

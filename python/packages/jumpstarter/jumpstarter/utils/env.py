@@ -1,12 +1,15 @@
+import json
 import logging
 import os
-from contextlib import ExitStack, asynccontextmanager, contextmanager
+from contextlib import AbstractContextManager, AsyncExitStack, ExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
+from typing import overload
 
 from anyio.from_thread import start_blocking_portal
 from pydantic import ValidationError
 
 from jumpstarter.client import client_from_path
+from jumpstarter.client.lease import LeaseMembers
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import (
@@ -16,6 +19,7 @@ from jumpstarter.config.env import (
     JMP_GRPC_INSECURE,
     JMP_GRPC_PASSPHRASE,
     JMP_LEASE,
+    JMP_LEASE_MEMBERS,
     JUMPSTARTER_GRPC_INSECURE,
     JUMPSTARTER_HOST,
 )
@@ -81,6 +85,12 @@ async def env_async(portal, stack):
     """
     host = os.environ.get(JUMPSTARTER_HOST, None)
     if host is None:
+        if os.environ.get(JMP_LEASE_MEMBERS):
+            roles = ", ".join(lease_members_from_env())
+            raise EnvironmentVariableNotSetError(
+                f"{JUMPSTARTER_HOST} not set: this shell holds a lease with members ({roles}), "
+                "not one exporter. Call env_members() instead of env() or env_with_metadata()"
+            )
         raise EnvironmentVariableNotSetError(f"{JUMPSTARTER_HOST} not set")
 
     drivers = _resolve_drivers_config()
@@ -150,5 +160,125 @@ def env_with_metadata():
         start_blocking_portal() as portal,
         ExitStack() as stack,
         portal.wrap_async_context_manager(env_with_metadata_async(portal, stack)) as result,
+    ):
+        yield result
+
+
+def lease_members_from_env() -> dict[str, dict | None]:
+    """The members of the lease of the current shell, as `jmp shell` describes them in JMP_LEASE_MEMBERS.
+
+    Each role maps to its `exporter`, `labels` and `socket`, or to None for a
+    role without an exporter.
+    """
+    raw = os.environ.get(JMP_LEASE_MEMBERS)
+    if not raw:
+        raise EnvironmentVariableNotSetError(
+            f"{JMP_LEASE_MEMBERS} not set: env_members() needs a jmp shell on a lease with members"
+        )
+    try:
+        members = json.loads(raw)
+    except ValueError as e:
+        raise EnvironmentVariableNotSetError(f"{JMP_LEASE_MEMBERS} is not valid JSON: {e}") from None
+    if not isinstance(members, dict) or any(v is not None and not isinstance(v, dict) for v in members.values()):
+        raise EnvironmentVariableNotSetError(f"{JMP_LEASE_MEMBERS} is not a mapping from each role to its member")
+    return members
+
+
+@asynccontextmanager
+async def env_member_async(role: str, portal, stack):
+    """Provide the client of one role of the lease of the current shell."""
+    members = lease_members_from_env()
+    if role not in members:
+        raise KeyError(role)
+    entry = members[role]
+    if entry is None:
+        raise LookupError(f"the role '{role}' has no exporter in this lease")
+    drivers = _resolve_drivers_config()
+    async with client_from_path(entry["socket"], portal, stack, allow=drivers.allow, unsafe=drivers.unsafe) as client:
+        try:
+            yield client
+        finally:
+            if hasattr(client, "close"):
+                client.close()
+
+
+@asynccontextmanager
+async def env_members_async(portal, stack, members: type[LeaseMembers] = LeaseMembers):
+    """Provide the members of the lease of the current shell.
+
+    Async version of env_members()
+    """
+    entries = lease_members_from_env()
+    lease = os.environ.get(JMP_LEASE) or None
+    members.check_members(_members_of(entries, members), "the lease of this shell")
+    drivers = _resolve_drivers_config()
+
+    async with AsyncExitStack() as clients_stack:
+        clients = {}
+        metadata: dict[str, ExporterMetadata | None] = {}
+        for role, entry in entries.items():
+            if entry is None:
+                clients[role] = None
+                metadata[role] = None
+                continue
+            clients[role] = await clients_stack.enter_async_context(
+                client_from_path(entry["socket"], portal, stack, allow=drivers.allow, unsafe=drivers.unsafe)
+            )
+            metadata[role] = ExporterMetadata(
+                name=entry.get("exporter", ""), labels=dict(entry.get("labels") or {}), lease=lease
+            )
+        try:
+            yield members(clients, metadata)
+        finally:
+            for client in clients.values():
+                if client is not None and hasattr(client, "close"):
+                    client.close()
+
+
+def _members_of(entries: dict[str, dict | None], members: type[LeaseMembers]):
+    """The roles of the shell as lease members, to compare with a members class.
+
+    The environment does not say which roles are optional. A role without an
+    exporter is optional; for a role with one, the class is taken at its word,
+    and a role that the class does not declare is not required of it.
+    """
+    from jumpstarter.client.grpc import LeaseMember
+
+    declared = members.__lease_roles__
+    return [
+        LeaseMember(name=role, optional=entry is None or role not in declared or declared[role].optional)
+        for role, entry in entries.items()
+    ]
+
+
+@overload
+def env_members() -> AbstractContextManager[LeaseMembers]: ...
+
+
+@overload
+def env_members[M: LeaseMembers](members: type[M]) -> AbstractContextManager[M]: ...
+
+
+@contextmanager
+def env_members(members=LeaseMembers):
+    """Provide the members of the lease of the current shell, with the metadata of each role.
+
+    This is the function for a `jmp shell` on a lease with members, where
+    env() and env_with_metadata() do not apply. Pass a `LeaseMembers` subclass
+    to get an instance of that class.
+
+    Example::
+
+        with env_members() as members:
+            members.by_role["phone"].adb.devices()
+            print(members.metadata["phone"].name)
+
+        with env_members(Projection) as members:
+            members.headunit.power.on()
+    """
+    with (
+        start_blocking_portal() as portal,
+        ExitStack() as stack,
+        portal.wrap_async_context_manager(env_members_async(portal, stack, members)) as result,
     ):
         yield result

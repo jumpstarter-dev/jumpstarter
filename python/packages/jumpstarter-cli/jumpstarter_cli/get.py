@@ -2,11 +2,12 @@ import click
 from jumpstarter_cli_common.alias import AliasedGroup
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions_with_reauthentication
-from jumpstarter_cli_common.opt import OutputType, opt_comma_separated, opt_output_all
+from jumpstarter_cli_common.opt import OutputMode, OutputType, opt_comma_separated, opt_output_all
 from jumpstarter_cli_common.print import model_print
 
 from .common import opt_selector
 from .login import relogin_client
+from .mobly import export_mobly_testbed
 from jumpstarter.client.status import status_help_text
 
 
@@ -78,11 +79,23 @@ def get_exporters(
     model_print(exporters, output)
 
 
+OUTPUT_MOBLY = "mobly"
+
+opt_output_leases = click.option(
+    "-o",
+    "--output",
+    type=click.Choice([OutputMode.JSON, OutputMode.YAML, OutputMode.NAME, OUTPUT_MOBLY]),
+    default=None,
+    help='Output mode. Use "-o name" for shorter output (resource/name). '
+    'With NAME, "-o mobly" writes a Mobly testbed file for a lease with members (run it in jmp shell).',
+)
+
+
 @get.command(name="leases")
 @opt_config(exporter=False)
 @click.argument("name", required=False, default=None)
 @opt_selector
-@opt_output_all
+@opt_output_leases
 @click.option("-a", "--all", "show_all", is_flag=True, default=False, help="Include expired leases")
 @click.option("-A", "--all-clients", "all_clients", is_flag=True, default=False, help="Include leases from all clients")
 @click.option(
@@ -106,12 +119,23 @@ def get_leases(
 ):
     """
     Display one or many leases
+
+    A lease with members shows the exporter of each role, and the lease
+    template that it was made from.
     """
+
+    if output == OUTPUT_MOBLY and not name:
+        raise click.UsageError("-o mobly needs the NAME of a lease")
 
     if name:
         if selector or tag_filter:
             raise click.UsageError("NAME cannot be combined with --selector or --tag-filter")
         lease = config.get_lease(name=name)
+        if output == OUTPUT_MOBLY:
+            if not lease.members:
+                raise click.UsageError(f"-o mobly needs a lease with members: lease {name} has one exporter")
+            click.echo(export_mobly_testbed(name), nl=False)
+            return
         model_print(lease, output)
         return
 
@@ -123,3 +147,21 @@ def get_leases(
         leases = leases.filter_by_client(config.metadata.name)
 
     model_print(leases, output, viewer=config.metadata.name)
+
+
+@get.command(name="lease-templates")
+@opt_config(exporter=False)
+@opt_output_all
+@click.option("--page-size", type=click.IntRange(min=1), default=100, help="Number of results per page for pagination")
+@handle_exceptions_with_reauthentication(relogin_client)
+def get_lease_templates(config, output: OutputType, page_size: int):
+    """
+    Display the lease templates
+
+    A lease template names a set of exporters that belong together. Request
+    one with 'jmp shell -t NAME' or 'jmp create lease -t NAME'. A * marks an
+    optional member. AVAILABLE is the number of members that have at least one
+    exporter that you can lease now; it is only a guide.
+    """
+
+    model_print(config.list_lease_templates(page_size=page_size), output)

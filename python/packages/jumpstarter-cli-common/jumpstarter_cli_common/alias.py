@@ -29,6 +29,8 @@ class AliasedGroup(click.Group):
         "clients": ["client"],
         "lease": ["leases", "l"],
         "leases": ["lease"],
+        "lease-template": ["lease-templates", "leasetemplate", "leasetemplates"],
+        "lease-templates": ["lease-template", "leasetemplate", "leasetemplates"],
         "cluster": ["clusters"],
         "clusters": ["cluster"],
         "version": ["ver", "v"],
