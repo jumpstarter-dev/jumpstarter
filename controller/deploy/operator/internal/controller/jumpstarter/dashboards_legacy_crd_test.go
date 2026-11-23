@@ -124,8 +124,10 @@ func TestPersesDashboardCRDv1alpha1Only(t *testing.T) {
 		}
 	}
 
-	if requeue := r.observabilityRequeueAfter(ctx, js, observability); requeue != 2*time.Minute {
-		t.Fatalf("requeue = %s, want 2m while the CRD version is unsupported", requeue)
+	// The CRD watch re-checks when the served versions change, so the periodic
+	// interval is enough while only v1alpha1 is served.
+	if requeue := r.observabilityRequeueAfter(ctx, js); requeue != 30*time.Minute {
+		t.Fatalf("requeue = %s, want 30m while the CRD version is unsupported", requeue)
 	}
 
 	// A v1alpha2 object must not be written: the API server does not serve it.

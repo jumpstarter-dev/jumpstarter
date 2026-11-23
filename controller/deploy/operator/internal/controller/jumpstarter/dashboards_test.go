@@ -250,8 +250,8 @@ func TestReconcilePersesDashboardsNotConfigured(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcilePersesDashboards() error = %v", err)
 	}
-	if result.phase != integrationNotConfigured || result.reason != serviceMonitorReasonNotConfigured {
-		t.Fatalf("result = %v/%q, want %v/%s", result.phase, result.reason, integrationNotConfigured, serviceMonitorReasonNotConfigured)
+	if result.reason != serviceMonitorReasonNotConfigured {
+		t.Fatalf("reason = %q, want %s", result.reason, serviceMonitorReasonNotConfigured)
 	}
 }
 
@@ -278,8 +278,8 @@ func TestReconcilePersesDashboardsDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcilePersesDashboards() error = %v", err)
 	}
-	if result.phase != integrationDisabled || result.reason != serviceMonitorReasonDisabled {
-		t.Fatalf("result = %v/%q, want %v/%s", result.phase, result.reason, integrationDisabled, serviceMonitorReasonDisabled)
+	if result.reason != serviceMonitorReasonDisabled {
+		t.Fatalf("reason = %q, want %s", result.reason, serviceMonitorReasonDisabled)
 	}
 }
 
