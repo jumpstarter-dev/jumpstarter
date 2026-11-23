@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -229,6 +230,12 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Demand of pending Leases and the exporters that member-form Leases hold.
+	usage, err := r.computeLeaseUsage(ctx, &exporterSet)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Clean up drained (disabled+unleased) exporters and ExitAndReplace
 	// terminal pods (Succeeded/Failed) before computing pool state.
 	cleanupResult, cleaned, err := r.cleanupBeforeScale(
@@ -236,6 +243,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		&exporterSet,
 		ownedExporters,
 		podsByExporter,
+		usage,
 		prev.available,
 		prev.progressing,
 		prev.degraded,
@@ -248,7 +256,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return cleanupResult, nil
 	}
 
-	state := computePoolState(ownedExporters)
+	state := usage.hold(computePoolState(ownedExporters), ownedExporters)
 
 	mergedParameters, err := deepMergeParameters(vtc.Spec.Parameters, exporterSet.Spec.Parameters)
 	if err != nil {
@@ -260,12 +268,12 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Scale-up logic. Uses potentiallyAvailable (replicas - leased) to avoid
 	// cache-race over-creation. One exporter per reconcile; Owns watch
 	// triggers subsequent cycles.
-	scaled, err := r.reconcileScaleUp(ctx, &exporterSet, state)
+	scaled, err := r.reconcileScaleUp(ctx, &exporterSet, state, usage)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if !scaled {
-		result, err = r.reconcileScaleDown(ctx, &exporterSet, ownedExporters, state)
+		result, err = r.reconcileScaleDown(ctx, &exporterSet, ownedExporters, state, usage)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -283,7 +291,7 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Update status counts, conditions, and emit events.
-	if err := r.reconcileStatusCounts(ctx, &exporterSet); err != nil {
+	if err := r.reconcileStatusCounts(ctx, &exporterSet, usage); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.reconcileConditions(&exporterSet)
@@ -306,16 +314,17 @@ func (r *ExporterSetReconciler) cleanupBeforeScale(
 	es *virtualtargetv1alpha1.ExporterSet,
 	exporters []jumpstarterdevv1alpha1.Exporter,
 	podsByExporter map[string][]corev1.Pod,
+	usage *leaseUsage,
 	prevAvailable, prevProgressing, prevDegraded, prevScalingLimited bool,
 ) (ctrl.Result, bool, error) {
-	deleted, err := r.cleanupDisabledExporters(ctx, es, exporters)
+	deleted, err := r.cleanupDisabledExporters(ctx, es, exporters, usage)
 	if err != nil {
 		return ctrl.Result{}, false, err
 	}
 	var requeueAfter time.Duration
 	if !deleted {
 		var terminalErr error
-		deleted, requeueAfter, terminalErr = r.cleanupTerminalExporters(ctx, es, exporters, podsByExporter)
+		deleted, requeueAfter, terminalErr = r.cleanupTerminalExportersNotInUse(ctx, es, exporters, podsByExporter, usage)
 		if terminalErr != nil {
 			return ctrl.Result{}, false, terminalErr
 		}
@@ -327,7 +336,7 @@ func (r *ExporterSetReconciler) cleanupBeforeScale(
 		return ctrl.Result{}, false, nil
 	}
 
-	if err := r.reconcileStatusCounts(ctx, es); err != nil {
+	if err := r.reconcileStatusCounts(ctx, es, usage); err != nil {
 		return ctrl.Result{}, false, err
 	}
 	r.reconcileConditions(es)
@@ -427,7 +436,7 @@ func (r *ExporterSetReconciler) resolveVirtualTargetClass(
 			logger.Info("VirtualTargetClass not found",
 				"virtualTargetClassName", exporterSet.Spec.VirtualTargetClassName)
 			prev := snapshotConditions(exporterSet)
-			if countErr := r.reconcileStatusCounts(ctx, exporterSet); countErr != nil {
+			if countErr := r.reconcileStatusCounts(ctx, exporterSet, nil); countErr != nil {
 				return nil, countErr
 			}
 			r.reconcileConditions(exporterSet)
@@ -940,10 +949,13 @@ func injectCredentialsSecretRef(pod *corev1.Pod, vtc *virtualtargetv1alpha1.Virt
 }
 
 // cleanupDisabledExporters deletes disabled, unleased exporters. Returns true if any were deleted.
+// The exporter of a Lost member counts as unleased here: Lost is final, so
+// the lease cannot use the exporter again.
 func (r *ExporterSetReconciler) cleanupDisabledExporters(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	exporters []jumpstarterdevv1alpha1.Exporter,
+	usage *leaseUsage,
 ) (bool, error) {
 	logger := log.FromContext(ctx)
 	deleted := false
@@ -951,7 +963,7 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 	for i := range exporters {
 		exp := &exporters[i]
 
-		if exp.IsEnabled() || exp.Status.LeaseRef != nil {
+		if exp.IsEnabled() || usage.inUse(exp) {
 			continue
 		}
 
@@ -995,6 +1007,21 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	exporters []jumpstarterdevv1alpha1.Exporter,
 	podsByExporter map[string][]corev1.Pod,
 ) (deleted bool, requeueAfter time.Duration, err error) {
+	return r.cleanupTerminalExportersNotInUse(ctx, es, exporters, podsByExporter, nil)
+}
+
+// cleanupTerminalExportersNotInUse is cleanupTerminalExporters with the view
+// of the leases. An exporter that is a Bound member is in use even before it
+// shows status.leaseRef. The exporter of a Lost member is not in use: its
+// part in the lease is over, so a terminal one is recycled without waiting
+// for the lease to end.
+func (r *ExporterSetReconciler) cleanupTerminalExportersNotInUse(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	exporters []jumpstarterdevv1alpha1.Exporter,
+	podsByExporter map[string][]corev1.Pod,
+	usage *leaseUsage,
+) (deleted bool, requeueAfter time.Duration, err error) {
 	if es.Spec.RecycleStrategy == virtualtargetv1alpha1.RecycleStrategyInPlaceReuse {
 		return false, 0, nil
 	}
@@ -1004,7 +1031,7 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 
 	for i := range exporters {
 		exp := &exporters[i]
-		if exp.Status.LeaseRef != nil {
+		if usage.inUse(exp) {
 			continue
 		}
 
@@ -1160,8 +1187,8 @@ func (r *ExporterSetReconciler) reconcileScaleUp(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
 	state poolState,
+	usage *leaseUsage,
 ) (scaled bool, err error) {
-	logger := log.FromContext(ctx)
 	potentiallyAvailable := state.replicas - state.leased
 
 	// 1. Floor: never drop below minReplicas.
@@ -1186,12 +1213,7 @@ func (r *ExporterSetReconciler) reconcileScaleUp(
 	//    Instances still booting count as capacity here, otherwise one waiting
 	//    lease would add another Exporter on every reconcile until maxReplicas.
 	if !atMaxReplicas(es, state.replicas) {
-		pending, err := r.countPendingLeases(ctx, es)
-		if err != nil {
-			logger.Error(err, "failed to count pending leases")
-			return false, nil
-		}
-		if pending > potentiallyAvailable && maxScaleUp(es, state.replicas) > 0 {
+		if usage.pending > potentiallyAvailable && maxScaleUp(es, state.replicas) > 0 {
 			return true, r.scaleUp(ctx, es, 1)
 		}
 	}
@@ -1205,11 +1227,14 @@ func (r *ExporterSetReconciler) reconcileScaleDown(
 	es *virtualtargetv1alpha1.ExporterSet,
 	ownedExporters []jumpstarterdevv1alpha1.Exporter,
 	state poolState,
+	usage *leaseUsage,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Scale down when available > minAvailableReplicas AND replicas > minReplicas.
-	surplus := state.available - es.Spec.MinAvailableReplicas
+	// A free exporter that a member of a pending lease can use is not surplus:
+	// the lease can wait for a member outside this set.
+	surplus := state.available - es.Spec.MinAvailableReplicas - usage.pendingMembers
 	excessOverMin := state.replicas - es.Spec.MinReplicas
 
 	if excessOverMin <= 0 || surplus <= 0 {
@@ -1258,7 +1283,7 @@ func (r *ExporterSetReconciler) reconcileScaleDown(
 		for i := range ownedExporters {
 			exp := &ownedExporters[i]
 
-			if !exp.IsEnabled() || exp.Status.LeaseRef != nil {
+			if !exp.IsEnabled() || usage.leased(exp) {
 				continue
 			}
 
@@ -1421,7 +1446,7 @@ func (r *ExporterSetReconciler) reportUnavailable(
 	prevScalingLimited := meta.IsStatusConditionTrue(es.Status.Conditions,
 		string(virtualtargetv1alpha1.ExporterSetConditionScalingLimited))
 
-	if err := r.reconcileStatusCounts(ctx, es); err != nil {
+	if err := r.reconcileStatusCounts(ctx, es, nil); err != nil {
 		return ctrl.Result{}, err
 	}
 	r.reconcileConditions(es)
@@ -1520,6 +1545,7 @@ func (r *ExporterSetReconciler) listOwnedExporters(
 func (r *ExporterSetReconciler) reconcileStatusCounts(
 	ctx context.Context,
 	es *virtualtargetv1alpha1.ExporterSet,
+	usage *leaseUsage,
 ) error {
 	selector, err := metav1.LabelSelectorAsSelector(&es.Spec.Selector)
 	if err != nil {
@@ -1550,7 +1576,7 @@ func (r *ExporterSetReconciler) reconcileStatusCounts(
 			string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 		)
 		isEnabled := exp.IsEnabled()
-		isLeased := exp.Status.LeaseRef != nil
+		isLeased := usage.leased(exp)
 
 		if isOnline {
 			ready++
@@ -1916,7 +1942,10 @@ func (r *ExporterSetReconciler) findExporterSetsForVTC(
 	return requests
 }
 
-// findExporterSetsForLease enqueues ExporterSets whose template labels match the Lease's selector.
+// findExporterSetsForLease enqueues ExporterSets whose template labels match
+// the Lease's selector or the selector of one of its members. A lease that
+// ended is no demand, but the end of a lease with a Lost member frees the
+// exporter of that member, so it still enqueues its sets.
 func (r *ExporterSetReconciler) findExporterSetsForLease(
 	ctx context.Context,
 	obj client.Object,
@@ -1926,12 +1955,19 @@ func (r *ExporterSetReconciler) findExporterSetsForLease(
 		return nil
 	}
 
-	if lease.Status.Ended || !leaseWantsPoolMember(lease) {
+	if lease.Status.Ended && !lease.HasLostMember() {
 		return nil
 	}
 
-	leaseSelector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
-	if err != nil {
+	var leaseSelectors []labels.Selector
+	for _, selector := range leasePoolSelectors(lease) {
+		sel, err := metav1.LabelSelectorAsSelector(selector)
+		if err != nil {
+			continue
+		}
+		leaseSelectors = append(leaseSelectors, sel)
+	}
+	if len(leaseSelectors) == 0 {
 		return nil
 	}
 
@@ -1944,8 +1980,10 @@ func (r *ExporterSetReconciler) findExporterSetsForLease(
 
 	var requests []reconcile.Request
 	for _, es := range exporterSetList.Items {
-		templateLabels := es.Spec.Template.Metadata.Labels
-		if leaseSelector.Matches(labels.Set(templateLabels)) {
+		templateLabels := labels.Set(es.Spec.Template.Metadata.Labels)
+		if slices.ContainsFunc(leaseSelectors, func(sel labels.Selector) bool {
+			return sel.Matches(templateLabels)
+		}) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      es.Name,
@@ -1955,53 +1993,6 @@ func (r *ExporterSetReconciler) findExporterSetsForLease(
 		}
 	}
 	return requests
-}
-
-// countPendingLeases counts unassigned pending Leases that match this pool's template labels.
-func (r *ExporterSetReconciler) countPendingLeases(
-	ctx context.Context,
-	es *virtualtargetv1alpha1.ExporterSet,
-) (int32, error) {
-	var leaseList jumpstarterdevv1alpha1.LeaseList
-	if err := r.List(ctx, &leaseList, client.InNamespace(es.Namespace)); err != nil {
-		return 0, fmt.Errorf("unable to list Leases: %w", err)
-	}
-
-	templateLabels := labels.Set(es.Spec.Template.Metadata.Labels)
-	var count int32
-
-	for i := range leaseList.Items {
-		lease := &leaseList.Items[i]
-
-		if lease.Status.Ended || lease.Status.ExporterRef != nil || !leaseWantsPoolMember(lease) {
-			continue
-		}
-
-		if !meta.IsStatusConditionTrue(lease.Status.Conditions,
-			string(jumpstarterdevv1alpha1.LeaseConditionTypePending)) {
-			continue
-		}
-
-		sel, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
-		if err != nil {
-			continue
-		}
-		if sel.Matches(templateLabels) {
-			count++
-		}
-	}
-	return count, nil
-}
-
-// leaseWantsPoolMember reports whether a Lease can be served by a pool instance
-// at all. A lease pinned to a named exporter, or one without a selector (an
-// empty selector converts to labels.Everything and would match every pool),
-// is no demand for any ExporterSet.
-func leaseWantsPoolMember(lease *jumpstarterdevv1alpha1.Lease) bool {
-	if lease.Spec.ExporterRef != nil {
-		return false
-	}
-	return len(lease.Spec.Selector.MatchLabels) > 0 || len(lease.Spec.Selector.MatchExpressions) > 0
 }
 
 func isOwnedBy(obj client.Object, ownerUID types.UID) bool {
