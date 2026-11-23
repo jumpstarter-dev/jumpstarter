@@ -70,6 +70,8 @@
 
         {{ if .Status.ExporterRef }}
         <td>{{ .Status.ExporterRef.Name }}</td>
+        {{ else if .Status.Members }}
+        <td>{{ range .Status.Members }}{{ if .ExporterRef }}{{ .Name }}={{ .ExporterRef.Name }} {{ end }}{{ end }}</td>
         {{ else }}
         <td></td>
         {{ end }}

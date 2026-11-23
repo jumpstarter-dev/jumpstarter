@@ -249,6 +249,19 @@ func LeaseFromProtobuf(
 		maps.Copy(specContext, req.Context)
 	}
 
+	var members []LeaseMember
+	for _, m := range req.Members {
+		member, err := LeaseMemberFromProtobuf(m)
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, *member)
+	}
+	var constraints []LeaseConstraint
+	for _, c := range req.Constraints {
+		constraints = append(constraints, LeaseConstraintFromProtobuf(c))
+	}
+
 	return &Lease{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: key.Namespace,
@@ -256,11 +269,13 @@ func LeaseFromProtobuf(
 			Labels:    metaLabels,
 		},
 		Spec: LeaseSpec{
-			ClientRef: clientRef,
-			Duration:  duration,
-			Selector:  *selector,
-			Tags:      specTags,
-			Context:   specContext,
+			ClientRef:   clientRef,
+			Duration:    duration,
+			Selector:    *selector,
+			Members:     members,
+			Constraints: constraints,
+			Tags:        specTags,
+			Context:     specContext,
 			ExporterRef: func() *corev1.LocalObjectReference {
 				if req.ExporterName == nil || *req.ExporterName == "" {
 					return nil
@@ -332,14 +347,172 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		effectiveDuration := max(endTime.Sub(l.Status.BeginTime.Time), 0)
 		lease.EffectiveDuration = durationpb.New(effectiveDuration)
 	}
-	if l.Status.ExporterRef != nil {
+	if l.IsMemberForm() {
+		// A member-form lease has no selector and no exporter of its own: the
+		// members and their statuses carry them.
+		lease.Selector = ""
+		for i := range l.Spec.Members {
+			lease.Members = append(lease.Members, l.Spec.Members[i].ToProtobuf())
+		}
+		for i := range l.Spec.Constraints {
+			lease.Constraints = append(lease.Constraints, l.Spec.Constraints[i].ToProtobuf())
+		}
+		for i := range l.Status.Members {
+			lease.MemberStatuses = append(lease.MemberStatuses, l.Status.Members[i].ToProtobuf(l.Namespace))
+		}
+	} else if l.Status.ExporterRef != nil {
 		lease.Exporter = new(utils.UnparseExporterIdentifier(kclient.ObjectKey{
 			Namespace: l.Namespace,
 			Name:      l.Status.ExporterRef.Name,
 		}))
 	}
+	if l.Spec.TemplateRef != nil {
+		lease.Template = &cpb.LeaseTemplateUse{
+			Template: UnparseLeaseTemplateIdentifier(kclient.ObjectKey{
+				Namespace: l.Namespace,
+				Name:      l.Spec.TemplateRef.Name,
+			}),
+			Generation: l.Spec.TemplateRef.Generation,
+		}
+	}
 
 	return &lease
+}
+
+// LeaseTemplateResource is the collection segment of a lease template
+// resource name: namespaces/{namespace}/leasetemplates/{name}.
+const LeaseTemplateResource = "leasetemplates"
+
+// UnparseLeaseTemplateIdentifier returns the resource name of a lease template.
+func UnparseLeaseTemplateIdentifier(key kclient.ObjectKey) string {
+	return utils.UnparseObjectIdentifier(key, LeaseTemplateResource)
+}
+
+// LeaseMemberFromProtobuf converts a member of a lease request. Its selector
+// uses the syntax of Lease.selector.
+func LeaseMemberFromProtobuf(m *cpb.LeaseMember) (*LeaseMember, error) {
+	member := &LeaseMember{
+		Name:          m.GetName(),
+		Optional:      m.GetOptional(),
+		Excluded:      m.GetExcluded(),
+		AllowDisabled: m.GetAllowDisabled(),
+	}
+	switch selection := m.GetSelection().(type) {
+	case *cpb.LeaseMember_Selector:
+		selector, err := ParseLabelSelector(selection.Selector)
+		if err != nil {
+			return nil, fmt.Errorf("member %q: %w", m.GetName(), err)
+		}
+		if len(selector.MatchLabels) == 0 {
+			selector.MatchLabels = nil
+		}
+		member.Selector = selector
+	case *cpb.LeaseMember_ExporterName:
+		member.ExporterRef = &corev1.LocalObjectReference{Name: selection.ExporterName}
+	}
+	return member, nil
+}
+
+// SelectorString formats the selector of the member in the syntax of
+// Lease.selector. It is empty for a member without a selector.
+func (m *LeaseMember) SelectorString() string {
+	if m.Selector == nil {
+		return ""
+	}
+	selector, err := metav1.LabelSelectorAsSelector(m.Selector)
+	if err != nil {
+		return ""
+	}
+	return selector.String()
+}
+
+func (m *LeaseMember) ToProtobuf() *cpb.LeaseMember {
+	member := &cpb.LeaseMember{
+		Name:          m.Name,
+		Optional:      m.Optional,
+		Excluded:      m.Excluded,
+		AllowDisabled: m.AllowDisabled,
+	}
+	if m.ExporterRef != nil && m.ExporterRef.Name != "" {
+		member.Selection = &cpb.LeaseMember_ExporterName{ExporterName: m.ExporterRef.Name}
+	} else if selector := m.SelectorString(); selector != "" {
+		member.Selection = &cpb.LeaseMember_Selector{Selector: selector}
+	}
+	return member
+}
+
+func LeaseConstraintFromProtobuf(c *cpb.LeaseConstraint) LeaseConstraint {
+	return LeaseConstraint{
+		Members:   slices.Clone(c.GetMemberNames()),
+		SameLabel: c.GetSameLabel(),
+	}
+}
+
+func (c *LeaseConstraint) ToProtobuf() *cpb.LeaseConstraint {
+	return &cpb.LeaseConstraint{
+		MemberNames: slices.Clone(c.Members),
+		Rule:        &cpb.LeaseConstraint_SameLabel{SameLabel: c.SameLabel},
+	}
+}
+
+var leaseMemberStateToProto = map[LeaseMemberState]cpb.LeaseMemberState{
+	LeaseMemberStatePending: cpb.LeaseMemberState_LEASE_MEMBER_STATE_PENDING,
+	LeaseMemberStateBound:   cpb.LeaseMemberState_LEASE_MEMBER_STATE_BOUND,
+	LeaseMemberStateOmitted: cpb.LeaseMemberState_LEASE_MEMBER_STATE_OMITTED,
+	LeaseMemberStateLost:    cpb.LeaseMemberState_LEASE_MEMBER_STATE_LOST,
+}
+
+// ToProtobuf converts the status of a member of a lease in this namespace.
+func (s *LeaseMemberStatus) ToProtobuf(namespace string) *cpb.LeaseMemberStatus {
+	memberStatus := &cpb.LeaseMemberStatus{
+		Name:       s.Name,
+		State:      leaseMemberStateToProto[s.State],
+		Priority:   int32(s.Priority),
+		SpotAccess: s.SpotAccess,
+	}
+	if s.ExporterRef != nil {
+		memberStatus.Exporter = new(utils.UnparseExporterIdentifier(kclient.ObjectKey{
+			Namespace: namespace,
+			Name:      s.ExporterRef.Name,
+		}))
+	}
+	if s.Reason != "" {
+		memberStatus.Reason = new(s.Reason)
+	}
+	if s.Message != "" {
+		memberStatus.Message = new(s.Message)
+	}
+	return memberStatus
+}
+
+// ToProtobuf converts the template. LeaseTemplateMember.available is not a
+// property of the template: the caller sets it.
+func (t *LeaseTemplate) ToProtobuf() *cpb.LeaseTemplate {
+	template := &cpb.LeaseTemplate{
+		Name:              UnparseLeaseTemplateIdentifier(kclient.ObjectKeyFromObject(t)),
+		Description:       t.Spec.Description,
+		Docs:              slices.Clone(t.Spec.Docs),
+		Generation:        t.Generation,
+		DefaultSharedWith: slices.Clone(t.Spec.Defaults.SharedWith),
+	}
+	if t.Spec.Image != "" {
+		template.Image = new(t.Spec.Image)
+	}
+	if t.Spec.Instructions != "" {
+		template.Instructions = new(t.Spec.Instructions)
+	}
+	if t.Spec.Defaults.Duration != nil {
+		template.DefaultDuration = durationpb.New(t.Spec.Defaults.Duration.Duration)
+	}
+	for i := range t.Spec.Members {
+		template.Members = append(template.Members, &cpb.LeaseTemplateMember{
+			Member: t.Spec.Members[i].ToProtobuf(),
+		})
+	}
+	for i := range t.Spec.Constraints {
+		template.Constraints = append(template.Constraints, t.Spec.Constraints[i].ToProtobuf())
+	}
+	return template
 }
 
 func (l *LeaseList) ToProtobuf() *cpb.ListLeasesResponse {
@@ -407,6 +580,16 @@ func (l *Lease) IsAccessibleBy(clientName string) bool {
 	return slices.Contains(l.Status.SharedWith, clientName)
 }
 
+// HasStarted reports whether the lease got its exporters: a scalar lease has
+// status.exporterRef; a member-form lease has status.beginTime, which the
+// controller sets when the members bind.
+func (l *Lease) HasStarted() bool {
+	if l.IsMemberForm() {
+		return l.Status.BeginTime != nil
+	}
+	return l.Status.ExporterRef != nil
+}
+
 func (l *Lease) IsOwnedBy(clientName string) bool {
 	return l.Spec.ClientRef.Name == clientName
 }
@@ -440,6 +623,12 @@ func ClientAllowedByPolicy(
 }
 
 func (l *Lease) GetExporterName() string {
+	if l.IsMemberForm() {
+		if held := l.HeldExporterNames(); len(held) > 0 {
+			return strings.Join(held, ",")
+		}
+		return "(none)"
+	}
 	if l.Status.ExporterRef == nil {
 		return "(none)"
 	}

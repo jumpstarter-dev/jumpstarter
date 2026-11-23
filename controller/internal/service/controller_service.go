@@ -36,6 +36,7 @@ import (
 
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 
+	"github.com/go-logr/logr"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
@@ -154,9 +155,18 @@ func (s *ControllerService) releaseLeaseLock(leaseName string) {
 	}
 }
 
+// listenQueueKey is the key of the listen queue, and of its lock, for one
+// exporter of a lease. A member-form lease has one listener for each bound
+// member, so the lease name alone does not identify a queue. Object names
+// cannot contain "/".
+func listenQueueKey(leaseName, exporterName string) string {
+	return leaseName + "/" + exporterName
+}
+
 // swapListenQueue atomically replaces the listen queue for a lease and signals
 // the previous queue to stop. The per-lease lock serializes this with
 // sendToListener so that Dial never sends a token to a superseded queue.
+// Listen and Dial pass a listenQueueKey as leaseName.
 func (s *ControllerService) swapListenQueue(leaseName string, newQueue *listenQueue) {
 	mu := s.acquireLeaseLock(leaseName)
 	mu.Lock()
@@ -612,6 +622,14 @@ func (s *ControllerService) handleExporterLeaseRelease(
 		"path", "ReportStatus",
 	)
 
+	if lease.IsMemberForm() {
+		err := s.releaseMemberAsExporter(ctx, logger, &lease, exporter.Name)
+		if errors.Is(err, errLeaseNotHeld) {
+			return fmt.Errorf("lease %s is not held by exporter %s", lease.Name, exporter.Name)
+		}
+		return err
+	}
+
 	// Verify the lease is actually held by this exporter
 	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
 		logger.Info("Lease release request rejected", "outcome", "rejected")
@@ -638,6 +656,72 @@ func (s *ControllerService) handleExporterLeaseRelease(
 
 	logger.Info("Lease marked for release by exporter", "outcome", "newly_marked")
 
+	return nil
+}
+
+// errLeaseNotHeld reports a release by an exporter that is not a member of the lease.
+var errLeaseNotHeld = errors.New("lease is not held by exporter")
+
+// releaseMemberAsExporter handles the release of a member-form lease by one of
+// its exporters. The lease does not end: the member of that exporter becomes
+// Lost, and the lease keeps its other members. The lease controller owns the
+// rest of the lease status, and reacts to the Lost member by degrading the
+// lease and taking it away from the exporter. It returns errLeaseNotHeld when
+// the exporter is not a member of the lease.
+func (s *ControllerService) releaseMemberAsExporter(
+	ctx context.Context,
+	logger logr.Logger,
+	lease *jumpstarterdevv1alpha1.Lease,
+	exporterName string,
+) error {
+	var changed bool
+	var role, outcome string
+	first := true
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if !first {
+			if err := s.Client.Get(ctx, client.ObjectKeyFromObject(lease), lease); err != nil {
+				return err
+			}
+		}
+		first = false
+		changed = false
+
+		member := lease.MemberStatusForExporter(exporterName,
+			jumpstarterdevv1alpha1.LeaseMemberStateBound, jumpstarterdevv1alpha1.LeaseMemberStateLost)
+		if member == nil {
+			return errLeaseNotHeld
+		}
+		role = member.Name
+		switch {
+		case lease.Status.Ended:
+			outcome = "already_ended"
+			return nil
+		case member.State == jumpstarterdevv1alpha1.LeaseMemberStateLost:
+			outcome = "already_released"
+			return nil
+		}
+		lease.MarkMemberLost(member.Name, jumpstarterdevv1alpha1.LeaseMemberReasonExporterReleased,
+			fmt.Sprintf("exporter %s released the lease", exporterName))
+		if err := s.Client.Status().Update(ctx, lease); err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	})
+	if role != "" {
+		logger = logger.WithValues("lease_member", role)
+	}
+	switch {
+	case errors.Is(err, errLeaseNotHeld):
+		logger.Info("Lease release request rejected", "outcome", "rejected")
+		return err
+	case err != nil:
+		return fmt.Errorf("failed to mark lease member lost: %w", err)
+	case !changed:
+		logger.Info("Lease release request is idempotent", "outcome", outcome)
+		return nil
+	}
+	logger.Info("Lease member marked lost by exporter", "outcome", "member_lost")
 	return nil
 }
 
@@ -775,7 +859,7 @@ func (s *ControllerService) assignedLease(
 	if err := s.Client.Get(ctx, key, &lease); err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
-	if lease.Status.Ended || lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+	if lease.Status.Ended || !lease.HasBoundExporter(exporter.Name) {
 		return nil, nil
 	}
 	return &lease, nil
@@ -1012,7 +1096,9 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		return err
 	}
 
-	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
+	logger = logger.WithValues(leaseCorrelation(&lease, exporter.Name)...)
+
+	if !lease.HasBoundExporter(exporter.Name) {
 		err := fmt.Errorf("permission denied")
 		logger.Error(err, "lease not held by exporter")
 		return err
@@ -1025,15 +1111,16 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		ch:   make(chan *pb.ListenResponse, 8),
 		done: make(chan struct{}),
 	}
-	listenMu := s.acquireLeaseLock(leaseName)
+	queueKey := listenQueueKey(leaseName, exporter.Name)
+	listenMu := s.acquireLeaseLock(queueKey)
 	// Swap our queue in, signaling any previous listener to exit.
-	s.swapListenQueue(leaseName, wrapper)
+	s.swapListenQueue(queueKey, wrapper)
 	defer func() {
 		listenMu.Lock()
 		wrapper.closeDone()
 		listenMu.Unlock()
-		s.listenQueues.CompareAndDelete(leaseName, wrapper)
-		s.releaseLeaseLock(leaseName)
+		s.listenQueues.CompareAndDelete(queueKey, wrapper)
+		s.releaseLeaseLock(queueKey)
 	}()
 	for {
 		select {
@@ -1245,15 +1332,17 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		return nil, err
 	}
 
-	if lease.Status.ExporterRef == nil {
-		err := fmt.Errorf("lease not active")
+	exporterName, err := dialExporterName(&lease, req)
+	if err != nil {
 		logger.Error(err, "unable to get exporter referenced by lease")
 		return nil, err
 	}
 
+	logger = logger.WithValues(leaseCorrelation(&lease, exporterName)...)
+
 	var exporter jumpstarterdevv1alpha1.Exporter
 	if err := s.Client.Get(ctx,
-		types.NamespacedName{Namespace: client.Namespace, Name: lease.Status.ExporterRef.Name}, &exporter); err != nil {
+		types.NamespacedName{Namespace: client.Namespace, Name: exporterName}, &exporter); err != nil {
 		logger.Error(err, "unable to get exporter referenced by lease")
 		return nil, err
 	}
@@ -1294,7 +1383,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 			retryDelay = min(retryDelay*2, maxDelay)
 			// Re-fetch exporter status
 			if err := s.Client.Get(ctx,
-				types.NamespacedName{Namespace: client.Namespace, Name: lease.Status.ExporterRef.Name}, &exporter); err != nil {
+				types.NamespacedName{Namespace: client.Namespace, Name: exporterName}, &exporter); err != nil {
 				logger.Error(err, "unable to re-fetch exporter during Dial retry")
 				return nil, err
 			}
@@ -1344,7 +1433,7 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterToken:    token,
 	}
 
-	if err := s.sendToListener(ctx, leaseName, response); err != nil {
+	if err := s.sendToListener(ctx, listenQueueKey(leaseName, exporterName), response); err != nil {
 		return nil, err
 	}
 
@@ -1353,6 +1442,62 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		RouterEndpoint: endpoint,
 		RouterToken:    token,
 	}, nil
+}
+
+// dialExporterName returns the exporter that a Dial request connects to: the
+// exporter of a scalar lease, or the exporter of the member that the request
+// names. A member-form lease has no exporter of its own, so its request must
+// name a role, and only a Bound member can be dialed.
+func dialExporterName(lease *jumpstarterdevv1alpha1.Lease, req *pb.DialRequest) (string, error) {
+	role := req.GetMemberName()
+	if !lease.IsMemberForm() {
+		if role != "" {
+			return "", status.Errorf(codes.InvalidArgument,
+				"lease %s has no members: member_name %q cannot be used", lease.Name, role)
+		}
+		if lease.Status.ExporterRef == nil {
+			return "", fmt.Errorf("lease not active")
+		}
+		return lease.Status.ExporterRef.Name, nil
+	}
+
+	roles := strings.Join(lease.MemberNames(), ", ")
+	if role == "" {
+		return "", status.Errorf(codes.InvalidArgument,
+			"lease %s has members: member_name is required, one of: %s", lease.Name, roles)
+	}
+	if !slices.Contains(lease.MemberNames(), role) {
+		return "", status.Errorf(codes.InvalidArgument,
+			"lease %s has no member %q, its members are: %s", lease.Name, role, roles)
+	}
+	member := lease.MemberStatus(role)
+	if member == nil {
+		return "", status.Errorf(codes.FailedPrecondition,
+			"member %q of lease %s is not bound (state: %s)", role, lease.Name, jumpstarterdevv1alpha1.LeaseMemberStatePending)
+	}
+	if member.State != jumpstarterdevv1alpha1.LeaseMemberStateBound || member.ExporterRef == nil {
+		if member.Reason == "" {
+			return "", status.Errorf(codes.FailedPrecondition,
+				"member %q of lease %s is not bound (state: %s)", role, lease.Name, member.State)
+		}
+		return "", status.Errorf(codes.FailedPrecondition,
+			"member %q of lease %s is not bound (state: %s, reason: %s)", role, lease.Name, member.State, member.Reason)
+	}
+	return member.ExporterRef.Name, nil
+}
+
+// leaseCorrelation returns the log fields that identify the member of a lease
+// that an exporter serves, and the template of the lease. They go with
+// lease_id; a scalar lease that uses no template has none.
+func leaseCorrelation(lease *jumpstarterdevv1alpha1.Lease, exporterName string) []any {
+	var fields []any
+	if member := lease.MemberStatusForExporter(exporterName); member != nil {
+		fields = append(fields, "lease_member", member.Name)
+	}
+	if lease.Spec.TemplateRef != nil {
+		fields = append(fields, "lease_template", lease.Spec.TemplateRef.Name)
+	}
+	return fields
 }
 
 func (s *ControllerService) GetLease(
@@ -1510,6 +1655,18 @@ func (s *ControllerService) releaseLeaseAsExporter(
 		"exporter", exporter.Name,
 		"path", "ReleaseLease",
 	)
+
+	if lease.IsMemberForm() {
+		if err := s.releaseMemberAsExporter(ctx, logger, &lease, exporter.Name); err != nil {
+			if errors.Is(err, errLeaseNotHeld) {
+				return nil, status.Errorf(codes.FailedPrecondition,
+					"lease %s is not held by exporter %s", req.Name, exporter.Name)
+			}
+			logger.Error(err, "failed to mark lease member lost", "outcome", "failed")
+			return nil, status.Errorf(codes.Internal, "failed to release lease: %s", err)
+		}
+		return &pb.ReleaseLeaseResponse{}, nil
+	}
 
 	if lease.Status.ExporterRef == nil || lease.Status.ExporterRef.Name != exporter.Name {
 		logger.Info("Lease release request rejected", "outcome", "rejected")

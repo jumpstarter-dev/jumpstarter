@@ -1029,3 +1029,220 @@ var _ = Describe("ClientAllowedByPolicy", func() {
 		Expect(allowed).To(BeTrue())
 	})
 })
+
+var _ = Describe("member-form lease conversion", func() {
+	key := types.NamespacedName{Namespace: "lab", Name: "lease-1"}
+	clientRef := corev1.LocalObjectReference{Name: "ci-runner"}
+
+	request := func() *cpb.Lease {
+		return &cpb.Lease{
+			Duration: durationpb.New(time.Hour),
+			Members: []*cpb.LeaseMember{
+				{Name: "headunit", Selection: &cpb.LeaseMember_Selector{Selector: "device-type=headunit,soc!=old"}},
+				{Name: "phone", Selection: &cpb.LeaseMember_Selector{Selector: "device-type=phone"}, Optional: true},
+				{Name: "ecu", Selection: &cpb.LeaseMember_ExporterName{ExporterName: "ecu-11"}, AllowDisabled: true},
+			},
+			Constraints: []*cpb.LeaseConstraint{
+				{MemberNames: []string{"headunit", "phone"}, Rule: &cpb.LeaseConstraint_SameLabel{SameLabel: "rf-domain"}},
+			},
+		}
+	}
+
+	It("converts members and constraints to the spec", func() {
+		lease, err := LeaseFromProtobuf(request(), key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(lease.IsMemberForm()).To(BeTrue())
+		Expect(lease.Spec.Selector.MatchLabels).To(BeEmpty())
+		Expect(lease.Spec.Selector.MatchExpressions).To(BeEmpty())
+		Expect(lease.Spec.ExporterRef).To(BeNil())
+		Expect(lease.Spec.TemplateRef).To(BeNil())
+
+		Expect(lease.Spec.Members).To(HaveLen(3))
+		headunit := lease.Spec.Members[0]
+		Expect(headunit.Name).To(Equal("headunit"))
+		Expect(headunit.Selector.MatchLabels).To(Equal(map[string]string{"device-type": "headunit"}))
+		Expect(headunit.Selector.MatchExpressions).To(ConsistOf(metav1.LabelSelectorRequirement{
+			Key: "soc", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"old"},
+		}))
+		Expect(headunit.ExporterRef).To(BeNil())
+		Expect(lease.Spec.Members[1].Optional).To(BeTrue())
+		ecu := lease.Spec.Members[2]
+		Expect(ecu.Selector).To(BeNil())
+		Expect(ecu.ExporterRef).To(Equal(&corev1.LocalObjectReference{Name: "ecu-11"}))
+		Expect(ecu.AllowDisabled).To(BeTrue())
+
+		Expect(lease.Spec.Constraints).To(Equal([]LeaseConstraint{
+			{Members: []string{"headunit", "phone"}, SameLabel: "rf-domain"},
+		}))
+	})
+
+	It("rejects a member selector that does not parse", func() {
+		req := request()
+		req.Members[0].Selection = &cpb.LeaseMember_Selector{Selector: "a==b==c"}
+		_, err := LeaseFromProtobuf(req, key, clientRef)
+		Expect(err).To(MatchError(ContainSubstring(`member "headunit"`)))
+	})
+
+	It("round-trips the members and the constraints", func() {
+		lease, err := LeaseFromProtobuf(request(), key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+
+		pbLease := lease.ToProtobuf()
+		Expect(pbLease.Selector).To(BeEmpty())
+		Expect(pbLease.Exporter).To(BeNil())
+		Expect(pbLease.ExporterName).To(BeNil())
+		Expect(pbLease.Template).To(BeNil())
+		Expect(pbLease.MemberStatuses).To(BeEmpty())
+		Expect(pbLease.Members).To(HaveLen(3))
+		Expect(pbLease.Members[2].GetExporterName()).To(Equal("ecu-11"))
+		Expect(pbLease.Members[2].AllowDisabled).To(BeTrue())
+		Expect(pbLease.Constraints).To(HaveLen(1))
+		Expect(pbLease.Constraints[0].MemberNames).To(Equal([]string{"headunit", "phone"}))
+		Expect(pbLease.Constraints[0].GetSameLabel()).To(Equal("rf-domain"))
+
+		// The selector string is normalized (a!=b becomes a notin (b)), so
+		// compare the specs that the two strings give.
+		again, err := LeaseFromProtobuf(&cpb.Lease{
+			Duration:    pbLease.Duration,
+			Members:     pbLease.Members,
+			Constraints: pbLease.Constraints,
+		}, key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(again.Spec.Members).To(Equal(lease.Spec.Members))
+		Expect(again.Spec.Constraints).To(Equal(lease.Spec.Constraints))
+	})
+
+	It("reports the template, the excluded flag and the member statuses", func() {
+		lease, err := LeaseFromProtobuf(request(), key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+		lease.Spec.Members[1].Excluded = true
+		lease.Spec.TemplateRef = &LeaseTemplateReference{Name: "ivi", Generation: 3}
+		lease.Status.Members = []LeaseMemberStatus{
+			{Name: "headunit", State: LeaseMemberStateBound, ExporterRef: &corev1.LocalObjectReference{Name: "hu-03"}, Priority: 5, SpotAccess: true},
+			{Name: "phone", State: LeaseMemberStateOmitted, Reason: LeaseMemberReasonExcluded},
+			{Name: "ecu", State: LeaseMemberStateLost, Reason: LeaseMemberReasonOffline, Message: "gone", ExporterRef: &corev1.LocalObjectReference{Name: "ecu-11"}},
+		}
+
+		pbLease := lease.ToProtobuf()
+		Expect(pbLease.Exporter).To(BeNil())
+		Expect(pbLease.Members[1].Excluded).To(BeTrue())
+		Expect(pbLease.Template.Template).To(Equal("namespaces/lab/leasetemplates/ivi"))
+		Expect(pbLease.Template.Generation).To(Equal(int64(3)))
+		Expect(pbLease.Template.ExcludedMembers).To(BeEmpty())
+		Expect(pbLease.Template.MemberSelectors).To(BeEmpty())
+
+		Expect(pbLease.MemberStatuses).To(HaveLen(3))
+		bound := pbLease.MemberStatuses[0]
+		Expect(bound.State).To(Equal(cpb.LeaseMemberState_LEASE_MEMBER_STATE_BOUND))
+		Expect(bound.GetExporter()).To(Equal("namespaces/lab/exporters/hu-03"))
+		Expect(bound.Reason).To(BeNil())
+		Expect(bound.Message).To(BeNil())
+		Expect(bound.Priority).To(Equal(int32(5)))
+		Expect(bound.SpotAccess).To(BeTrue())
+		omitted := pbLease.MemberStatuses[1]
+		Expect(omitted.State).To(Equal(cpb.LeaseMemberState_LEASE_MEMBER_STATE_OMITTED))
+		Expect(omitted.Exporter).To(BeNil())
+		Expect(omitted.GetReason()).To(Equal("Excluded"))
+		lost := pbLease.MemberStatuses[2]
+		Expect(lost.State).To(Equal(cpb.LeaseMemberState_LEASE_MEMBER_STATE_LOST))
+		Expect(lost.GetExporter()).To(Equal("namespaces/lab/exporters/ecu-11"))
+		Expect(lost.GetMessage()).To(Equal("gone"))
+	})
+
+	It("reports a pending member state", func() {
+		s := LeaseMemberStatus{Name: "phone", State: LeaseMemberStatePending}
+		Expect(s.ToProtobuf("lab").State).To(Equal(cpb.LeaseMemberState_LEASE_MEMBER_STATE_PENDING))
+	})
+
+	It("leaves a scalar lease as it was", func() {
+		lease, err := LeaseFromProtobuf(&cpb.Lease{Selector: "board=rpi4", Duration: durationpb.New(time.Hour)}, key, clientRef)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(lease.IsMemberForm()).To(BeFalse())
+		lease.Status.ExporterRef = &corev1.LocalObjectReference{Name: "rpi-1"}
+
+		pbLease := lease.ToProtobuf()
+		Expect(pbLease.Selector).To(Equal("board=rpi4"))
+		Expect(pbLease.GetExporter()).To(Equal("namespaces/lab/exporters/rpi-1"))
+		Expect(pbLease.Members).To(BeEmpty())
+		Expect(pbLease.Constraints).To(BeEmpty())
+		Expect(pbLease.MemberStatuses).To(BeEmpty())
+		Expect(pbLease.Template).To(BeNil())
+	})
+})
+
+var _ = Describe("Lease.HasStarted", func() {
+	It("reads status.exporterRef of a scalar lease", func() {
+		lease := &Lease{}
+		Expect(lease.HasStarted()).To(BeFalse())
+		lease.Status.ExporterRef = &corev1.LocalObjectReference{Name: "rpi-1"}
+		Expect(lease.HasStarted()).To(BeTrue())
+	})
+
+	It("reads status.beginTime of a member-form lease", func() {
+		lease := &Lease{Spec: LeaseSpec{Members: []LeaseMember{{Name: "phone"}}}}
+		Expect(lease.HasStarted()).To(BeFalse())
+		lease.Status.BeginTime = &metav1.Time{Time: time.Now()}
+		Expect(lease.HasStarted()).To(BeTrue())
+	})
+})
+
+var _ = Describe("Lease.GetExporterName", func() {
+	It("lists the exporters that a member-form lease holds", func() {
+		lease := &Lease{Spec: LeaseSpec{Members: []LeaseMember{{Name: "phone"}, {Name: "headunit"}}}}
+		Expect(lease.GetExporterName()).To(Equal("(none)"))
+		lease.Status.Members = []LeaseMemberStatus{
+			{Name: "phone", State: LeaseMemberStateBound, ExporterRef: &corev1.LocalObjectReference{Name: "phone-4"}},
+			{Name: "headunit", State: LeaseMemberStateLost, ExporterRef: &corev1.LocalObjectReference{Name: "hu-2"}},
+		}
+		Expect(lease.GetExporterName()).To(Equal("phone-4,hu-2"))
+	})
+})
+
+var _ = Describe("LeaseTemplate.ToProtobuf", func() {
+	It("converts each field of the template", func() {
+		template := &LeaseTemplate{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "lab", Name: "ivi", Generation: 3},
+			Spec: LeaseTemplateSpec{
+				Description:  "head unit and phone",
+				Docs:         []string{"https://wiki.example.com/ivi"},
+				Image:        "https://wiki.example.com/ivi.png",
+				Instructions: "Set the head unit to on.",
+				Members: []LeaseMember{
+					{Name: "headunit", Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"device-type": "headunit"}}},
+					{Name: "phone", ExporterRef: &corev1.LocalObjectReference{Name: "phone-4"}, Optional: true},
+				},
+				Constraints: []LeaseConstraint{{Members: []string{"headunit", "phone"}, SameLabel: "rf-domain"}},
+				Defaults: LeaseTemplateDefaults{
+					Duration:   &metav1.Duration{Duration: 2 * time.Hour},
+					SharedWith: []string{"lab-support"},
+				},
+			},
+		}
+
+		pbTemplate := template.ToProtobuf()
+		Expect(pbTemplate.Name).To(Equal("namespaces/lab/leasetemplates/ivi"))
+		Expect(pbTemplate.Description).To(Equal("head unit and phone"))
+		Expect(pbTemplate.Docs).To(Equal([]string{"https://wiki.example.com/ivi"}))
+		Expect(pbTemplate.GetImage()).To(Equal("https://wiki.example.com/ivi.png"))
+		Expect(pbTemplate.GetInstructions()).To(Equal("Set the head unit to on."))
+		Expect(pbTemplate.Generation).To(Equal(int64(3)))
+		Expect(pbTemplate.DefaultDuration.AsDuration()).To(Equal(2 * time.Hour))
+		Expect(pbTemplate.DefaultSharedWith).To(Equal([]string{"lab-support"}))
+		Expect(pbTemplate.Members).To(HaveLen(2))
+		Expect(pbTemplate.Members[0].Member.GetSelector()).To(Equal("device-type=headunit"))
+		Expect(pbTemplate.Members[0].Available).To(BeZero())
+		Expect(pbTemplate.Members[1].Member.GetExporterName()).To(Equal("phone-4"))
+		Expect(pbTemplate.Members[1].Member.Optional).To(BeTrue())
+		Expect(pbTemplate.Constraints).To(HaveLen(1))
+		Expect(pbTemplate.Constraints[0].GetSameLabel()).To(Equal("rf-domain"))
+	})
+
+	It("leaves the optional fields unset for a minimal template", func() {
+		template := &LeaseTemplate{ObjectMeta: metav1.ObjectMeta{Namespace: "lab", Name: "min"}}
+		pbTemplate := template.ToProtobuf()
+		Expect(pbTemplate.Image).To(BeNil())
+		Expect(pbTemplate.Instructions).To(BeNil())
+		Expect(pbTemplate.DefaultDuration).To(BeNil())
+	})
+})

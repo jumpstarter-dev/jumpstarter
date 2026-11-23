@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
@@ -85,20 +86,29 @@ func annotateDeprecatedLabels(exporter *cpb.Exporter, deprecatedMessages map[str
 }
 
 func annotateLeaseDeprecatedLabels(lease *cpb.Lease, deprecatedMessages map[string]string) {
-	if len(deprecatedMessages) == 0 || lease.Selector == "" {
+	if len(deprecatedMessages) == 0 {
 		return
 	}
-	selector, err := labels.Parse(lease.Selector)
-	if err != nil {
-		return
+	selectors := []string{lease.Selector}
+	for _, member := range lease.Members {
+		selectors = append(selectors, member.GetSelector())
 	}
-	requirements, _ := selector.Requirements()
-	for _, r := range requirements {
-		if msg, deprecated := deprecatedMessages[r.Key()]; deprecated {
-			if lease.DeprecatedLabels == nil {
-				lease.DeprecatedLabels = make(map[string]string)
+	for _, selectorStr := range selectors {
+		if selectorStr == "" {
+			continue
+		}
+		selector, err := labels.Parse(selectorStr)
+		if err != nil {
+			continue
+		}
+		requirements, _ := selector.Requirements()
+		for _, r := range requirements {
+			if msg, deprecated := deprecatedMessages[r.Key()]; deprecated {
+				if lease.DeprecatedLabels == nil {
+					lease.DeprecatedLabels = make(map[string]string)
+				}
+				lease.DeprecatedLabels[r.Key()] = msg
 			}
-			lease.DeprecatedLabels[r.Key()] = msg
 		}
 	}
 }
@@ -303,7 +313,19 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		return nil, err
 	}
 
-	if err := s.validateExplicitExporter(ctx, namespace, req.Lease); err != nil {
+	// A template request becomes a member-form request here: the rest of this
+	// function handles both alike.
+	leaseReq := req.Lease
+	var expansion *templateExpansion
+	if req.Lease.Template != nil {
+		expansion, err = s.expandLeaseTemplate(ctx, namespace, jclient.Name, req.Lease)
+		if err != nil {
+			return nil, err
+		}
+		leaseReq = expansion.request
+	}
+
+	if err := s.validateExplicitExporter(ctx, namespace, leaseReq); err != nil {
 		return nil, err
 	}
 
@@ -317,14 +339,22 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		name = id.String()
 	}
 
-	jlease, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(req.Lease, types.NamespacedName{
+	jlease, err := jumpstarterdevv1alpha1.LeaseFromProtobuf(leaseReq, types.NamespacedName{
 		Namespace: namespace,
 		Name:      name,
 	}, corev1.LocalObjectReference{
 		Name: jclient.Name,
 	})
 	if err != nil {
+		if expansion != nil || len(leaseReq.Members) > 0 {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid lease: %v", err)
+		}
 		return nil, err
+	}
+	if expansion != nil {
+		jlease.Spec.Members = expansion.members
+		jlease.Spec.Constraints = expansion.constraints
+		jlease.Spec.TemplateRef = expansion.templateRef
 	}
 
 	if len(jlease.Spec.SharedWith) > 0 {
@@ -355,6 +385,10 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 	}
 
 	if err := s.Create(ctx, jlease); err != nil {
+		// The CRD rules for members are part of this request's validation.
+		if jlease.IsMemberForm() && apierrors.IsInvalid(err) {
+			return nil, status.Errorf(codes.InvalidArgument, "invalid lease: %v", err)
+		}
 		return nil, err
 	}
 
@@ -395,14 +429,87 @@ func validateLeaseTarget(lease *cpb.Lease) error {
 		return status.Error(codes.InvalidArgument, "lease is required")
 	}
 
-	hasSelector := lease.Selector != ""
-	hasExporterName := lease.ExporterName != nil && *lease.ExporterName != ""
-	if !hasSelector && !hasExporterName {
+	// A request has exactly one form: scalar (selector and/or exporter_name),
+	// template, or members (with optional constraints).
+	var scalar []string
+	if lease.Selector != "" {
+		scalar = append(scalar, "selector")
+	}
+	if lease.ExporterName != nil && *lease.ExporterName != "" {
+		scalar = append(scalar, "exporter_name")
+	}
+	var memberForm []string
+	if len(lease.Members) > 0 {
+		memberForm = append(memberForm, "members")
+	}
+	if len(lease.Constraints) > 0 {
+		memberForm = append(memberForm, "constraints")
+	}
+	hasTemplate := lease.Template != nil
+
+	switch {
+	case hasTemplate && len(scalar)+len(memberForm) > 0:
+		return status.Errorf(codes.InvalidArgument,
+			"template cannot be used with %s: a lease request sets only one of selector/exporter_name, template, or members",
+			strings.Join(append(scalar, memberForm...), ", "))
+	case len(scalar) > 0 && len(memberForm) > 0:
+		return status.Errorf(codes.InvalidArgument,
+			"%s cannot be used with %s: a lease request sets only one of selector/exporter_name, template, or members",
+			strings.Join(memberForm, ", "), strings.Join(scalar, ", "))
+	case hasTemplate:
+		if lease.Template.Template == "" {
+			return status.Error(codes.InvalidArgument, "template.template is required")
+		}
+		return nil
+	case len(lease.Members) > 0:
+		return validateRequestedMembers(lease)
+	case len(lease.Constraints) > 0:
+		return status.Error(codes.InvalidArgument, "constraints requires members")
+	case len(scalar) == 0:
 		return status.Error(codes.InvalidArgument, "one of selector or exporter_name is required")
 	}
 
 	return nil
 }
+
+// validateRequestedMembers checks the members and constraints of a request
+// that gives them itself, without a template.
+func validateRequestedMembers(lease *cpb.Lease) error {
+	names := make(map[string]struct{}, len(lease.Members))
+	for i, member := range lease.Members {
+		if member.GetName() == "" {
+			return status.Errorf(codes.InvalidArgument, "members[%d].name is required", i)
+		}
+		if _, duplicate := names[member.Name]; duplicate {
+			return status.Errorf(codes.InvalidArgument, "members: duplicate role %q", member.Name)
+		}
+		names[member.Name] = struct{}{}
+		if member.Excluded {
+			return status.Errorf(codes.InvalidArgument,
+				"members[%s].excluded cannot be set in a request: only template expansion sets it", member.Name)
+		}
+		if member.GetSelector() == "" && member.GetExporterName() == "" {
+			return status.Errorf(codes.InvalidArgument,
+				"members[%s]: one of selector or exporter_name is required", member.Name)
+		}
+	}
+	for i, constraint := range lease.Constraints {
+		if constraint.GetSameLabel() == "" {
+			return status.Errorf(codes.InvalidArgument, "constraints[%d].same_label is required", i)
+		}
+		for _, name := range constraint.MemberNames {
+			if _, declared := names[name]; !declared {
+				return status.Errorf(codes.InvalidArgument,
+					"constraints[%d].member_names: %q is not a member of the lease", i, name)
+			}
+		}
+	}
+	return nil
+}
+
+// immutableLeaseFields are the Lease fields of a member-form lease that an
+// update mask cannot name.
+var immutableLeaseFields = []string{"members", "constraints", "template"}
 
 func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseRequest) (*cpb.Lease, error) {
 	key, err := utils.ParseLeaseIdentifier(req.Lease.Name)
@@ -418,6 +525,13 @@ func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseReq
 	var jlease jumpstarterdevv1alpha1.Lease
 	if err := s.Get(ctx, *key, &jlease); err != nil {
 		return nil, err
+	}
+
+	for _, path := range req.GetUpdateMask().GetPaths() {
+		field, _, _ := strings.Cut(path, ".")
+		if slices.Contains(immutableLeaseFields, field) {
+			return nil, status.Errorf(codes.InvalidArgument, "UpdateLease: %s is immutable", field)
+		}
 	}
 
 	hasShareChanges := len(req.AddSharedWith) > 0 || len(req.RemoveSharedWith) > 0
@@ -511,7 +625,7 @@ func (s *ClientService) updateLeaseTimeFields(
 	}
 
 	if lease.BeginTime != nil {
-		if jlease.Status.ExporterRef != nil {
+		if jlease.HasStarted() {
 			if jlease.Spec.BeginTime == nil || !jlease.Spec.BeginTime.Equal(desired.Spec.BeginTime) {
 				return status.Error(codes.FailedPrecondition, "cannot update BeginTime: lease has already started")
 			}
@@ -540,7 +654,7 @@ func (s *ClientService) transferLease(
 	if !jlease.IsOwnedBy(clientName) {
 		return status.Error(codes.PermissionDenied, "UpdateLease permission denied: only lease owner can transfer")
 	}
-	if jlease.Status.ExporterRef == nil {
+	if !jlease.HasStarted() {
 		return status.Error(codes.FailedPrecondition, "cannot transfer lease: lease has not started yet")
 	}
 	if jlease.Status.Ended {
@@ -576,31 +690,54 @@ func (s *ClientService) validateClientPolicyAccess(
 	jlease *jumpstarterdevv1alpha1.Lease,
 	targetClient *jumpstarterdevv1alpha1.Client,
 ) error {
-	if jlease.Status.ExporterRef == nil {
-		return nil
-	}
-	var policyList jumpstarterdevv1alpha1.ExporterAccessPolicyList
-	if err := s.List(ctx, &policyList, kclient.InNamespace(namespace)); err != nil {
-		return fmt.Errorf("failed to list access policies: %w", err)
-	}
-	if len(policyList.Items) == 0 {
-		return nil
-	}
-	var exporter jumpstarterdevv1alpha1.Exporter
-	if err := s.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      jlease.Status.ExporterRef.Name,
-	}, &exporter); err != nil {
-		return fmt.Errorf("failed to get exporter: %w", err)
-	}
-	allowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policyList.Items, &exporter, targetClient)
+	policies, exporters, err := s.boundExporterPolicies(ctx, namespace, jlease)
 	if err != nil {
 		return err
 	}
-	if !allowed {
-		return status.Errorf(codes.PermissionDenied, "target client %q not authorized for this exporter by policy", targetClient.Name)
+	for i := range exporters {
+		allowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, &exporters[i], targetClient)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			if jlease.IsMemberForm() {
+				return status.Errorf(codes.PermissionDenied,
+					"target client %q not authorized for exporter %q of this lease by policy", targetClient.Name, exporters[i].Name)
+			}
+			return status.Errorf(codes.PermissionDenied, "target client %q not authorized for this exporter by policy", targetClient.Name)
+		}
 	}
 	return nil
+}
+
+// boundExporterPolicies returns the access policies of the namespace and the
+// exporters that the lease gives access to: the one of a scalar lease, or the
+// one of each Bound member. A client that gets the lease, or a share of it,
+// must pass the policy for each of them. It returns no exporters when there is
+// nothing to check: the lease has none yet, or the namespace has no policies.
+func (s *ClientService) boundExporterPolicies(
+	ctx context.Context,
+	namespace string,
+	jlease *jumpstarterdevv1alpha1.Lease,
+) ([]jumpstarterdevv1alpha1.ExporterAccessPolicy, []jumpstarterdevv1alpha1.Exporter, error) {
+	names := jlease.BoundExporterNames()
+	if len(names) == 0 {
+		return nil, nil, nil
+	}
+	var policyList jumpstarterdevv1alpha1.ExporterAccessPolicyList
+	if err := s.List(ctx, &policyList, kclient.InNamespace(namespace)); err != nil {
+		return nil, nil, fmt.Errorf("failed to list access policies: %w", err)
+	}
+	if len(policyList.Items) == 0 {
+		return nil, nil, nil
+	}
+	exporters := make([]jumpstarterdevv1alpha1.Exporter, len(names))
+	for i, name := range names {
+		if err := s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &exporters[i]); err != nil {
+			return nil, nil, fmt.Errorf("failed to get exporter: %w", err)
+		}
+	}
+	return policyList.Items, exporters, nil
 }
 
 func (s *ClientService) DeleteLease(ctx context.Context, req *cpb.DeleteLeaseRequest) (*emptypb.Empty, error) {
@@ -690,22 +827,12 @@ func (s *ClientService) applySharedWithChanges(
 	}
 
 	var policies []jumpstarterdevv1alpha1.ExporterAccessPolicy
-	var exporter *jumpstarterdevv1alpha1.Exporter
-	if len(addClients) > 0 && jlease.Status.ExporterRef != nil {
-		var policyList jumpstarterdevv1alpha1.ExporterAccessPolicyList
-		if err := s.List(ctx, &policyList, kclient.InNamespace(namespace)); err != nil {
-			return nil, fmt.Errorf("failed to list access policies: %w", err)
-		}
-		policies = policyList.Items
-		if len(policies) > 0 {
-			var exp jumpstarterdevv1alpha1.Exporter
-			if err := s.Get(ctx, types.NamespacedName{
-				Namespace: namespace,
-				Name:      jlease.Status.ExporterRef.Name,
-			}, &exp); err != nil {
-				return nil, fmt.Errorf("failed to get exporter: %w", err)
-			}
-			exporter = &exp
+	var exporters []jumpstarterdevv1alpha1.Exporter
+	if len(addClients) > 0 {
+		var err error
+		policies, exporters, err = s.boundExporterPolicies(ctx, namespace, jlease)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -723,12 +850,16 @@ func (s *ClientService) applySharedWithChanges(
 			}
 			return nil, status.Errorf(codes.Internal, "failed to get shared client %q: %v", name, err)
 		}
-		if exporter != nil {
-			allowedByPolicy, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, exporter, &sharedClient)
+		for i := range exporters {
+			allowedByPolicy, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies, &exporters[i], &sharedClient)
 			if err != nil {
 				return nil, err
 			}
 			if !allowedByPolicy {
+				if jlease.IsMemberForm() {
+					return nil, status.Errorf(codes.PermissionDenied,
+						"client %q not authorized for exporter %q of this lease", name, exporters[i].Name)
+				}
 				return nil, status.Errorf(codes.PermissionDenied, "client %q not authorized for this exporter", name)
 			}
 		}
