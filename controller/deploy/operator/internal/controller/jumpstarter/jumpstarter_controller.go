@@ -2068,8 +2068,7 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// optional ServiceMonitor CRD is installed or updated. This complements the
 	// bounded fallback requeue while the CRD is absent.
 	mapServiceMonitorCRDToJumpstarters := func(ctx context.Context, obj client.Object) []ctrl.Request {
-		crd, ok := obj.(*apiextensionsv1.CustomResourceDefinition)
-		if !ok || crd.Name != serviceMonitorCRDName {
+		if obj.GetName() != serviceMonitorCRDName {
 			return nil
 		}
 
@@ -2097,7 +2096,16 @@ func (r *JumpstarterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// Note: Secrets and ServiceAccounts are intentionally NOT owned to prevent deletion.
 		// We watch Secrets referenced as JWT CA certificates and TLS certs so that
 		// rotations trigger reconciliation and rolling restarts via hash annotations.
-		Watches(&apiextensionsv1.CustomResourceDefinition{}, handler.EnqueueRequestsFromMapFunc(mapServiceMonitorCRDToJumpstarters)).
+		// Watch CRDs as PartialObjectMetadata: the trigger only needs the name,
+		// and a typed watch would cache every CRD in the cluster with its full
+		// schema. RBAC is unchanged.
+		Watches(
+			&metav1.PartialObjectMetadata{TypeMeta: metav1.TypeMeta{
+				APIVersion: apiextensionsv1.SchemeGroupVersion.String(),
+				Kind:       "CustomResourceDefinition",
+			}},
+			handler.EnqueueRequestsFromMapFunc(mapServiceMonitorCRDToJumpstarters),
+		).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToJumpstarters)).
 		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(mapConfigMapToJumpstarters)).
 		Complete(r)
