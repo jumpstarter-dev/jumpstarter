@@ -20,7 +20,9 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
@@ -50,6 +52,11 @@ type LeaseReconciler struct {
 	// ListActiveLeases.
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+
+	// backfilled has the namespaces whose bound leases got their claims
+	// (backfillClaims).
+	backfillMu sync.Mutex
+	backfilled map[string]bool
 }
 
 // ApprovedExporter represents an exporter that has been approved for leasing,
@@ -97,14 +104,24 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	ctx = ctrl.LoggerInto(ctx, logger)
 
 	var result ctrl.Result
-	priorExporterRef := lease.Status.ExporterRef
+	priorBound := lease.IsBound()
 	priorUnsatisfiable := meta.IsStatusConditionTrue(
 		lease.Status.Conditions,
 		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
 	)
 
-	if err := r.reconcileStatusExporterRef(ctx, &result, &lease); err != nil {
-		return result, err
+	// The claims of a bind count only once the status update below has
+	// written the bind. On every other way out they are deleted.
+	state := &bindState{}
+	committed := false
+	defer func() {
+		if !committed {
+			r.rollbackClaims(context.WithoutCancel(ctx), state)
+		}
+	}()
+
+	if err := r.reconcileStatusMembers(ctx, &result, &lease, state); err != nil {
+		return RequeueConflict(logger, result, err)
 	}
 
 	if err := r.reconcileStatusBeginEndTimes(ctx, &lease); err != nil {
@@ -124,10 +141,19 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		return RequeueConflict(logger, result, err)
 	}
+	committed = true
+
+	// status.ended is written and never goes back to false: now the claims
+	// can go. The ended label is set only after, so a failure here is retried.
+	if lease.Status.Ended {
+		if err := r.deleteLeaseClaims(ctx, &lease); err != nil {
+			return result, err
+		}
+	}
 
 	// Record acquisition only after status is persisted so a failed Update
 	// cannot double-count on requeue (success or failure).
-	recordLeaseAcquisitionTransition(ctx, &lease, priorExporterRef, priorUnsatisfiable)
+	recordLeaseAcquisitionTransition(ctx, &lease, priorBound, priorUnsatisfiable)
 
 	if lease.Labels == nil {
 		lease.Labels = make(map[string]string)
@@ -136,17 +162,8 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = jumpstarterdevv1alpha1.LeaseLabelEndedValue
 	}
 
-	if lease.Status.ExporterRef != nil {
-		var exporter jumpstarterdevv1alpha1.Exporter
-		if err := r.Get(ctx, types.NamespacedName{
-			Namespace: lease.Namespace,
-			Name:      lease.Status.ExporterRef.Name,
-		}, &exporter); err != nil {
-			return result, err
-		}
-		if err := controllerutil.SetControllerReference(&exporter, &lease, r.Scheme); err != nil {
-			return result, fmt.Errorf("Reconcile: failed to update lease controller reference: %w", err)
-		}
+	if err := r.reconcileOwnerReferences(ctx, &lease); err != nil {
+		return result, err
 	}
 
 	if err := r.Update(ctx, &lease); err != nil {
@@ -154,6 +171,67 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	return result, nil
+}
+
+// reconcileOwnerReferences makes the exporters of the lease its owners, so
+// that the exporter reconciler follows the lease. A scalar lease has its
+// exporter as controller owner. A member-form lease has one owner reference
+// for each bound member, none as controller, and one for its client: the
+// garbage collector deletes an object when all its owners are gone, and the
+// client keeps a lease whose exporters were deleted (its members are Lost).
+func (r *LeaseReconciler) reconcileOwnerReferences(
+	ctx context.Context,
+	lease *jumpstarterdevv1alpha1.Lease,
+) error {
+	if !lease.IsMemberForm() {
+		if lease.Status.ExporterRef == nil {
+			return nil
+		}
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      lease.Status.ExporterRef.Name,
+		}, &exporter); err != nil {
+			return err
+		}
+		if err := controllerutil.SetControllerReference(&exporter, lease, r.Scheme); err != nil {
+			return fmt.Errorf("Reconcile: failed to update lease controller reference: %w", err)
+		}
+		return nil
+	}
+
+	if !lease.IsBound() {
+		return nil
+	}
+	bound := lease.BoundExporterNames()
+	// The exporter of a Lost member is no owner any more; it can be deleted.
+	lease.OwnerReferences = slices.DeleteFunc(lease.OwnerReferences, func(ref metav1.OwnerReference) bool {
+		return ref.Kind == "Exporter" && !slices.Contains(bound, ref.Name)
+	})
+	for _, name := range bound {
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := r.Get(ctx, types.NamespacedName{Namespace: lease.Namespace, Name: name}, &exporter); err != nil {
+			if k8serrors.IsNotFound(err) {
+				// The next reconcile marks the member as Lost.
+				continue
+			}
+			return err
+		}
+		if err := controllerutil.SetOwnerReference(&exporter, lease, r.Scheme); err != nil {
+			return fmt.Errorf("Reconcile: failed to update lease owner reference: %w", err)
+		}
+	}
+	var jclient jumpstarterdevv1alpha1.Client
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: lease.Namespace,
+		Name:      lease.Spec.ClientRef.Name,
+	}, &jclient); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if err := controllerutil.SetOwnerReference(&jclient, lease, r.Scheme); err != nil {
+		return fmt.Errorf("Reconcile: failed to update lease owner reference: %w", err)
+	}
+	return nil
 }
 
 // also manages EndTime and LeaseConditionTypeReady
@@ -205,208 +283,16 @@ func (r *LeaseReconciler) reconcileStatusBeginEndTimes(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
-	if lease.Status.BeginTime == nil && lease.Status.ExporterRef != nil {
+	if lease.Status.BeginTime == nil && lease.IsBound() {
 		logger := log.FromContext(ctx)
 		logger.Info("Updating begin time for lease", "lease", lease.Name, "exporter", lease.GetExporterName(), "client", lease.GetClientName())
 		now := time.Now()
 		lease.Status.BeginTime = &metav1.Time{Time: now}
-		lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
-	}
-
-	return nil
-}
-
-// reconcileStatusExporterRef manages LeaseConditionTypeUnsatisfiable and LeaseConditionTypePending.
-func (r *LeaseReconciler) reconcileStatusExporterRef(
-	ctx context.Context,
-	result *ctrl.Result,
-	lease *jumpstarterdevv1alpha1.Lease,
-) error {
-	logger := log.FromContext(ctx)
-
-	// Do not attempt to reconcile if the lease is already ended/invalid/etc
-	if lease.Status.Ended {
-		return nil
-	}
-
-	if lease.Status.ExporterRef == nil {
-		// For scheduled leases: only assign exporter if requested BeginTime has arrived
-		if lease.Spec.BeginTime != nil {
-			now := time.Now()
-			if lease.Spec.BeginTime.After(now) {
-				// Requested BeginTime is in the future, wait until then
-				waitDuration := lease.Spec.BeginTime.Sub(now)
-				logger.Info("Lease is scheduled for the future, waiting",
-					"lease", lease.Name,
-					"requestedBeginTime", lease.Spec.BeginTime,
-					"waitDuration", waitDuration)
-				result.RequeueAfter = waitDuration
-				return nil
-			}
+		// A member-form lease is Ready only after the beforeLease hooks of
+		// its members (reconcileMemberConditions).
+		if !lease.IsMemberForm() {
+			lease.SetStatusReady(true, "Ready", "An exporter has been acquired for the client")
 		}
-		logger.Info("Looking for a matching exporter for lease", "lease", lease.Name, "client", lease.GetClientName(), "selector", lease.Spec.Selector)
-
-		selector, err := lease.GetExporterSelector()
-		if err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to get exporter selector: %w", err)
-		} else if selector.Empty() && lease.Spec.ExporterRef == nil {
-			lease.SetStatusInvalid("InvalidSelector", "The selector for the lease is empty, a selector is required")
-			return nil
-		}
-
-		var matchingExporters []jumpstarterdevv1alpha1.Exporter
-		if lease.Spec.ExporterRef != nil {
-			var exporter jumpstarterdevv1alpha1.Exporter
-			if err := r.Get(ctx, types.NamespacedName{
-				Namespace: lease.Namespace,
-				Name:      lease.Spec.ExporterRef.Name,
-			}, &exporter); err != nil {
-				if k8serrors.IsNotFound(err) {
-					lease.SetStatusUnsatisfiable(
-						"ExporterNotFound",
-						"Requested exporter %s was not found",
-						lease.Spec.ExporterRef.Name,
-					)
-					return nil
-				}
-				return fmt.Errorf("reconcileStatusExporterRef: failed to get requested exporter: %w", err)
-			}
-			if !selector.Empty() && !selector.Matches(labels.Set(exporter.Labels)) {
-				lease.SetStatusUnsatisfiable(
-					"SelectorMismatch",
-					"Requested exporter %s does not match selector %s",
-					exporter.Name,
-					metav1.FormatLabelSelector(&lease.Spec.Selector),
-				)
-				return nil
-			}
-			if err := jumpstarterdevv1alpha1.ValidateExporterEnabledForLease(&exporter, lease.Spec.AllowDisabled); err != nil {
-				lease.SetStatusUnsatisfiable(
-					"ExporterDisabled",
-					"%s",
-					err.Error(),
-				)
-				return nil
-			}
-			matchingExporters = []jumpstarterdevv1alpha1.Exporter{exporter}
-		} else {
-			// List all exporters matching selector
-			listed, err := r.ListMatchingExporters(ctx, lease, selector)
-			if err != nil {
-				return fmt.Errorf("reconcileStatusExporterRef: failed to list matching exporters: %w", err)
-			}
-			// Filter out disabled exporters from selector-based listing
-			matchingExporters = filterOutDisabledExporters(listed.Items, lease.Spec.AllowDisabled)
-			if len(matchingExporters) == 0 && len(listed.Items) > 0 {
-				lease.SetStatusUnsatisfiable(
-					"AllDisabled",
-					"All %d exporters matching the selector are disabled",
-					len(listed.Items),
-				)
-				return nil
-			}
-		}
-
-		approvedExporters, unmatchedDescriptions, err := r.attachMatchingPolicies(ctx, lease, matchingExporters)
-		if err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to handle policy approval: %w", err)
-		}
-
-		if len(approvedExporters) == 0 {
-			if len(unmatchedDescriptions) > 0 {
-				desc := strings.Join(unmatchedDescriptions, "; ")
-				if len(desc) > 4096 {
-					desc = desc[:4096] + "..."
-				}
-				lease.SetStatusUnsatisfiable("NoAccess",
-					"While there are %d exporters matching the selector, none of them are approved by any policy for your client. Matching policies: %s",
-					len(matchingExporters), desc,
-				)
-			} else {
-				lease.SetStatusUnsatisfiable("NoAccess",
-					"While there are %d exporters matching the selector, none of them are approved by any policy for your client",
-					len(matchingExporters),
-				)
-			}
-			return nil
-		}
-
-		onlineApprovedExporters := filterOutOfflineExporters(approvedExporters)
-		if len(onlineApprovedExporters) == 0 {
-			lease.SetStatusPending(
-				"Offline",
-				"While there are %d available exporters (i.e. %s), none of them are online",
-				len(approvedExporters),
-				approvedExporters[0].Exporter.Name,
-			)
-			result.RequeueAfter = pendingRequeueAfter(lease)
-			return nil
-		}
-
-		// Filter out exporters that are already leased
-		activeLeases, err := r.ListActiveLeases(ctx, lease.Namespace)
-		if err != nil {
-			return fmt.Errorf("reconcileStatusExporterRef: failed to list active leases: %w", err)
-		}
-
-		onlineApprovedExporters = attachExistingLeases(onlineApprovedExporters, activeLeases.Items)
-		orderedExporters := orderApprovedExporters(onlineApprovedExporters)
-
-		if orderedExporters[0].Policy.SpotAccess {
-			lease.SetStatusUnsatisfiable("SpotAccess",
-				"The only possible exporters are under spot access (i.e. %s), but spot access is still not implemented",
-				orderedExporters[0].Exporter.Name)
-			return nil
-		}
-
-		availableExporters := filterOutLeasedExporters(orderedExporters)
-		if len(availableExporters) == 0 {
-			lease.SetStatusPending("NotAvailable",
-				"There are %d approved exporters, (i.e. %s) but all of them are already leased",
-				len(orderedExporters),
-				orderedExporters[0].Exporter.Name,
-			)
-			result.RequeueAfter = pendingRequeueAfter(lease)
-			return nil
-		}
-
-		readyAvailableExporters := filterOutNotReadyExporters(availableExporters)
-		if len(readyAvailableExporters) == 0 {
-			lease.SetStatusPending(
-				"NotReady",
-				"There are %d online exporters, but none are ready (still cleaning up previous lease)",
-				len(availableExporters),
-			)
-			result.RequeueAfter = pendingRequeueAfter(lease)
-			return nil
-		}
-
-		// TODO: here there's room for improvement, i.e. we could have multiple
-		// clients trying to lease the same exporters, we should look at priorities
-		// and spot access to decide which client gets the exporter, this probably means
-		// that we will need to construct a lease scheduler with the view of all leases
-		// and exporters in the system, and (maybe) a priority queue for the leases.
-
-		// For now, we just select the best available exporter without considering other
-		// ongoing lease requests
-
-		selected := readyAvailableExporters[0]
-
-		if selected.ExistingLease != nil {
-			// TODO: Implement eviction of spot access leases
-			lease.SetStatusPending("NotAvailable",
-				"Exporter %s is already leased by another client under spot access, but spot access eviction still not implemented",
-				selected.Exporter.Name)
-			result.RequeueAfter = pendingRequeueAfter(lease)
-			return nil
-		}
-
-		lease.Status.Priority = selected.Policy.Priority
-		lease.Status.SpotAccess = selected.Policy.SpotAccess
-		lease.Status.ExporterRef = &corev1.LocalObjectReference{
-			Name: selected.Exporter.Name,
-		}
-		return nil
 	}
 
 	return nil
@@ -421,10 +307,20 @@ func leaseAcquisitionTransitionResult(
 	priorUnsatisfiable bool,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) (string, bool) {
+	return leaseAcquisitionResult(priorExporterRef != nil, priorUnsatisfiable, lease)
+}
+
+// leaseAcquisitionResult is leaseAcquisitionTransitionResult for both lease
+// forms: a member-form lease is acquired when its members bind.
+func leaseAcquisitionResult(
+	priorBound bool,
+	priorUnsatisfiable bool,
+	lease *jumpstarterdevv1alpha1.Lease,
+) (string, bool) {
 	if lease == nil {
 		return "", false
 	}
-	if priorExporterRef == nil && lease.Status.ExporterRef != nil {
+	if !priorBound && lease.IsBound() {
 		return jmpmetrics.ResultSuccess, true
 	}
 	nowUnsatisfiable := meta.IsStatusConditionTrue(
@@ -440,10 +336,10 @@ func leaseAcquisitionTransitionResult(
 func recordLeaseAcquisitionTransition(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
-	priorExporterRef *corev1.LocalObjectReference,
+	priorBound bool,
 	priorUnsatisfiable bool,
 ) {
-	result, ok := leaseAcquisitionTransitionResult(priorExporterRef, priorUnsatisfiable, lease)
+	result, ok := leaseAcquisitionResult(priorBound, priorUnsatisfiable, lease)
 	if !ok {
 		return
 	}
@@ -456,6 +352,14 @@ func recordLeaseAcquisition(ctx context.Context, lease *jumpstarterdevv1alpha1.L
 		exemplars["lease_id"] = lease.Name
 		if lease.Spec.ClientRef.Name != "" {
 			exemplars["client"] = lease.Spec.ClientRef.Name
+		}
+		if lease.IsMemberForm() {
+			// The number of members is recorded with the acquisition; it is
+			// not a metric label.
+			members := len(lease.BoundExporterNames())
+			exemplars["lease_members"] = strconv.Itoa(members)
+			log.FromContext(ctx).Info("Lease acquisition recorded",
+				"result", result, "lease_members", members)
 		}
 	}
 	jmpmetrics.Default.RecordAcquisition(ctx, result, exemplars)
@@ -471,7 +375,7 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 	if err := r.List(ctx, &policies,
 		client.InNamespace(lease.Namespace),
 	); err != nil {
-		return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to list exporter access policies: %w", err)
+		return nil, nil, fmt.Errorf("attachMatchingPolicies: failed to list exporter access policies: %w", err)
 	}
 
 	// If there are no policies, we just approve all online exporters
@@ -493,7 +397,7 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 		Namespace: lease.Namespace,
 		Name:      lease.Spec.ClientRef.Name,
 	}, &jclient); err != nil {
-		return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to get client: %w", err)
+		return nil, nil, fmt.Errorf("attachMatchingPolicies: failed to get client: %w", err)
 	}
 
 	seenDescriptions := make(map[string]bool)
@@ -503,7 +407,7 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 		for _, policy := range policies.Items {
 			exporterSelector, err := metav1.LabelSelectorAsSelector(&policy.Spec.ExporterSelector)
 			if err != nil {
-				return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert exporter selector: %w", err)
+				return nil, nil, fmt.Errorf("attachMatchingPolicies: failed to convert exporter selector: %w", err)
 			}
 			if exporterSelector.Matches(labels.Set(exporter.Labels)) {
 				for _, p := range policy.Spec.Policies {
@@ -511,7 +415,7 @@ func (r *LeaseReconciler) attachMatchingPolicies(ctx context.Context, lease *jum
 					for _, from := range p.From {
 						clientSelector, err := metav1.LabelSelectorAsSelector(&from.ClientSelector)
 						if err != nil {
-							return nil, nil, fmt.Errorf("reconcileStatusExporterRef: failed to convert client selector: %w", err)
+							return nil, nil, fmt.Errorf("attachMatchingPolicies: failed to convert client selector: %w", err)
 						}
 						if clientSelector.Matches(labels.Set(jclient.Labels)) {
 							clientMatched = true
@@ -561,7 +465,7 @@ func (r *LeaseReconciler) reconcileSharedWithPolicies(
 
 	// Without an assigned exporter, exporter-scoped policies cannot be evaluated
 	// yet; grant the desired set for now. It is filtered once an exporter is bound.
-	if lease.Status.ExporterRef == nil {
+	if !lease.IsBound() {
 		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
 		return nil
 	}
@@ -577,12 +481,18 @@ func (r *LeaseReconciler) reconcileSharedWithPolicies(
 		return nil
 	}
 
-	var exporter jumpstarterdevv1alpha1.Exporter
-	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: lease.Namespace,
-		Name:      lease.Status.ExporterRef.Name,
-	}, &exporter); err != nil {
-		return fmt.Errorf("reconcileSharedWithPolicies: failed to get exporter: %w", err)
+	// A shared client must be allowed to use every exporter that the lease
+	// gives access to: the exporter of a scalar lease, or each bound member.
+	var exporters []jumpstarterdevv1alpha1.Exporter
+	for _, name := range lease.BoundExporterNames() {
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := r.Get(ctx, types.NamespacedName{
+			Namespace: lease.Namespace,
+			Name:      name,
+		}, &exporter); err != nil {
+			return fmt.Errorf("reconcileSharedWithPolicies: failed to get exporter: %w", err)
+		}
+		exporters = append(exporters, exporter)
 	}
 
 	logger := log.FromContext(ctx)
@@ -599,11 +509,18 @@ func (r *LeaseReconciler) reconcileSharedWithPolicies(
 			}
 			return fmt.Errorf("reconcileSharedWithPolicies: failed to get shared client %s: %w", clientName, err)
 		}
-		allowedByPolicy, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies.Items, &exporter, &jclient)
-		if err != nil {
-			// A malformed policy selector must not silently exclude the shared client;
-			// return the error so the reconcile is retried and the misconfiguration surfaces.
-			return fmt.Errorf("reconcileSharedWithPolicies: failed to evaluate access policy for client %s: %w", clientName, err)
+		allowedByPolicy := true
+		for i := range exporters {
+			exporterAllowed, err := jumpstarterdevv1alpha1.ClientAllowedByPolicy(policies.Items, &exporters[i], &jclient)
+			if err != nil {
+				// A malformed policy selector must not silently exclude the shared client;
+				// return the error so the reconcile is retried and the misconfiguration surfaces.
+				return fmt.Errorf("reconcileSharedWithPolicies: failed to evaluate access policy for client %s: %w", clientName, err)
+			}
+			if !exporterAllowed {
+				allowedByPolicy = false
+				break
+			}
 		}
 		if allowedByPolicy {
 			allowed = append(allowed, clientName)
@@ -652,21 +569,6 @@ func (r *LeaseReconciler) ListActiveLeases(ctx context.Context, namespace string
 		return nil, err
 	}
 	return &activeLeases, nil
-}
-
-// attachExistingLeases attaches the existing leases to the approved exporter list
-// if the activeLeases slice contains a lease that references the exporter in the
-// approved exporter list
-func attachExistingLeases(exporters []ApprovedExporter, activeLeases []jumpstarterdevv1alpha1.Lease) []ApprovedExporter {
-	for i, exporter := range exporters {
-		for _, existingLease := range activeLeases {
-			if existingLease.Status.ExporterRef != nil &&
-				existingLease.Status.ExporterRef.Name == exporter.Exporter.Name {
-				exporters[i].ExistingLease = &existingLease
-			}
-		}
-	}
-	return exporters
 }
 
 // orderAvailableExporters orders the exporters in the following order
@@ -850,6 +752,10 @@ func exporterChangedForPendingLeases() predicate.Funcs {
 		if oldOnline != newOnline {
 			return true
 		}
+		// A bound member is lost when its exporter unregisters.
+		if exporterOnline(oldExp) != exporterOnline(newExp) {
+			return true
+		}
 		oldLeased := oldExp.Status.LeaseRef != nil
 		newLeased := newExp.Status.LeaseRef != nil
 		if oldLeased != newLeased {
@@ -875,8 +781,9 @@ func exporterChangedForPendingLeases() predicate.Funcs {
 			newExp := e.ObjectNew.(*jumpstarterdevv1alpha1.Exporter)
 			return meaningful(oldExp, newExp)
 		},
+		// The member of a deleted exporter is lost.
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return false
+			return true
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return true
@@ -895,29 +802,59 @@ func (r *LeaseReconciler) mapExporterToLeases(ctx context.Context, obj client.Ob
 	var requests []reconcile.Request
 	for i := range leaseList.Items {
 		lease := &leaseList.Items[i]
-		if !meta.IsStatusConditionTrue(lease.Status.Conditions,
-			string(jumpstarterdevv1alpha1.LeaseConditionTypePending)) {
-			continue
-		}
-
-		if lease.Spec.ExporterRef != nil && lease.Spec.ExporterRef.Name == exporter.Name {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: lease.Name, Namespace: lease.Namespace},
-			})
-			continue
-		}
-
-		selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
-		if err != nil {
-			continue
-		}
-		if selector.Matches(labels.Set(exporter.Labels)) {
+		if leaseFollowsExporter(lease, exporter) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: lease.Name, Namespace: lease.Namespace},
 			})
 		}
 	}
 	return requests
+}
+
+// leaseFollowsExporter reports whether a change of the exporter can change the
+// lease: a pending lease that can select the exporter, or a member-form lease
+// that has it as a bound member (the member is lost when the exporter goes
+// offline or is deleted, and Ready waits for its beforeLease hook).
+func leaseFollowsExporter(lease *jumpstarterdevv1alpha1.Lease, exporter *jumpstarterdevv1alpha1.Exporter) bool {
+	if lease.IsMemberForm() && lease.IsBound() {
+		return !lease.Status.Ended && lease.HasBoundExporter(exporter.Name)
+	}
+	if !meta.IsStatusConditionTrue(lease.Status.Conditions,
+		string(jumpstarterdevv1alpha1.LeaseConditionTypePending)) {
+		return false
+	}
+
+	if lease.IsMemberForm() {
+		for i := range lease.Spec.Members {
+			member := &lease.Spec.Members[i]
+			if member.Excluded {
+				continue
+			}
+			if member.ExporterRef != nil {
+				if member.ExporterRef.Name == exporter.Name {
+					return true
+				}
+				continue
+			}
+			if member.Selector == nil {
+				continue
+			}
+			selector, err := metav1.LabelSelectorAsSelector(member.Selector)
+			if err == nil && selector.Matches(labels.Set(exporter.Labels)) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if lease.Spec.ExporterRef != nil && lease.Spec.ExporterRef.Name == exporter.Name {
+		return true
+	}
+	selector, err := metav1.LabelSelectorAsSelector(&lease.Spec.Selector)
+	if err != nil {
+		return false
+	}
+	return selector.Matches(labels.Set(exporter.Labels))
 }
 
 // SetupWithManager sets up the controller with the Manager.

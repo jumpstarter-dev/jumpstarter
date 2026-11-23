@@ -19,16 +19,21 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
@@ -253,15 +258,38 @@ func (r *ExporterReconciler) reconcileStatusLeaseRef(
 		return fmt.Errorf("reconcileStatusLeaseRef: failed to list active leases: %w", err)
 	}
 
-	exporter.Status.LeaseRef = nil
-	for _, lease := range leases.Items {
-		if !lease.Status.Ended && lease.Status.ExporterRef != nil {
-			if lease.Status.ExporterRef.Name == exporter.Name {
-				exporter.Status.LeaseRef = &corev1.LocalObjectReference{
-					Name: lease.Name,
-				}
-			}
+	// A claim for the exporter says which lease holds it. The exporter gets
+	// the lease only when the status of that lease also shows the exporter as
+	// bound: thus it refers to one lease, and only after the bind.
+	var claim jumpstarterdevv1alpha1.ExporterClaim
+	hasClaim := true
+	if err := r.Get(ctx, types.NamespacedName{
+		Namespace: exporter.Namespace,
+		Name:      jumpstarterdevv1alpha1.ExporterClaimName(exporter.Name),
+	}, &claim); err != nil {
+		if !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("reconcileStatusLeaseRef: failed to get exporter claim: %w", err)
 		}
+		hasClaim = false
+	}
+
+	var claimed, unclaimed *corev1.LocalObjectReference
+	for _, lease := range leases.Items {
+		if lease.Status.Ended || !lease.HasBoundExporter(exporter.Name) {
+			continue
+		}
+		if hasClaim && claim.Spec.LeaseRef.UID == lease.UID {
+			claimed = &corev1.LocalObjectReference{Name: lease.Name}
+		} else if !lease.IsMemberForm() {
+			unclaimed = &corev1.LocalObjectReference{Name: lease.Name}
+		}
+	}
+	// A scalar lease that was bound before the controller used claims, or by
+	// a controller of the previous version, has no claim until the lease
+	// reconciler creates it. Until then it holds the exporter as before.
+	exporter.Status.LeaseRef = claimed
+	if claimed == nil {
+		exporter.Status.LeaseRef = unclaimed
 	}
 
 	return nil
@@ -373,11 +401,41 @@ func (r *ExporterReconciler) emitEventf(exporter *jumpstarterdevv1alpha1.Exporte
 	r.Recorder.Eventf(exporter, eventType, reason, msgFmt, args...)
 }
 
+// mapLeaseToExporters gives the exporters whose status.leaseRef depends on
+// this lease: those it holds, and those it had as owners.
+func mapLeaseToExporters(_ context.Context, obj client.Object) []reconcile.Request {
+	lease := obj.(*jumpstarterdevv1alpha1.Lease)
+	names := lease.HeldExporterNames()
+	for _, ref := range lease.OwnerReferences {
+		if ref.Kind == "Exporter" && !slices.Contains(names, ref.Name) {
+			names = append(names, ref.Name)
+		}
+	}
+	requests := make([]reconcile.Request, 0, len(names))
+	for _, name := range names {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: lease.Namespace, Name: name},
+		})
+	}
+	return requests
+}
+
+func mapClaimToExporter(_ context.Context, obj client.Object) []reconcile.Request {
+	claim := obj.(*jumpstarterdevv1alpha1.ExporterClaim)
+	if claim.Spec.Exporter == "" {
+		return nil
+	}
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Namespace: claim.Namespace, Name: claim.Spec.Exporter},
+	}}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ExporterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&jumpstarterdevv1alpha1.Exporter{}).
-		Owns(&jumpstarterdevv1alpha1.Lease{}).
+		Watches(&jumpstarterdevv1alpha1.Lease{}, handler.EnqueueRequestsFromMapFunc(mapLeaseToExporters)).
+		Watches(&jumpstarterdevv1alpha1.ExporterClaim{}, handler.EnqueueRequestsFromMapFunc(mapClaimToExporter)).
 		Owns(&corev1.Secret{}).
 		Complete(r)
 }
