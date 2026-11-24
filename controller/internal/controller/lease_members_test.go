@@ -289,6 +289,7 @@ var _ = Describe("Member-form leases", func() {
 		leaseC = "mx-lease-c"
 	)
 	phone := map[string]string{"mx": "phone"}
+	tablet := map[string]string{"mx": "tablet"}
 	var ctx context.Context
 	var exporters []*jumpstarterdevv1alpha1.Exporter
 
@@ -569,7 +570,7 @@ var _ = Describe("Member-form leases", func() {
 			Expect(getLease(ctx, leaseA).BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-phone-2"))
 		})
 
-		It("is unsatisfiable when a role selects a set that has no exporter", func() {
+		It("is unsatisfiable when a role selects no exporter and no ExporterSet", func() {
 			lease := memberLease(leaseA, selectorMember("phone", phone))
 			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
 			reconcileLeaseOnly(ctx, leaseA)
@@ -578,6 +579,121 @@ var _ = Describe("Member-form leases", func() {
 			Expect(condition).NotTo(BeNil())
 			Expect(condition.Reason).To(Equal("NoAccess"))
 			Expect(condition.Message).To(HavePrefix("role `phone`: "))
+		})
+
+		// phoneSet is an ExporterSet that gives the phone labels to its
+		// exporters and has no exporter: it replaces its device, or it has
+		// minAvailableReplicas 0.
+		phoneSet := func(finalizers ...string) *virtualtargetv1alpha1.ExporterSet {
+			Expect(virtualtargetv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+			set := &virtualtargetv1alpha1.ExporterSet{
+				ObjectMeta: metav1.ObjectMeta{Name: "mx-phones", Namespace: "default", Finalizers: finalizers},
+				Spec: virtualtargetv1alpha1.ExporterSetSpec{
+					VirtualTargetClassName: "qemu-class",
+					MaxReplicas:            1,
+					Selector:               metav1.LabelSelector{MatchLabels: phone},
+					Template: virtualtargetv1alpha1.ExporterSetTemplate{
+						Metadata: virtualtargetv1alpha1.EmbeddedObjectMeta{Labels: phone},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, set)).To(Succeed())
+			return set
+		}
+		expectWaitsForSet := func(res reconcile.Result) {
+			updated := getLease(ctx, leaseA)
+			condition := leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypePending)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("NotAvailable"))
+			Expect(condition.Message).To(ContainSubstring("waiting for an ExporterSet"))
+			Expect(leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)).To(BeNil())
+			Expect(updated.Status.Ended).To(BeFalse())
+			Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(claimsByKey(ctx)).To(BeEmpty())
+		}
+
+		It("keeps the lease Pending when a role selects an ExporterSet that has no exporter", func() {
+			set := phoneSet()
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, set)).To(Succeed()) })
+
+			online(mxExporter("mx-tablet-1", "", tablet))
+			lease := memberLease(leaseA, selectorMember("phone", phone), selectorMember("tablet", tablet))
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			res := reconcileLeaseOnly(ctx, leaseA)
+
+			expectWaitsForSet(res)
+			updated := getLease(ctx, leaseA)
+			Expect(leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypePending).Message).
+				To(HavePrefix("role `phone`: "))
+			Expect(updated.MemberStatus("phone").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStatePending))
+			Expect(updated.MemberStatus("tablet").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStatePending))
+
+			// The set created its exporter.
+			online(mxExporter("mx-phone-1", "", phone))
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(getLease(ctx, leaseA).BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-tablet-1"))
+		})
+
+		It("keeps the lease Pending when the only exporter of the ExporterSet is disabled", func() {
+			set := phoneSet()
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, set)).To(Succeed()) })
+
+			drained := mxExporter("mx-phone-1", "", phone)
+			drained.Spec.Enabled = new(false)
+			online(drained)
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, selectorMember("phone", phone)))).To(Succeed())
+			expectWaitsForSet(reconcileLeaseOnly(ctx, leaseA))
+		})
+
+		It("keeps a scalar lease Pending when it selects an ExporterSet that has no exporter", func() {
+			set := phoneSet()
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, set)).To(Succeed()) })
+
+			lease := memberLease(leaseA)
+			lease.Spec.Selector = metav1.LabelSelector{MatchLabels: phone}
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			expectWaitsForSet(reconcileLeaseOnly(ctx, leaseA))
+
+			online(mxExporter("mx-phone-1", "", phone))
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(getLease(ctx, leaseA).Status.ExporterRef.Name).To(Equal("mx-phone-1"))
+		})
+
+		It("omits an optional role that selects an ExporterSet that has no exporter", func() {
+			set := phoneSet()
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, set)).To(Succeed()) })
+
+			online(mxExporter("mx-tablet-1", "", tablet))
+			optional := selectorMember("phone", phone)
+			optional.Optional = true
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, optional, selectorMember("tablet", tablet)))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+
+			updated := getLease(ctx, leaseA)
+			Expect(memberExporter(updated, "tablet")).To(Equal("mx-tablet-1"))
+			Expect(updated.MemberStatus("phone").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStateOmitted))
+			Expect(updated.MemberStatus("phone").Reason).To(Equal("NotAvailable"))
+		})
+
+		It("is unsatisfiable when the ExporterSet of the role is in deletion", func() {
+			const finalizer = "test.jumpstarter.dev/hold"
+			set := phoneSet(finalizer)
+			Expect(k8sClient.Delete(ctx, set)).To(Succeed())
+			DeferCleanup(func() {
+				Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(set), set)).To(Succeed())
+				set.Finalizers = nil
+				Expect(k8sClient.Update(ctx, set)).To(Succeed())
+			})
+
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, selectorMember("phone", phone)))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+
+			updated := getLease(ctx, leaseA)
+			condition := leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("NoAccess"))
+			Expect(updated.Status.Ended).To(BeTrue())
 		})
 	})
 

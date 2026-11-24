@@ -53,6 +53,10 @@ type memberSpec struct {
 // memberFailure is the result of a check that a member fails by itself.
 type memberFailure struct {
 	invalid bool
+	// pending is true when the failure is not final: an ExporterSet can still
+	// create an exporter for the member, so a required member keeps the lease
+	// Pending and does not end it.
+	pending bool
 	reason  string
 	message string
 }
@@ -197,6 +201,9 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 		if failure != nil {
 			if !spec.optional {
 				setMemberFailure(lease, &spec, failure)
+				if failure.pending {
+					result.RequeueAfter = pendingRequeueAfter(lease)
+				}
 				return nil
 			}
 			omitted[spec.name] = *failure
@@ -379,6 +386,10 @@ func setMemberFailure(lease *jumpstarterdevv1alpha1.Lease, spec *memberSpec, fai
 		lease.SetStatusInvalid(failure.reason, "%s", message)
 		return
 	}
+	if failure.pending {
+		lease.SetStatusPending(failure.reason, "%s", message)
+		return
+	}
 	lease.SetStatusUnsatisfiable(failure.reason, "%s", message)
 }
 
@@ -432,6 +443,23 @@ func (r *LeaseReconciler) resolveMember(
 		}
 		// Filter out disabled exporters from selector-based listing
 		matchingExporters = filterOutDisabledExporters(listed.Items, spec.allowDisabled)
+		if len(matchingExporters) == 0 {
+			// No exporter to use now: there is none, or the only ones are
+			// disabled (an ExporterSet disables an exporter before it removes
+			// it). If an ExporterSet gives these labels to its exporters, it
+			// can create one, and it creates one only for a Pending lease.
+			waits, err := r.exporterSetCanProvide(ctx, lease.Namespace, spec.selector)
+			if err != nil {
+				return nil, nil, err
+			}
+			if waits {
+				return nil, &memberFailure{
+					pending: true,
+					reason:  "NotAvailable",
+					message: "No exporter matches the selector now; waiting for an ExporterSet to create one",
+				}, nil
+			}
+		}
 		if len(matchingExporters) == 0 && len(listed.Items) > 0 {
 			return nil, &memberFailure{
 				reason:  "AllDisabled",
@@ -733,6 +761,22 @@ func (r *LeaseReconciler) rolesSelectExporterSet(
 			selectors = append(selectors, member.spec.selector)
 		}
 	}
+	return r.exporterSetCanProvide(ctx, lease.Namespace, selectors...)
+}
+
+// exporterSetCanProvide reports whether an ExporterSet of the namespace can
+// still create an exporter for one of the selectors: the set exists, it is not
+// in deletion, and the selector agrees with the labels that the set gives to
+// its exporters. These are the labels with which the exporter-set controller
+// counts the demand of a Pending lease, so the two agree: a lease that waits
+// here is demand there. A set at maxReplicas counts too: an exporter of it
+// becomes free or is replaced (maxReplicas 0 is no upper bound, not a
+// disabled set).
+func (r *LeaseReconciler) exporterSetCanProvide(
+	ctx context.Context,
+	namespace string,
+	selectors ...labels.Selector,
+) (bool, error) {
 	if len(selectors) == 0 {
 		return false, nil
 	}
@@ -741,13 +785,17 @@ func (r *LeaseReconciler) rolesSelectExporterSet(
 	// every caller, thus it is read without its Go type.
 	sets := &unstructured.UnstructuredList{}
 	sets.SetGroupVersionKind(exporterSetListGVK)
-	if err := r.APIReader.List(ctx, sets, client.InNamespace(lease.Namespace)); err != nil {
+	if err := r.APIReader.List(ctx, sets, client.InNamespace(namespace)); err != nil {
 		if meta.IsNoMatchError(err) || k8serrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("rolesSelectExporterSet: failed to list exporter sets: %w", err)
+		return false, fmt.Errorf("exporterSetCanProvide: failed to list exporter sets: %w", err)
 	}
 	for i := range sets.Items {
+		// A set in deletion creates no exporter.
+		if sets.Items[i].GetDeletionTimestamp() != nil {
+			continue
+		}
 		templateLabels, _, err := unstructured.NestedStringMap(
 			sets.Items[i].Object, "spec", "template", "metadata", "labels")
 		if err != nil || len(templateLabels) == 0 {

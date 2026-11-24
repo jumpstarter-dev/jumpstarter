@@ -182,6 +182,44 @@ func TestReconcile_memberDemand_twoMembersScaleOneExporterSetToTwo(t *testing.T)
 	}
 }
 
+// The lease controller keeps a lease whose member selects a set without an
+// exporter Pending with the reason NotAvailable. That status is demand: a set
+// with zero exporters and minAvailableReplicas 0 creates the device.
+func TestReconcile_memberDemand_scalesFromZeroForAWaitingMember(t *testing.T) {
+	lease := makePendingMemberLease("rig",
+		selectorMember("phone", poolLabels),
+		selectorMember("head-unit", map[string]string{"exporterset": "other"}),
+	)
+	lease.Status.Conditions = nil
+	lease.SetStatusPending("NotAvailable",
+		"role `phone`: No exporter matches the selector now; waiting for an ExporterSet to create one")
+	lease.Status.Members = []jumpstarterdevv1alpha1.LeaseMemberStatus{
+		memberStatus("phone", jumpstarterdevv1alpha1.LeaseMemberStatePending, ""),
+		memberStatus("head-unit", jumpstarterdevv1alpha1.LeaseMemberStatePending, ""),
+	}
+
+	r, c := newReconciler(t, demandSet(1), makeVTC(), lease)
+
+	reconcileOnce(t, r)
+	if got := len(listExporters(t, c)); got != 1 {
+		t.Fatalf("expected 1 Exporter for the waiting member, got %d", got)
+	}
+}
+
+// A lease that the lease controller ended as Unsatisfiable is no demand.
+func TestReconcile_memberDemand_unsatisfiableLeaseIsNoDemand(t *testing.T) {
+	lease := makePendingMemberLease("rig", selectorMember("phone", poolLabels))
+	lease.Status.Conditions = nil
+	lease.SetStatusUnsatisfiable("NoAccess", "role `phone`: no exporters")
+
+	r, c := newReconciler(t, demandSet(1), makeVTC(), lease)
+
+	reconcileOnce(t, r)
+	if got := len(listExporters(t, c)); got != 0 {
+		t.Fatalf("expected no Exporter for an unsatisfiable lease, got %d", got)
+	}
+}
+
 func TestReconcile_memberDemand_respectsMaxReplicas(t *testing.T) {
 	lease := makePendingMemberLease("rig",
 		selectorMember("phone-a", poolLabels),
