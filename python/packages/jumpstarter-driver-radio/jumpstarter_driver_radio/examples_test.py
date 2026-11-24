@@ -33,6 +33,11 @@ def test_an_edge_gateway_has_a_real_controller_and_one_port_of_a_real_wifi():
     }
 
 
+def test_two_virtual_devices_can_share_one_controller_simulator():
+    assert radios("exporter-cuttlefish-headunit-direct.yaml") == {"bluetooth": [("bluetooth", "provides", "hci-h4")]}
+    assert radios("exporter-cuttlefish-phone-direct.yaml") == {"bluetooth": [("bluetooth", "requires", "hci-h4")]}
+
+
 def test_the_lease_templates_join_ports_the_example_exporters_declare():
     declared = {
         "phone": {"hwsim", "bluetooth"},
@@ -44,6 +49,7 @@ def test_the_lease_templates_join_ports_the_example_exporters_declare():
         "phone-headunit",
         "phone-headunit-bluetooth",
         "tablet-headunit",
+        "phone-headunit-direct",
     ]
     for template in filter(None, templates):
         members = {member["name"] for member in template["spec"]["members"]}

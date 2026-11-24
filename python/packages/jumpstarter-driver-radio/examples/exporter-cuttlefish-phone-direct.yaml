@@ -1,0 +1,36 @@
+# A virtual Android phone (Cuttlefish) with no Bluetooth controller simulator of its own: its Bluetooth stack
+# uses the simulator of the head unit (exporter-cuttlefish-headunit-direct.yaml), through a forward.
+#
+# The device must be made without a simulator and with the launch flag `rootcanal_instance_num: 2`, so that
+# its connector dials 127.0.0.1:7301. `netsim_bt` and `netsim_uwb` below are the half that `cvd load` takes;
+# the flag is not one of its keys. The Cuttlefish provisioner of an ExporterSet does all of it with
+# `parameters.bluetooth_controller: remote`.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: cuttlefish-phone-direct
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  cuttlefish:
+    type: jumpstarter_driver_cuttlefish.driver.Cuttlefish
+    config:
+      env_config:
+        netsim_bt: false
+        netsim_uwb: false
+        instances:
+          - vm: { cpus: 4, memory_mb: 4096 }
+  android:
+    type: jumpstarter_driver_adb.driver.AdbDevice
+    config:
+      address: 127.0.0.1:6520
+      transport: tcp
+  # Port `bluetooth` (requires, hci-h4). The driver listens where the device's connector dials and keeps that
+  # connection; the exporter listens for the forward on `listen`.
+  bluetooth:
+    type: jumpstarter_driver_radio.direct.RemoteController
+    config:
+      adb: 127.0.0.1:6520 # switch the device's Bluetooth off and on when the controller is a new one
+      guest: 127.0.0.1:7301 # 7300 + rootcanal_instance_num - 1
+      listen: 127.0.0.1:7311

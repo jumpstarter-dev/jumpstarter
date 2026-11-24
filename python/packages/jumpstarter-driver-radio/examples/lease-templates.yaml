@@ -83,3 +83,25 @@ spec:
         - { member: tablet, port: wifi-service } # requires (GatewayWifi)
   defaults:
     duration: 45m
+---
+# Virtual to virtual with no bridge: the phone's Bluetooth stack is one more host of the head unit's
+# controller simulator. Power the head unit on first.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: phone-headunit-direct
+  namespace: jumpstarter-lab
+spec:
+  description: "A virtual phone that uses the Bluetooth controller simulator of a virtual head unit"
+  members:
+    - name: phone
+      selector: { matchLabels: { type: phone-direct } }
+    - name: headunit
+      selector: { matchLabels: { type: head-unit-direct } }
+  forwards:
+    - name: bluetooth
+      endpoints:
+        - { member: phone, port: bluetooth }    # requires (RemoteController)
+        - { member: headunit, port: bluetooth } # provides (RootcanalController)
+  defaults:
+    duration: 45m

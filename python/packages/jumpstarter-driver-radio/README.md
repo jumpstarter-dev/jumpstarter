@@ -14,6 +14,8 @@ port, the exporter reports it at registration, and a lease or a lease template n
 | `GatewayWifi` | One TCP port on a real test Wi-Fi network beside a physical device (an edge gateway) | `wifi-service`, `requires` | One TCP connection for each connection a device on the Wi-Fi makes |
 | `RootcanalBluetooth` | The Bluetooth of a virtual device whose radio is rootcanal (Cuttlefish, netsim): its HCI port | `bluetooth`, `connects`, `bt-l2cap-bridge` | L2CAP, between two halves of a bridge |
 | `ControllerBluetooth` | The Bluetooth of a physical device, through a real controller beside it: the controller's HCI port | `bluetooth`, `connects`, `bt-l2cap-bridge` | The same |
+| `RootcanalController` | The controller simulator of a virtual device (rootcanal): its HCI port, for another virtual device to use | `bluetooth`, `provides`, `hci-h4` | The HCI of the other device's own Bluetooth stack |
+| `RemoteController` | The Bluetooth of a virtual device that has no simulator of its own | `bluetooth`, `requires`, `hci-h4` | The same |
 | `MockRadio` | None: what goes into its port comes back out | `echo`, `connects` (or `provides`, `requires`) | Anything |
 
 ## Installation
@@ -491,6 +493,101 @@ $ j phone bluetooth start
   air with their own addresses, where that is available. This bridge needs nothing of the simulator but its
   HCI port, and is the same for a real controller.
 
+## RootcanalController and RemoteController
+
+Two virtual devices on **one** simulated air, with no bridge between them. rootcanal takes any number of hosts
+on its HCI port and gives each a controller and an address of its own. A second Cuttlefish device that is made
+without a simulator, and whose HCI goes to the first device's simulator, is simply a second device in the same
+room: the two Android stacks pair with each other, once, and each shows the other's real name and the same
+six-digit code. Bluetooth LE works as well as BR/EDR, because nothing in the path knows what is said.
+
+```text
+ head unit's exporter                                        phone's exporter
+ Android - rootcanal (HCI on 7300) - RootcanalController === RemoteController - tcp_connector - Android
+                                     provides bluetooth   |  requires bluetooth  (dials 7301)
+                                                          |
+                                         the forward: one TCP stream, H4
+```
+
+Use this where both devices are virtual and one can be made without a simulator. `RootcanalBluetooth` (the
+bridge) is for the rest: a physical device, or two devices that each keep their own simulator.
+
+### The device with the simulator
+
+```yaml
+export:
+  bluetooth:
+    type: jumpstarter_driver_radio.direct.RootcanalController
+    # config:
+    #   port: 7300                   # --hci_port: 7300 + instance_num - 1
+```
+
+Nothing runs: the driver declares the port, and the exporter connects to the simulator for each connection a
+forward brings. `status` says how many hosts the forward has brought (`hosts`, `served`).
+
+### The device without one
+
+The device must be made so that it starts no simulator and dials another instance's. For Cuttlefish that is
+`netsim_bt: false`, `netsim_uwb: false` and the launch flag `rootcanal_instance_num: 2`; the Cuttlefish
+provisioner of an ExporterSet does all three with `parameters.bluetooth_controller: remote`. The device's
+connector (`tcp_connector`) then dials `127.0.0.1:7301`.
+
+```yaml
+export:
+  bluetooth:
+    type: jumpstarter_driver_radio.direct.RemoteController
+    config:
+      adb: 127.0.0.1:6520            # switch the device's Bluetooth off and on for a new controller
+      # guest: 127.0.0.1:7301        # where the device's connector dials
+      # listen: 127.0.0.1:7311       # where the exporter listens for the forward
+      # adb_server_port: 15037       # the ADB server of the `AdbDevice` driver
+      # adb_path: adb
+      # retry: 1.0
+      # autostart: true
+```
+
+The driver stands between the connector and the forward, and it is there for three reasons:
+
+- **The connector does not survive a cut stream.** It looks for its port once a second until it is there, but
+  when its stream goes away its next write kills it, and Cuttlefish stops the whole device. The driver keeps
+  the connector's connection for as long as the device runs, whatever the forward does.
+- **A cut can fall in the middle of a packet.** The driver passes whole H4 packets only.
+- **A path that comes back is a new controller.** It knows nothing of what the stack set up in the old one.
+  With `adb` set, the driver switches the device's Bluetooth off and on, as a person would. Bonds are the
+  stack's own, and stay. A stack that only ever talked to nobody (the far device was not powered on yet) is
+  only switched on, in case it gave up.
+
+A connection to the forward counts as a path once the controller at its far end has answered: the driver asks
+it its address first (`controller` in `status`). The exporter takes a connection before it knows whether the
+far device is powered on.
+
+`stop` leaves the far controller (the device's Bluetooth hears nothing, and the device stays up); `start`
+looks for it again.
+
+### Joining them
+
+```yaml
+forwards:
+  - name: bluetooth
+    endpoints:
+      - { member: phone, port: bluetooth }     # requires (RemoteController)
+      - { member: headunit, port: bluetooth }  # provides (RootcanalController)
+```
+
+```console
+$ jmp shell --lease-template phone-headunit-direct
+$ j headunit cuttlefish power on     # first: Android on the phone does not finish booting without a controller
+$ j phone cuttlefish power on
+$ j phone bluetooth status           # peer: true, controller: the phone's address in the head unit's simulator
+```
+
+### What it does not do
+
+- It does not work with a physical device, or with a device that keeps its own simulator: use the bridge.
+- One device of the lease must have the simulator and be powered on first. When that device is powered off,
+  the other loses its controller, and gets a new one (and its Bluetooth restarted) when it is back.
+- The addresses are the simulator's: it gives its hosts consecutive ones, in the order they connect.
+
 ## MockRadio
 
 A radio with nothing on the air, for trying a forward without a device. What goes into its port comes back
@@ -524,4 +621,5 @@ hello
 
 `examples/` has an exporter configuration for a Cuttlefish phone, a Cuttlefish head unit and an edge gateway
 beside a tablet, and lease templates that join them: virtual to virtual (Wi-Fi and Bluetooth) and physical to
-virtual.
+virtual. `exporter-cuttlefish-phone-direct.yaml` and `exporter-cuttlefish-headunit-direct.yaml` are the two
+devices of the direct path, with the lease template `phone-headunit-direct`.
