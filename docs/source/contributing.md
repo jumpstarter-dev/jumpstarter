@@ -6,7 +6,7 @@ community and we welcome contributions.
 - [How to Contribute](contributing/how-to-contribute.md): How to set up, make
   changes, and submit a pull request
 - [Development Environment](contributing/development-environment.md): Setting up
-  your local environment for Python and Go development
+  your local environment for Python, Go and Rust development
 - [Guidelines](contributing/guidelines.md): Code style, documentation practices,
   and AI assistant configuration
 - [Jumpstarter Enhancement Proposals](contributing/jeps/index.md): Process for

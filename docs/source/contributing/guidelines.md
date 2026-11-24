@@ -39,8 +39,11 @@ This project also includes Claude Code configuration in the `.claude/`
 directory. When working with Claude Code:
 
 - **Project Rules**: The `.claude/rules/` directory contains rules for project
-  structure, driver creation, {term}`operator` releases, and the {term}`JEP` process. Claude
-  Code loads these automatically.
+  structure, driver creation, {term}`operator` releases, the {term}`JEP` process,
+  the documentation demo recording, and keeping `e2e/README.md` in sync with
+  the E2E tests. Claude Code loads these automatically.
+- **Skills**: The `.claude/skills/` directory provides `/propose-jep` to draft
+  a new {term}`JEP` and `/release` to guide a Jumpstarter release.
 - **CLAUDE.md**: The root `CLAUDE.md` provides project-level instructions
   including key commands for testing (`make pkg-test-<package_name>`), linting
   (`make lint-fix`), and type checking (`make pkg-ty-<package_name>`).

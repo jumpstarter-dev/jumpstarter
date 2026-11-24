@@ -18,6 +18,8 @@ make deploy CLUSTER_TYPE=k3s
 
 # delete the cluster
 make clean
+# or on k3s (this uninstalls k3s)
+make clean CLUSTER_TYPE=k3s
 ```
 
 For production deployment, see the

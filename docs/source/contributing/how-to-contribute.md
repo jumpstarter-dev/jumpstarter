@@ -16,6 +16,8 @@ If you have questions, reach out in our Matrix chat or open an issue on GitHub.
 - Add tests and update documentation
 - Verify all tests pass (`make pkg-test-${package_name}` or `make test`)
 
+Run these `make` targets from the `python/` directory.
+
 ## Commit Messages
 
 - Use clear, descriptive messages
@@ -36,7 +38,7 @@ We welcome bug fixes, features, and improvements to the core codebase.
 
 ### Drivers
 
-To create a new driver scaffold:
+To create a new driver scaffold, run from the `python/` directory:
 
 ```console
 $ ./__templates__/create_driver.sh driver_package DriverClass "Your Name" "your.email@example.com"
@@ -49,7 +51,8 @@ Test your driver: `make pkg-test-${package_name}`
 
 ### Documentation
 
-Jumpstarter uses Sphinx with Markdown. Build and preview locally:
+Jumpstarter uses Sphinx with Markdown. Build and preview locally from the
+repository root:
 
 ```console
 $ make docs-serve

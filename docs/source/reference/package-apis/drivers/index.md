@@ -7,12 +7,25 @@ with different hardware components and systems.
 
 ## Common Configuration
 
-All drivers support these base configuration fields:
+All drivers support these base configuration fields. Set `log_level` under
+`config`, and `description` and `methods_description` next to `type`:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `log_level` | Logging level (`DEBUG`, `INFO`, `WARNING`, etc.). Inherited from the parent driver when unset. | parent's level, else `"INFO"` |
 | `description` | Custom description shown in CLI help | `None` |
+| `methods_description` | Help text for individual CLI commands, keyed by command name | `{}` |
+
+```yaml
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+    description: "Bench power supply"
+    methods_description:
+      cycle: "Power cycle the bench supply"
+    config:
+      log_level: DEBUG
+```
 
 ## Types of Drivers
 
@@ -32,6 +45,7 @@ Drivers that control the power state and basic operation of devices:
 - {doc}`Tasmota <tasmota>` (`jumpstarter-driver-tasmota`) - Tasmota device control
 - {doc}`HTTP Power <http-power>` (`jumpstarter-driver-http-power`) - HTTP-based power control for smart sockets
 - {doc}`Noyito Relay <noyito-relay>` (`jumpstarter-driver-noyito-relay`) - NOYITO USB relay board control
+- {doc}`SNMP <snmp>` (`jumpstarter-driver-snmp`) - Power control for SNMP-enabled PDUs
 
 ### Communication
 
@@ -43,12 +57,11 @@ Drivers that provide various communication interfaces:
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
 - {doc}`DDS <dds>` (`jumpstarter-driver-dds`) - DDS (Data Distribution Service) pub/sub communication using Eclipse CycloneDDS
-- {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP communication
+- {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP file server on the exporter
 - {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
-- {doc}`DUT Network <dut-network>` (`jumpstarter-driver-dut-network`) - DUT network isolation with bridge, DHCP, DNS, and NAT
-- {doc}`Network <network>` (`jumpstarter-driver-network`) - Network interfaces and configuration
+- {doc}`DUT Network <dut-network>` (`jumpstarter-driver-dut-network`) - DUT network isolation with DHCP, DNS, NAT, and VLAN sub-interfaces
+- {doc}`Network <network>` (`jumpstarter-driver-network`) - TCP, UDP, Unix socket and other network connections tunneled to the client
 - {doc}`PySerial <pyserial>` (`jumpstarter-driver-pyserial`) - Serial port communication
-- {doc}`SNMP <snmp>` (`jumpstarter-driver-snmp`) - Simple Network Management Protocol
 - {doc}`SSH <ssh>` (`jumpstarter-driver-ssh`) - SSH wrapper driver
 - {doc}`SSH MITM <ssh-mitm>` (`jumpstarter-driver-ssh-mitm`) - SSH proxy with server-side private key storage
 - {doc}`TFTP <tftp>` (`jumpstarter-driver-tftp`) - Trivial File Transfer Protocol
@@ -70,6 +83,7 @@ Drivers that handle media streams:
 - {doc}`uStreamer <ustreamer>` (`jumpstarter-driver-ustreamer`) - Video streaming
 - {doc}`Video <video>` (`jumpstarter-driver-video`) - Video interface and HTTP/MJPEG camera sources
 - {doc}`NanoKVM-USB <nanokvm-usb>` (`jumpstarter-driver-nanokvm-usb`) - NanoKVM-USB KVM over local USB serial and UVC
+
 ### Automotive Diagnostics
 
 Drivers for automotive diagnostic protocols:
@@ -119,6 +133,7 @@ Drivers for signal capture, analysis, and protocol decoding:
 General-purpose utility drivers:
 
 - {doc}`Appium <appium>` (`jumpstarter-driver-appium`) - Shared Appium interface for UI automation on iOS and Android targets
+- {doc}`Composite <composite>` (`jumpstarter-driver-composite`) - Groups child drivers into one device; the root driver of every exporter
 - {doc}`Shell <shell>` (`jumpstarter-driver-shell`) - Shell command execution
 - {doc}`SSH Mount <ssh-mount>` (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
 - {doc}`TMT <tmt>` (`jumpstarter-driver-tmt`) - Test Management Tool wrapper
@@ -131,6 +146,7 @@ appium.md
 ble.md
 bt-peer.md
 can.md
+composite.md
 copilot.md
 corellium.md
 cuttlefish.md

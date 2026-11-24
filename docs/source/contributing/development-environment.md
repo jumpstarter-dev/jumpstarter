@@ -6,8 +6,9 @@ You can use
 or your favorite OS/distro to develop Jumpstarter. The following examples
 are for Fedora.
 
-Jumpstarter is programmed in Python and Go, the Jumpstarter controller is
-written in Go, while the core and drivers are written in Python.
+Jumpstarter is programmed in Python, Go and Rust, the Jumpstarter controller is
+written in Go, while the core and drivers are written in Python. The
+`jumpstarter-exec` remote command execution bridge is written in Rust.
 
 ## Python Environment
 
@@ -27,7 +28,7 @@ Then you can clone the project and build the virtual environment with:
 ```console
 $ git clone https://github.com/jumpstarter-dev/jumpstarter.git
 $ cd jumpstarter
-$ make build-python
+$ make -C python sync
 ```
 
 At this point you can run any of the jumpstarter commands prefixing them with
@@ -40,7 +41,7 @@ $ uv run jmp
 
 ### Running the Tests
 
-To run the tests, you can use `make` from the repository root:
+To run the tests, you can use `make` from the `python/` directory:
 ```console
 $ make test
 ```
@@ -86,4 +87,16 @@ $ CONTAINER_TOOL=podman make clean
 To run the tests, you can use the `make` command:
 ```console
 $ make test
+```
+
+## Rust Environment
+
+The `jumpstarter-exec` remote command execution bridge lives in the `rust/`
+directory. CI pins the Rust toolchain version with `RUST_TOOLCHAIN` in
+`.github/workflows/rust-tests.yaml`. With `cargo` installed,
+build and test it from the repository root:
+
+```console
+$ make build-rust
+$ make test-rust
 ```

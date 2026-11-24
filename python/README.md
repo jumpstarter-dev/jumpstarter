@@ -7,7 +7,7 @@ directory is managed as a [uv workspace](https://docs.astral.sh/uv/concepts/work
 ## Development
 
 ```sh
-make build-python
+make build
 make test
 make lint-fix
 

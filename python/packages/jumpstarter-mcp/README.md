@@ -24,6 +24,7 @@ guide.
 | `jmp_connect` | Connect to a {term}`device` (by {term}`lease`, selector, or {term}`exporter`) |
 | `jmp_disconnect` | Disconnect from a {term}`device` |
 | `jmp_list_connections` | List active connections |
+| `jmp_list_events` | Return and remove up to `max_count` (default 50) buffered events: {term}`lease` expiry warnings, transfers, and connection failures |
 
 ### Device Interaction
 
