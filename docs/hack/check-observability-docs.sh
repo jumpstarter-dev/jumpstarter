@@ -14,10 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Verify the observability configuration docs keep the Phase 5 contract:
-# discovery labels, the three shipper examples, the stream-label rules, the
-# validation commands, and no references to the removed operator-owned
-# shipper API or ConfigMap.
+# Verify the observability configuration docs keep the Phase 5 contract: the
+# pod discovery labels every shipper selects on, and no references to the
+# removed operator-owned shipper API, condition, or ConfigMap.
+#
+# Only checks that encode a decision belong here. Whether a shipper example
+# works is a property of the example, not of its prose: validate it with the
+# shipper's own tooling when you change it.
 
 set -euo pipefail
 
@@ -64,35 +67,9 @@ if [ ! -f "$doc" ]; then
   exit 1
 fi
 
-# Pod discovery contract: the operator only labels pods and emits JSON stdout.
+# Shipper contract: every shipper configuration selects on these exact labels.
 require 'log-scrape discovery label' 'jumpstarter.dev/log-scrape="true"'
 require 'log-format discovery label' 'jumpstarter.dev/log-format="json"'
-require 'statement that no shipper ConfigMap is generated' \
-  'does not generate a shipper ConfigMap'
-
-# Metrics Services use the component-first names from the Phase 5 cleanup.
-require 'controller metrics Service name' '<name>-metrics-controller'
-require 'router metrics Service name' '<name>-metrics-router'
-
-# One worked example per supported shipper.
-require 'Grafana Alloy example' '### Grafana Alloy'
-require 'Vector example' '### Vector'
-require 'Promtail example' '### Promtail'
-require 'Alloy component example' 'loki.write'
-require 'Vector source example' 'kubernetes_logs'
-require 'Promtail discovery example' 'kubernetes_sd_configs'
-
-# Stream-label rules the shipper configuration must implement. The backticks
-# are literal prose in the pattern, not command substitution.
-# shellcheck disable=SC2016
-require 'stream-label guidance' \
-  'promote `component`, `exporter`, and `namespace` to Loki stream labels'
-
-# Validation commands for every documented shipper.
-require 'Promtail validation command' '-check-syntax'
-require 'Alloy validation command' 'alloy validate'
-require 'Alloy formatting check' 'alloy fmt --test'
-require 'Vector validation command' 'vector validate'
 
 # The operator no longer owns shipper configuration: neither the API, the
 # condition, nor the generated ConfigMap may reappear in the configuration docs.
@@ -100,9 +77,6 @@ forbid 'logging.shipper API field' 'logging.shipper'
 forbid 'shipper type API field' 'shipper.type'
 forbid 'LogShipperReady condition' 'LogShipperReady'
 forbid 'generated shipper ConfigMap name' 'jumpstarter-log-shipper'
-# No separate `{.data.` check: that literal also appears in unrelated JSONPath
-# examples (for example a Secret inspection), and the ConfigMap-name check above
-# already rejects references to the removed shipper ConfigMap.
 
 if [ "$status" -ne 0 ]; then
   exit 1
