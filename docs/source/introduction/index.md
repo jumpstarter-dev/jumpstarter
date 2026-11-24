@@ -1,11 +1,13 @@
 # Introduction
 
 Jumpstarter is an open source framework that brings enterprise-grade testing
-capabilities to everyone. While established industries like automotive and
-manufacturing have long used {term}`HiL` testing, these tools have typically been
-expensive proprietary systems. Jumpstarter democratizes this technology through
-a free, cloud native approach that works with both physical hardware and virtual
-devices.
+capabilities to everyone. Established industries like automotive and
+manufacturing have long relied on {term}`HiL` testing, but those tools have
+typically been expensive proprietary systems that tie a team to one vendor's
+hardware, test language, and workflow. Jumpstarter takes a free, cloud native
+approach instead: it works with physical hardware and virtual devices alike,
+runs on infrastructure you control, and leaves the choice of test framework, CI
+system, and AI assistant to you.
 
 At its core, Jumpstarter uses a client/server architecture where a single client
 can control multiple devices under test. Its modular design supports both local
@@ -19,8 +21,10 @@ pipeline, and an
 [AI agent](../getting-started/guides/integration-patterns/agentic.md)
 all use the exact same APIs, authentication, and access controls.
 
-Built on Python, Jumpstarter integrates easily with existing development
-workflows and runs almost anywhere. It works with common testing tools like
+Its client, drivers, and exporter are written in Python, so Jumpstarter
+integrates easily with existing development workflows. The client and exporter
+run on Linux and macOS, and some drivers need a specific host operating system.
+It works with common testing tools like
 `pytest`, shell scripts, Makefiles, and typical CI/CD systems. Beyond testing, it
 can function as a virtual KVM (Keyboard, Video, Mouse) switch, enabling remote
 access to physical devices for development.
@@ -105,7 +109,7 @@ provide flexibility for different scenarios: {term}`local mode`,
 ### Local Mode
 
 In {term}`local mode`, clients communicate directly with {term}`exporter`s running on the same
-machine or through direct network connections.
+machine.
 
 ```{mermaid}
 flowchart TB
@@ -131,10 +135,11 @@ flowchart TB
 ```
 
 This mode is ideal for individual developers working directly with accessible
-hardware or virtual devices. When no client configuration or environment
-variables are present, Jumpstarter runs in {term}`local mode` and communicates with a
-built-in {term}`exporter` service via a local socket connection, requiring no Kubernetes
-or other infrastructure. Developers can work with devices on their desk, develop
+hardware or virtual devices. When you pass an exporter configuration to
+`jmp shell` with `--exporter` or `--exporter-config`, Jumpstarter runs that
+{term}`exporter` inside the `jmp` process and connects to it through a local
+socket, requiring no Kubernetes or other infrastructure. Developers can work
+with devices on their desk, develop
 drivers, create automation scripts, and test with QEMU or other virtualization
 tools.
 
@@ -180,12 +185,18 @@ flowchart LR
     Storage --> DUT
 ```
 
+On the machine with the hardware, `jmp run` serves the {term}`exporter` on a TCP
+port. On another machine, `jmp shell --tls-grpc` connects to it:
+
 ```console
-$ jmp shell --exporter example-direct
+$ jmp run --exporter-config example-direct.yaml --tls-grpc-listener 0.0.0.0:19090 --tls-grpc-insecure
+$ jmp shell --tls-grpc exporter.example.com:19090 --tls-grpc-insecure
 ```
 
-Only one client should connect at a time. For shared, multi-user environments
-use {term}`distributed mode` instead.
+`--tls-grpc-insecure` turns TLS off for development. The
+[direct mode guide](../getting-started/guides/setup/direct-mode.md) covers the
+`--tls-cert`, `--tls-key`, and `--passphrase` options. Only one client should
+connect at a time. For shared, multi-user environments use {term}`distributed mode` instead.
 
 ### Distributed Mode
 
@@ -193,7 +204,12 @@ use {term}`distributed mode` instead.
 across a network. It uses a Kubernetes-based {term}`controller` to coordinate access to
 {term}`exporter`s, managing {term}`lease`s that grant exclusive access to {term}`DUT` resources, while
 JWT token-based authentication secures all connections between clients and
-{term}`exporter`s.
+{term}`exporter`s. {term}`Exporter`s connect out to the {term}`controller` and
+router over gRPC and open no port for clients or the service, so lab hosts need
+no inbound connections from users, no user accounts, and no shared filesystem:
+client traffic, including images uploaded for flashing, flows through the
+router. Drivers that serve files to the device itself, such as TFTP or HTTP
+servers, listen only on the addresses configured for them.
 
 ```{mermaid}
 flowchart TB
@@ -251,9 +267,13 @@ authentication system that secures access through:
 - **Secure Communication** - All {term}`gRPC` communication between components uses
    token authentication
 - **Access Control** - {term}`Controller` enforces permissions based on token identity:
-   - Which {term}`exporter`s a client can {term}`lease`
-   - What actions a client can perform
-   - Which driver packages can be loaded
+   - Which {term}`exporter`s a client can {term}`lease`, through access policies
+     that match clients and {term}`exporter`s by label
+   - The longest {term}`lease` a client may request on those {term}`exporter`s
+   - Only the owner of a {term}`lease` can change, share, transfer, or release it
+- **Client-side Allow List** - Clients load only the driver client classes that
+   match their `drivers.allow` patterns, so an {term}`exporter` cannot make a
+   client import code it has not approved
 
 This security model enables dynamic registration of clients and {term}`exporter`s,
 allowing fine-grained access control in multi-user environments. For example, CI
@@ -264,16 +284,17 @@ The following example shows how to run tests in {term}`distributed mode`:
 
 ```console
 $ jmp config client use my-client
-$ jmp create lease --selector vendor=acme,model=widget-v2
-$ pytest test_device.py
+$ jmp shell --selector vendor=acme,model=widget-v2 -- pytest test_device.py
 ```
 
-The example above demonstrates the {term}`distributed mode` workflow: first configuring
-the client with connection information for the central {term}`controller`, then
-requesting a {term}`lease` on an {term}`exporter` that matches specific criteria (using
-{term}`label selector`s), and finally running tests against the acquired {term}`DUT`. The {term}`lease` system
-ensures exclusive access to the requested resources for the duration of testing,
-preventing conflicts with other users or pipelines in the shared environment.
+The example above demonstrates the {term}`distributed mode` workflow: first selecting
+the client configuration that holds the connection information for the central
+{term}`controller`, then running the tests through `jmp shell`, which requests a
+{term}`lease` on an {term}`exporter` that matches the {term}`label selector`, runs
+`pytest` against the acquired {term}`DUT`, and releases the {term}`lease` when the
+tests finish. The {term}`lease` system ensures exclusive access to the requested
+resources for the duration of testing, preventing conflicts with other users or
+pipelines in the shared environment.
 
 ```{toctree}
 :maxdepth: 1

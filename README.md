@@ -7,20 +7,42 @@
 ![PyPI - Version](https://img.shields.io/pypi/v/jumpstarter)
 
 
-Jumpstarter is a free and open source test automation framework. It bridges the gap
-between embedded development workflows and deployment environments, enabling
-consistent automated testing across real hardware and virtual environments with
-CI/CD integration. Every interface is programmatic, so human developers, test
-scripts, CI pipelines, and AI agents interact with devices through the same APIs.
+Jumpstarter is a free and open source framework for testing and developing
+software on real and virtual hardware. Developers, test scripts, CI pipelines,
+and AI agents reach devices through the same programmatic interfaces, whether a
+board sits on your desk, in a shared lab, or runs as a virtual device. Tests stay
+ordinary pytest or shell scripts with no job language to learn, and every
+component runs on infrastructure you control.
 
 ## Highlights
 
-- 🧪 **Unified Testing** - One tool for physical and virtual devices under test
-- 🔌 **Hardware Abstraction** - Control UART, CAN, SPI, GPIO, power, and USB through drivers
-- 🐍 **Python-Powered** - Integrate with PyTest and Python's testing ecosystem
-- 🌐 **Collaborative** - Share and securely lease test hardware across teams
-- ⚙️ **Automation Ready** - Same APIs for humans, test scripts, CI pipelines, and AI agents
-- 💻 **Cross-Platform** - Supports Linux and macOS
+- **One interface for real and virtual devices** - The same driver
+  interfaces, CLI, and Python API work with a board on your desk, a board in a
+  remote lab, or a virtual target such as QEMU, Renode, an Android emulator, or
+  Cuttlefish.
+- **Your tools, unchanged** - Tests are plain pytest, shell scripts, or any
+  other program. `jmp shell` connects them to a device, and the same commands
+  run unchanged in CI.
+- **Ready for AI agents** - The built-in MCP server lets any assistant that
+  supports local MCP servers lease, control, and inspect hardware with your
+  credentials, bound by the same access policies as you.
+- **Remote labs without lab accounts** - Exporters connect out to the service
+  over gRPC, so lab hosts can sit behind NAT or a firewall. Users never log in
+  to them, and local flash images stream through the lease connection, so no
+  shared filesystem is needed.
+- **Secure sharing** - Single sign-on through your OIDC provider, leases for
+  exclusive access, and access policies that decide which clients can use which
+  devices and for how long.
+- **Kubernetes native** - Exporters, clients, leases, and access policies are
+  Kubernetes resources, and pools of virtual devices scale with lease demand.
+  The controller and router serve Prometheus metrics, and an optional telemetry
+  service collects exporter metrics and logs.
+- **Broad hardware coverage** - More than 60 driver packages for power,
+  serial consoles, storage and flashing, video, networking, Bluetooth, mobile
+  devices, and automotive protocols such as CAN, UDS, DoIP, and SOME/IP. New
+  drivers are written in plain Python.
+- **Open source** - Apache 2.0 licensed, self-hosted, and supported on Linux
+  and macOS.
 
 ## Repository Structure
 
@@ -38,13 +60,13 @@ This monorepo contains all Jumpstarter components:
 ### Install the CLI
 
 ```shell
-pip install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-cli
+pip install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-cli
 ```
 
 Or install all Python components:
 
 ```shell
-pip install --extra-index-url https://pkg.jumpstarter.dev/ jumpstarter-all
+pip install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-all
 ```
 
 ### Upgrade the CLI
@@ -68,6 +90,7 @@ The Python implementation provides:
 - Client libraries for test automation
 - Hardware drivers for various devices
 - Testing framework integration
+- `jmp mcp`, an MCP server that gives AI agents the same access to hardware
 
 See [`python/README.md`](python/README.md) for details.
 
@@ -119,7 +142,10 @@ make build
 # Build specific components
 make build-python      # Python packages
 make build-controller  # Controller binary
-make build-protocol    # Generate protocol code
+
+# Regenerate the gRPC code after changing protocol/
+make -C controller protobuf-gen
+make -C python protobuf-gen
 
 # Run tests
 make test

@@ -22,11 +22,12 @@
    :alt: Weekly Meeting
 ```
 
-Jumpstarter is a free and open source test automation framework. It bridges the gap
-between embedded development workflows and deployment environments, enabling
-consistent automated testing across real hardware and virtual environments with
-CI/CD integration. Every interface is programmatic, so human developers, test
-scripts, CI pipelines, and AI agents interact with devices through the same APIs.
+Jumpstarter is a free and open source framework for testing and developing
+software on real and virtual hardware. Developers, test scripts, CI pipelines,
+and AI agents reach devices through the same programmatic interfaces, whether a
+board sits on your desk, in a shared lab, or runs as a virtual device. Tests stay
+ordinary pytest or shell scripts with no job language to learn, and every
+component runs on infrastructure you control.
 
 See Jumpstarter in action:
 
@@ -49,10 +50,9 @@ See Jumpstarter in action:
 </script>
 ```
 
-One tool, any target. Jumpstarter decouples devices from test runners, letting
-you use identical automation scripts everywhere - your *Makefile* for device
-testing. Every interface is programmatic, so human developers, test scripts, CI
-pipelines, and AI agents all interact with hardware through the same APIs.
+One tool, any target. Jumpstarter decouples devices from test runners, so a
+script written against a board on your desk can run unchanged against a board in
+a remote lab or a virtual device in CI - your *Makefile* for device testing.
 
 ```{include} ../../README.md
 :start-after: "## Highlights"
