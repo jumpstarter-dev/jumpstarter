@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
+//nolint:gocyclo // Exercise the migration lifecycle for internal/external exporters and clients in one matrix.
 func TestSigningKeyMigration(t *testing.T) {
 	ctx := context.Background()
 	seed := []byte("migration-test-key")
@@ -37,9 +38,14 @@ func TestSigningKeyMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{"client", "exporter"} {
+	for _, kind := range []string{"client", "exporter", "external-exporter"} {
 		for _, disabled := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/disabled=%t", kind, disabled), func(t *testing.T) {
+				kind := kind
+				external := kind == "external-exporter"
+				if external {
+					kind = "exporter"
+				}
 				scheme := runtime.NewScheme()
 				if err := errors.Join(corev1.AddToScheme(scheme), api.AddToScheme(scheme)); err != nil {
 					t.Fatal(err)
@@ -48,6 +54,15 @@ func TestSigningKeyMigration(t *testing.T) {
 				var owner client.Object = &api.Client{ObjectMeta: objectMeta}
 				if kind == "exporter" {
 					owner = &api.Exporter{ObjectMeta: objectMeta}
+					if external {
+						username := "external:user"
+						exporter := owner.(*api.Exporter)
+						exporter.Spec.Username = &username
+						meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+							Type: string(api.ExporterConditionTypeCredentialUpdateRequired), Status: metav1.ConditionTrue,
+							Reason: "SigningKeyChanged", Message: "stale migration condition",
+						})
+					}
 				}
 				subject := kind + ":lab:device:uid"
 				oldToken, err := legacy.Token(subject)
@@ -105,6 +120,13 @@ func TestSigningKeyMigration(t *testing.T) {
 					exporter := &api.Exporter{}
 					if err := kc.Get(ctx, request.NamespacedName, exporter); err != nil {
 						t.Fatal(err)
+					}
+					if external {
+						if secret.Annotations[credentialUpdateAnnotation] != "" ||
+							meta.FindStatusCondition(exporter.Status.Conditions, string(api.ExporterConditionTypeCredentialUpdateRequired)) != nil {
+							t.Fatal("external OIDC exporter has a migration advisory")
+						}
+						return
 					}
 					if !meta.IsStatusConditionTrue(exporter.Status.Conditions, string(api.ExporterConditionTypeCredentialUpdateRequired)) {
 						t.Fatal("missing migration condition")

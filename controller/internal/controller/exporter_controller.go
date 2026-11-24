@@ -188,6 +188,20 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 		Name: secret.Name,
 	}
 	updateCondition := string(jumpstarterdevv1alpha1.ExporterConditionTypeCredentialUpdateRequired)
+	conditionType := string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring)
+	if exporter.Spec.Username != nil {
+		if _, ok := secret.Annotations[credentialUpdateAnnotation]; ok {
+			original := client.MergeFromWithOptions(secret.DeepCopy(), client.MergeFromWithOptimisticLock{})
+			delete(secret.Annotations, credentialUpdateAnnotation)
+			if err := r.Patch(ctx, secret, original); err != nil {
+				return 0, err
+			}
+		}
+		exporter.Status.TokenExpiresAt = nil
+		meta.RemoveStatusCondition(&exporter.Status.Conditions, conditionType)
+		meta.RemoveStatusCondition(&exporter.Status.Conditions, updateCondition)
+		return tokenExpiryWarningThreshold, nil
+	}
 	if secret.Annotations[credentialUpdateAnnotation] != "" || meta.IsStatusConditionTrue(exporter.Status.Conditions, updateCondition) {
 		if exporter.Annotations[AuthenticatedTokenHashAnnotation] == TokenHash(string(secret.Data[TokenKey])) {
 			original := client.MergeFromWithOptions(secret.DeepCopy(), client.MergeFromWithOptimisticLock{})
@@ -206,12 +220,6 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 				Reason: "SigningKeyChanged", Message: fmt.Sprintf("Update the local token from Secret %s and reconnect", secret.Name),
 			})
 		}
-	}
-	conditionType := string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring)
-	if exporter.Spec.Username != nil {
-		exporter.Status.TokenExpiresAt = nil
-		meta.RemoveStatusCondition(&exporter.Status.Conditions, conditionType)
-		return tokenExpiryWarningThreshold, nil
 	}
 	warningThreshold := tokenExpiryWarningThreshold
 	lifetime, err := r.Signer.TokenLifetime(string(secret.Data[TokenKey]))
