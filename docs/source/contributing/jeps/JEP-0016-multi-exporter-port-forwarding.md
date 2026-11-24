@@ -8,7 +8,7 @@
 | **Status**        | Discussion                                               |
 | **Type**          | Standards Track                                          |
 | **Created**       | 2026-11-23                                               |
-| **Updated**       | 2026-11-23                                               |
+| **Updated**       | 2026-11-24                                               |
 | **Discussion**    | [PR #1393](https://github.com/jumpstarter-dev/jumpstarter/pull/1393), [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069) (first version, as a part of JEP-0015) |
 | **Requires**      | JEP-0015                                                 |
 | **Supersedes**    |                                                          |
@@ -368,11 +368,24 @@ functions. The controller does this setup one time for each forward:
 1. After it binds the lease, the controller validates the ports.
 2. The controller sends a setup instruction to each endpoint exporter on
    its `Listen` stream. It sends the instruction each time that the
-   exporter opens `Listen` for the lease. An exporter ignores a setup that
-   it applied before.
+   exporter opens `Listen` for the lease. An exporter does not apply a
+   setup again if it applied that setup before. It reports its current
+   state again.
 3. The `requires` side opens its listener. The `provides` side records the
    forward. Each side reports the result with `ReportForward`.
 4. When each bound endpoint is ready, the forward is `Listening`.
+
+A report can fail, for example when the controller restarts. These rules
+make sure that a forward does not stay `Pending`:
+
+- The exporter sends a report again, with a delay between the tries, until
+  the controller accepts it or the lease ends.
+- The exporter reports its current state each time that it gets a setup
+  instruction, also for a setup that it applied before.
+- If an endpoint sends no report in 60 seconds after its setup instruction,
+  the controller sets the forward to `Failed`. The message gives the role
+  that sent no report. A later `READY` report from that endpoint removes
+  this failure. This limit is a proposal (*Unresolved Questions*).
 
 An exporter reads the instructions on `Listen` after its `beforeLease`
 hook, as it does for client connections today. Thus a forward starts after
@@ -1240,7 +1253,8 @@ endpoint refers to a member of the lease.
 1. Ignore the endpoints of `Omitted` members.
 2. Each other port exists on its bound exporter.
 3. If step 1 ignored an endpoint, examine the other endpoints. The forward
-   is `Disabled` in these two conditions:
+   is `Disabled` in these three conditions:
+   - There are no other endpoints.
    - The other endpoints include `PROVIDES` or `REQUIRES` ports, but not
      one `PROVIDES` port together with a minimum of one `REQUIRES` port.
    - The forward lists two endpoints, and the other endpoint is `CONNECTS`.
@@ -1346,6 +1360,10 @@ between them.
 - **Authorization:** `DialPeer` makes sure that the caller is the exporter
   of a `Bound` member of an active lease. The member must be a `requires`
   endpoint of the forward or the initiator of a path.
+- **Reports:** `ReportForward` makes sure that the caller is the exporter
+  of a `Bound` member of an active lease. The member must be an endpoint of
+  the forward. A report changes only the state of the end of the caller.
+  For all other callers, the RPC returns `PERMISSION_DENIED`.
 - **Tokens:** The controller issues one token for each connection. Only the
   two exporters get it. It expires after 60 seconds.
 - **Encryption:** Each exporter opens `RouterService.Stream` on the TLS
@@ -1404,7 +1422,11 @@ captures of a simulated medium for the test results.
     `Listen` stream.
   - The current router tests pass without changes.
 - **`ReportForward`:** The forward state follows the reports of its
-  endpoints. One failure report sets the forward to `Failed`.
+  endpoints. One failure report sets the forward to `Failed`. The
+  controller rejects a report from an exporter that is not an endpoint of
+  the forward. An exporter sends a report again after a failure and after
+  a repeated setup. An endpoint with no report in the time limit sets the
+  forward to `Failed`.
 - **Paths:** Two `connects` ports make a path for each combination of local
   modes. Only the initiator calls `DialPeer`. A path opens again after a
   cut. A path with one `Omitted` end is `Disabled`.
@@ -1527,9 +1549,15 @@ All the schema changes and protocol changes add items.
   because it reports no ports.
 - **N client, controller without this JEP:** A controller that has JEP-0015
   but not this JEP ignores `forwards` in a members request. It creates the
-  lease without them. Thus the client compares `forwards` in the
-  `CreateLease` response with its request. If they are different, it
-  deletes the lease and shows a message that the controller is too old.
+  lease without them. The client does one check, only for a members
+  request that contains `forwards`. If the `CreateLease` response has no
+  forwards, the client deletes the lease. It then shows a message that the
+  controller is too old.
+- **Template requests:** The client does no such check. A template request
+  contains no `forwards`, because the controller copies them from the
+  template. A controller without this JEP has no `forwards` field in
+  `LeaseTemplate`, thus its templates cannot contain forwards. The lease
+  that it creates is the complete lease of that template.
 - **N exporter, controller without this JEP:** The controller ignores the
   reported ports. The exporter gets no forward instruction and opens no
   listener.
@@ -1626,6 +1654,8 @@ For the implementation:
 - The reconnect behavior for each protocol, for example a restart of the
   projection server.
 - A limit for the connections of one forward and for the `DialPeer` rate.
+- The time limit for the first report of an endpoint. The proposal is 60
+  seconds.
 - How CI gets the projection artifacts.
 - A test of the Bumble virtual controller with Cuttlefish (DD-13).
 - The token change that is necessary if a later JEP binds router tokens to
@@ -1665,6 +1695,10 @@ These items are not part of this JEP:
   ([#1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069)).
 - 2026-11-23: The forwards became this JEP. The direct path and simulated
   Wi-Fi moved to *Future Possibilities*.
+- 2026-11-24: Changes from the review. An exporter sends a report again
+  after a failure, and a report has a time limit. `ReportForward` accepts
+  only the endpoints of the forward. A forward with no bound end is
+  `Disabled`.
 
 ## References
 
