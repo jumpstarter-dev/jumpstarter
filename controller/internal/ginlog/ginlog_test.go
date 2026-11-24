@@ -157,3 +157,24 @@ func TestRecoveryReturns500(t *testing.T) {
 		t.Fatalf("recovery wrote text output: %s", errorOutput.String())
 	}
 }
+
+func TestNewEngineDoesNotDuplicateComponent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var output bytes.Buffer
+	engine := NewEngine(testLogger(&output))
+	engine.GET("/example", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/example", nil))
+
+	line := strings.TrimSpace(output.String())
+	if line == "" {
+		t.Fatal("expected an access log line")
+	}
+	// The entrypoint already scopes the logger with component=controller;
+	// NewEngine must not add the key a second time.
+	if got := strings.Count(line, `"component"`); got != 1 {
+		t.Fatalf("component appears %d times, want 1: %s", got, line)
+	}
+}

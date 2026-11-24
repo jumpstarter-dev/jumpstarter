@@ -40,7 +40,7 @@ type DashboardService struct {
 }
 
 func (s *DashboardService) Start(ctx context.Context) error {
-	r := ginlog.NewEngine("controller", ctrl.Log.WithName("dashboard"))
+	r := ginlog.NewEngine(ctrl.Log.WithName("dashboard"))
 
 	r.SetHTMLTemplate(template.Must(template.ParseFS(fs, "templates/*")))
 

@@ -114,7 +114,7 @@ func (s *Service) SetOIDCConfig(oidc []OIDCConfig) {
 
 // Start implements manager.Runnable and starts the HTTP server
 func (s *Service) Start(ctx context.Context) error {
-	r := ginlog.NewEngine("controller", ctrl.Log.WithName("login"))
+	r := ginlog.NewEngine(ctrl.Log.WithName("login"))
 
 	// Parse and set HTML templates
 	r.SetHTMLTemplate(template.Must(template.ParseFS(fs, "templates/*")))

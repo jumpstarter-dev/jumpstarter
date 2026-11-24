@@ -129,10 +129,14 @@ func Recovery(logger logr.Logger) gin.HandlerFunc {
 }
 
 // NewEngine returns a Gin engine with structured access and recovery logging.
+//
+// The logger must already be scoped to the component: the entrypoint installs
+// ctrl.Log with "component"="controller", so adding the key again here would
+// emit a duplicate field on every access and recovery record.
+//
 // Callers should set Gin to release mode before starting runtime engines.
-func NewEngine(component string, logger logr.Logger) *gin.Engine {
+func NewEngine(logger logr.Logger) *gin.Engine {
 	engine := gin.New()
-	logger = logger.WithValues("component", component)
 	engine.Use(AccessLog(logger), Recovery(logger))
 	return engine
 }

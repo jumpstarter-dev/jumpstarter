@@ -17,7 +17,7 @@ type OIDCService struct {
 }
 
 func (s *OIDCService) Start(ctx context.Context) error {
-	r := ginlog.NewEngine("controller", ctrl.Log.WithName("oidc"))
+	r := ginlog.NewEngine(ctrl.Log.WithName("oidc"))
 
 	s.Signer.Register(r)
 
