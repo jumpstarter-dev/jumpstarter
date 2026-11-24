@@ -306,7 +306,8 @@ bt     headunit.rootcanal → peer.controller     Connected
 
 An arrow points from the `provides` port to each `requires` port. The sign
 `↔` connects the two ends of a path. The command reads the states from the
-lease status.
+lease status. For a forward that is not `Listening` or `Connected`, the
+command also shows the state and the message of each end.
 
 In Python, an attribute with the annotation `Forward` is a forward of the
 template:
@@ -387,7 +388,7 @@ make sure that a forward does not stay `Pending`:
   the number for each new state. The first number of an exporter process
   is its start time in milliseconds, thus the numbers after a restart are
   larger. The controller keeps the largest number that it accepted for
-  each end. It ignores a report with a number that is not larger. Thus an
+  each end in the lease status. It ignores a report with a number that is not larger. Thus an
   old `READY` report cannot replace a newer `FAILED` report.
 - The exporter reports its current state each time that it gets a setup
   instruction, also for a setup that it applied before.
@@ -624,8 +625,29 @@ type LeaseForwardStatus struct {
     Name    string `json:"name"`
     State   string `json:"state"` // Pending | Disabled | Listening | Connected | Failed
     Message string `json:"message,omitempty"`
+    // The state of each bound end of the forward. The key is the member.
+    // +listType=map
+    // +listMapKey=member
+    Ends []LeaseForwardEndStatus `json:"ends,omitempty"`
+}
+
+type LeaseForwardEndStatus struct {
+    Member  string `json:"member"`
+    State   string `json:"state"` // Pending | Ready | Connected | Failed
+    Message string `json:"message,omitempty"`
+    // The sequence number of the last report that the controller accepted.
+    Sequence uint64 `json:"sequence,omitempty"`
+    // The time of the last setup instruction for this end.
+    SetupTime *metav1.Time `json:"setupTime,omitempty"`
+    // The time of the last report that the controller accepted.
+    ReportTime *metav1.Time `json:"reportTime,omitempty"`
 }
 ```
+
+The controller keeps the state of each end in `status.forwards[].ends[]`.
+Thus a controller restart loses no report and no sequence number. The
+state of the forward comes from the states of its ends. An end is `Pending`
+until its exporter sends a report.
 
 `forwards` is immutable, as `members` is. The lease gets a new condition
 type, `ForwardsReady`. Only a lease with forwards has it.
@@ -674,10 +696,25 @@ message LeaseForward {
   repeated ForwardEndpoint endpoints = 2;   // Two to eight, on different members.
 }
 
+enum LeaseForwardEndState {
+  LEASE_FORWARD_END_STATE_UNSPECIFIED = 0;
+  LEASE_FORWARD_END_STATE_PENDING = 1;
+  LEASE_FORWARD_END_STATE_READY = 2;
+  LEASE_FORWARD_END_STATE_CONNECTED = 3;
+  LEASE_FORWARD_END_STATE_FAILED = 4;
+}
+
+message LeaseForwardEndStatus {
+  string member_name = 1;
+  LeaseForwardEndState state = 2;
+  optional string message = 3;
+}
+
 message LeaseForwardStatus {
   string name = 1;
   LeaseForwardState state = 2;
   optional string message = 3;
+  repeated LeaseForwardEndStatus ends = 4;
 }
 
 message Lease {
@@ -1711,7 +1748,7 @@ These items are not part of this JEP:
 - 2026-11-24: Changes from the review. An exporter sends a report again
   after a failure, and a report has a time limit. `ReportForward` accepts
   only the endpoints of the forward, and each report has a sequence
-  number. A forward with no bound end is
+  number. The lease status has the state of each end of a forward. A forward with no bound end is
   `Disabled`.
 
 ## References
