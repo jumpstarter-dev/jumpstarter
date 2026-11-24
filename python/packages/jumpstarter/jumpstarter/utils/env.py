@@ -15,6 +15,7 @@ from jumpstarter.client.lease import Forward, LeaseMembers, LostMember, _Forward
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import (
+    JMP_CLIENT_CONFIG,
     JMP_DRIVERS_ALLOW,
     JMP_EXPORTER,
     JMP_EXPORTER_LABELS,
@@ -231,9 +232,21 @@ def lease_forwards_from_env() -> list[dict]:
 
 
 def _current_client_config():
-    """The client config of this shell: from the JMP_* variables, or the current client of the user."""
+    """The client config of this shell.
+
+    It is the file that JMP_CLIENT_CONFIG names (`jmp shell` on a lease with
+    members sets it to the client that it used), then the JMP_* variables,
+    then the current client of the user. A file that JMP_CLIENT_CONFIG names
+    and that cannot be read is no client config: a different client cannot
+    read the lease of this shell.
+    """
     from jumpstarter.config.client import ClientConfigV1Alpha1
 
+    if path := os.environ.get(JMP_CLIENT_CONFIG):
+        try:
+            return ClientConfigV1Alpha1.from_file(path)
+        except (OSError, ValueError, ValidationError):
+            return None
     try:
         config = ClientConfigV1Alpha1()
         if config.endpoint and config.token:

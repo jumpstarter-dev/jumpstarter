@@ -1,4 +1,5 @@
 import json
+import os
 from contextlib import ExitStack, contextmanager
 from typing import Any
 
@@ -147,6 +148,18 @@ def test_members_shell_environment_removes_the_variables_of_one_exporter(monkeyp
     assert environment[JMP_LEASE] == "lease-9m2qd"
     assert json.loads(environment[JMP_LEASE_MEMBERS]) == members
     assert environment[JMP_DRIVERS_ALLOW] == "UNSAFE"
+
+
+def test_members_shell_environment_applies_extra_env_last(monkeypatch):
+    monkeypatch.setenv("JMP_OUTER", "outer")
+    before = dict(os.environ)
+    environment = _build_members_env(
+        {"phone": None}, [], True, extra_env={"JMP_OUTER": None, "JMP_ABSENT": None, JMP_LEASE_MEMBERS: "{}"}
+    )
+    assert "JMP_OUTER" not in environment and "JMP_ABSENT" not in environment
+    assert environment[JMP_LEASE_MEMBERS] == "{}"
+    # the environment of this process does not change
+    assert dict(os.environ) == before
 
 
 def test_env_members_gives_a_raising_object_for_a_lost_role(monkeypatch):

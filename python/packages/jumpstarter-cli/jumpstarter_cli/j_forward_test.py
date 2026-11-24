@@ -13,7 +13,7 @@ from jumpstarter.client._members_testing import exporter_pb, forward_pb, forward
 from jumpstarter.client.grpc import Exporter, Lease
 from jumpstarter.common.exceptions import ConnectionError
 from jumpstarter.config.client import ClientConfigV1Alpha1
-from jumpstarter.config.env import JMP_LEASE
+from jumpstarter.config.env import JMP_CLIENT_CONFIG, JMP_LEASE
 from jumpstarter.utils.env import JMP_LEASE_FORWARDS
 
 EXPORTERS = {
@@ -71,6 +71,7 @@ def run(config, *args, env=None):
 def clean_environment(monkeypatch):
     monkeypatch.delenv(JMP_LEASE, raising=False)
     monkeypatch.delenv(JMP_LEASE_FORWARDS, raising=False)
+    monkeypatch.delenv(JMP_CLIENT_CONFIG, raising=False)
 
 
 class TestStatusList:
@@ -269,6 +270,51 @@ class TestCommand:
             runner = CliRunner(env={JMP_LEASE: "lease-9m2qd", JMP_LEASE_FORWARDS: json.dumps(SNAPSHOT)})
             result = runner.invoke(j_forward, ["status"])
             assert result.exit_code == 0 and "no client config is set" in result.output and "bt" in result.output
+
+    def test_client_config_of_the_shell_reads_the_lease(self, tmp_path):
+        """In `jmp shell --client-config PATH`, the lease is read with that client, not with the default one."""
+        path = tmp_path / "lab.yaml"
+        path.write_text(
+            yaml.safe_dump(
+                {
+                    "apiVersion": "jumpstarter.dev/v1alpha1",
+                    "kind": "ClientConfig",
+                    "metadata": {"namespace": "jumpstarter-lab", "name": "lab"},
+                    "endpoint": "grpc.lab.example.com:443",
+                    "token": "token-of-lab",
+                }
+            )
+        )
+        used = []
+
+        def get_lease(self, name):
+            used.append((self.metadata.name, self.path, name))
+            return lease(forward_status_pb("bt", "Listening"))
+
+        default = client_config(RuntimeError("Failed to connect to 127.0.0.1:8082"))
+        with patch.object(ClientConfigV1Alpha1, "get_lease", get_lease), patch(
+            "jumpstarter_cli_common.config.UserConfigV1Alpha1.load_or_create",
+            return_value=Mock(config=Mock(current_client=default)),
+        ):
+            runner = CliRunner(
+                env={
+                    "COLUMNS": "200",
+                    JMP_LEASE: "lease-9m2qd",
+                    JMP_LEASE_FORWARDS: json.dumps(SNAPSHOT),
+                    JMP_CLIENT_CONFIG: str(path),
+                }
+            )
+            result = runner.invoke(j_forward, ["status"])
+        assert result.exit_code == 0, result.output
+        assert used == [("lab", path, "lease-9m2qd")]
+        default.get_lease.assert_not_called()
+        # the state of the lease now, and not the one at the start of the shell
+        assert "Listening" in result.output and "cannot read lease" not in result.output
+
+    def test_client_config_of_the_shell_that_is_missing_is_an_error(self, tmp_path):
+        runner = CliRunner(env={JMP_LEASE: "lease-9m2qd", JMP_CLIENT_CONFIG: str(tmp_path / "missing.yaml")})
+        result = runner.invoke(j_forward, ["status"])
+        assert result.exit_code != 0 and "Failed to load config" in result.output
 
     def test_help_and_group(self):
         runner = CliRunner()

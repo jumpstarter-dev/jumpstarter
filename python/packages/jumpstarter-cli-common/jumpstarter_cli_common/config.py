@@ -1,3 +1,4 @@
+import os
 from contextlib import suppress
 from functools import partial, reduce, wraps
 from pathlib import Path
@@ -6,6 +7,7 @@ import click
 from pydantic import ValidationError
 
 from jumpstarter.config.client import ClientConfigV1Alpha1
+from jumpstarter.config.env import JMP_CLIENT_CONFIG
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
 
@@ -56,8 +58,15 @@ def opt_config_inner(  # noqa: C901
                     if client:
                         config = None
 
-                        with suppress(ValidationError):
-                            config = ClientConfigV1Alpha1()
+                        # The file that JMP_CLIENT_CONFIG names comes first:
+                        # in a jmp shell on a lease with members it is the
+                        # client of that shell.
+                        if path := os.environ.get(JMP_CLIENT_CONFIG):
+                            config = ClientConfigV1Alpha1.from_file(path)
+
+                        if config is None:
+                            with suppress(ValidationError):
+                                config = ClientConfigV1Alpha1()
 
                         if config is None:
                             config = UserConfigV1Alpha1.load_or_create().config.current_client

@@ -4,6 +4,7 @@ import os
 import shlex
 import signal
 import sys
+from collections.abc import Mapping
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 from datetime import timedelta
 from functools import partial
@@ -168,11 +169,13 @@ def _build_members_env(
     unsafe: bool,
     *,
     lease=None,
+    extra_env: Mapping[str, str | None] | None = None,
 ) -> dict[str, str]:
     """Build the environment of a shell on a lease with members.
 
     The variables that describe one exporter are removed, also when an outer
-    shell set them: no single exporter stands for this lease.
+    shell set them: no single exporter stands for this lease. extra_env is
+    applied last: a value sets the variable and None removes it.
     """
     env = dict(os.environ)
     for name in (JUMPSTARTER_HOST, JMP_EXPORTER, JMP_EXPORTER_LABELS, JMP_GRPC_INSECURE, JMP_GRPC_PASSPHRASE):
@@ -182,6 +185,11 @@ def _build_members_env(
     env["_JMP_SUPPRESS_DRIVER_WARNINGS"] = "1"
     if lease is not None and lease.name:
         env[JMP_LEASE] = lease.name
+    for name, value in (extra_env or {}).items():
+        if value is None:
+            env.pop(name, None)
+        else:
+            env[name] = value
     return env
 
 
@@ -302,6 +310,7 @@ def launch_members_shell(
     *,
     command: tuple[str, ...] | None = None,
     lease=None,
+    extra_env: Mapping[str, str | None] | None = None,
 ) -> int:
     """Launch a shell for a lease with members.
 
@@ -316,11 +325,15 @@ def launch_members_shell(
         use_profiles: Whether to load shell profile files
         command: Optional command to run instead of launching an interactive shell
         lease: Optional Lease object to set up lease ending callback
+        extra_env: More variables for the shell or the command only, such as
+            JMP_LEASE_FORWARDS and JMP_CLIENT_CONFIG. A value sets the
+            variable; None removes it, also when an outer shell set it. The
+            environment of this process does not change.
 
     Returns:
         The exit code of the shell or command process
     """
-    common_env = _build_members_env(members, allow, unsafe, lease=lease)
+    common_env = _build_members_env(members, allow, unsafe, lease=lease, extra_env=extra_env)
     return _launch_shell_with_env(common_env, context, use_profiles, command=command, lease=lease)
 
 

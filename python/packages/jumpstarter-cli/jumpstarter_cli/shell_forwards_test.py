@@ -11,7 +11,6 @@ import pytest
 
 from jumpstarter_cli.members import MemberRequest
 from jumpstarter_cli.shell import (
-    _exported_forwards,
     _forward_line,
     _forwards_environment,
     _members_shell_with_signal_handling,
@@ -21,7 +20,7 @@ from jumpstarter_cli.shell_members_test import FakeConfig, FakeLease, run_shell
 
 from jumpstarter.client._members_testing import forward_pb, forward_status_pb, members_lease_pb
 from jumpstarter.client.grpc import ForwardEndpoint, Lease, LeaseForward
-from jumpstarter.config.env import JMP_LEASE_MEMBERS
+from jumpstarter.config.env import JMP_CLIENT_CONFIG, JMP_LEASE_MEMBERS, JMP_TOKEN
 from jumpstarter.utils.env import JMP_LEASE_FORWARDS
 
 FAILURE = "port 'rootcanal' is not on exporter rack3-hu-2"
@@ -64,11 +63,14 @@ class ForwardsLease(FakeLease):
 @pytest.fixture(autouse=True)
 def no_outer_forwards(monkeypatch):
     monkeypatch.delenv(JMP_LEASE_FORWARDS, raising=False)
+    monkeypatch.delenv(JMP_CLIENT_CONFIG, raising=False)
 
 
-def run_session(lease, command=("true",), request=None):
+def run_session(lease, command=("true",), request=None, config_path=None):
     """Run the members shell and return the environment of its child process."""
     config = FakeConfig(lease=lease)
+    if config_path is not None:
+        config.path = config_path
     seen = {}
 
     def run_process(cmd, env, lease=None):
@@ -193,11 +195,27 @@ class TestEnvironment:
         assert JMP_LEASE_FORWARDS not in env
         assert json.loads(os.environ[JMP_LEASE_FORWARDS]) == [BT_ENVIRONMENT]
 
-    def test_exported_forwards_restores_the_environment(self, monkeypatch):
-        monkeypatch.setenv(JMP_LEASE_FORWARDS, "outer")
-        with _exported_forwards([BT_ENVIRONMENT]):
-            assert json.loads(os.environ[JMP_LEASE_FORWARDS]) == [BT_ENVIRONMENT]
-        assert os.environ[JMP_LEASE_FORWARDS] == "outer"
+    def test_child_gets_the_path_of_the_client_config_of_the_shell(self, tmp_path, monkeypatch):
+        # an outer shell used a different client
+        monkeypatch.setenv(JMP_CLIENT_CONFIG, "/outer/client.yaml")
+        path = tmp_path / "lab.yaml"
+        _, env = run_session(ForwardsLease(), config_path=path)
+        assert env[JMP_CLIENT_CONFIG] == str(path)
+        # a path, and no credential: the shell does not add the token
+        assert JMP_TOKEN not in env
+        assert os.environ[JMP_CLIENT_CONFIG] == "/outer/client.yaml"
+
+    def test_relative_client_config_path_is_absolute_for_the_child(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        _, env = run_session(FakeLease(), config_path="lab.yaml")
+        assert env[JMP_CLIENT_CONFIG] == str(tmp_path / "lab.yaml")
+
+    def test_client_config_without_a_file_removes_the_variable_of_an_outer_shell(self, monkeypatch):
+        # the config of this shell came from the JMP_* variables, which the child inherits
+        monkeypatch.setenv(JMP_CLIENT_CONFIG, "/outer/client.yaml")
+        _, env = run_session(FakeLease())
+        assert JMP_CLIENT_CONFIG not in env
+        assert os.environ[JMP_CLIENT_CONFIG] == "/outer/client.yaml"
 
 
 class TestShellStart:

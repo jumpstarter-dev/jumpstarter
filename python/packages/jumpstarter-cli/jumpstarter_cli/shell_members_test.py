@@ -114,6 +114,8 @@ class FakeLease:
 
 class FakeConfig:
     token = None
+    # a config that is not from a file
+    path = None
 
     def __init__(self, lease=None, error=None):
         self.lease = lease or FakeLease()

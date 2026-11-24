@@ -11,7 +11,8 @@ from jumpstarter.client.exceptions import ForwardError
 from jumpstarter.client.grpc import Lease
 from jumpstarter.client.lease import Forward, LeaseMembers
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
-from jumpstarter.utils.env import JMP_LEASE_FORWARDS, env_members, lease_forwards_from_env
+from jumpstarter.config.env import JMP_CLIENT_CONFIG
+from jumpstarter.utils.env import JMP_LEASE_FORWARDS, _current_client_config, env_members, lease_forwards_from_env
 from jumpstarter.utils.env_members_test import Headunit, members_shell
 
 FORWARDS = [
@@ -91,6 +92,53 @@ def test_class_forward_that_the_lease_of_the_shell_does_not_contain(monkeypatch)
         TypeError, match="Bench declares the forward 'bt', but the lease of this shell has no such forward"
     ), env_members(Bench):
         pass
+
+
+CLIENT_YAML = """\
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ClientConfig
+metadata:
+  namespace: jumpstarter-lab
+  name: {name}
+endpoint: grpc.lab.example.com:443
+token: token-of-{name}
+"""
+
+
+def user_default(client):
+    """The current client of the user config is `client`."""
+    return patch(
+        "jumpstarter.config.user.UserConfigV1Alpha1.load", return_value=Mock(config=Mock(current_client=client))
+    )
+
+
+def test_client_config_of_the_shell_is_the_file_that_the_shell_names(monkeypatch, tmp_path):
+    """`jmp shell --client-config PATH` gives the path to its children: they do not use the default client."""
+    path = tmp_path / "lab.yaml"
+    path.write_text(CLIENT_YAML.format(name="lab"))
+    monkeypatch.setenv(JMP_CLIENT_CONFIG, str(path))
+    default = Mock(name="default client")
+    with user_default(default):
+        config = _current_client_config()
+    assert config is not default
+    assert (config.metadata.name, config.endpoint, config.path) == ("lab", "grpc.lab.example.com:443", path)
+
+
+def test_client_config_file_that_cannot_be_read_is_no_client_config(monkeypatch, tmp_path):
+    monkeypatch.setenv(JMP_CLIENT_CONFIG, str(tmp_path / "missing.yaml"))
+    default = Mock(name="default client")
+    with user_default(default):
+        # the default client is a different client: it cannot read the lease of this shell
+        assert _current_client_config() is None
+
+
+def test_client_config_without_the_variable_is_the_current_client(monkeypatch):
+    monkeypatch.delenv(JMP_CLIENT_CONFIG, raising=False)
+    for name in ("JMP_ENDPOINT", "JMP_TOKEN", "JMP_NAME", "JMP_NAMESPACE"):
+        monkeypatch.delenv(name, raising=False)
+    default = Mock(name="default client")
+    with user_default(default):
+        assert _current_client_config() is default
 
 
 def test_state_comes_from_the_lease_through_the_client_config(monkeypatch):

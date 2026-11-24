@@ -3,8 +3,9 @@ import logging
 import os
 import sys
 import time
-from contextlib import AsyncExitStack, ExitStack, contextmanager
+from contextlib import AsyncExitStack, ExitStack
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import anyio
@@ -50,7 +51,7 @@ from jumpstarter.common.exceptions import (
 )
 from jumpstarter.common.utils import launch_members_shell, launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
-from jumpstarter.config.env import JMP_LEASE
+from jumpstarter.config.env import JMP_CLIENT_CONFIG, JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.utils.env import JMP_LEASE_FORWARDS
@@ -871,24 +872,20 @@ def _forwards_environment(lease) -> list[dict]:
     return described
 
 
-@contextmanager
-def _exported_forwards(forwards: list[dict]):
-    """Give JMP_LEASE_FORWARDS to the shell, which inherits the environment of this process.
+def _members_shell_env(config, forwards: list[dict]) -> dict[str, str | None]:
+    """The variables that only the shell of a lease with members gets. None removes one that an outer shell set.
 
-    A lease without forwards removes the variable, also when an outer shell set it.
+    JMP_LEASE_FORWARDS has the forwards. JMP_CLIENT_CONFIG has the path of
+    the client config of this shell, so `j-forward status`, `env_members()`
+    and `jmp` in the shell read the lease with the same client. It is a path,
+    never a credential. A config that is not from a file comes from the JMP_*
+    variables, which the shell inherits.
     """
-    previous = os.environ.get(JMP_LEASE_FORWARDS)
-    if forwards:
-        os.environ[JMP_LEASE_FORWARDS] = json.dumps(forwards)
-    else:
-        os.environ.pop(JMP_LEASE_FORWARDS, None)
-    try:
-        yield
-    finally:
-        if previous is None:
-            os.environ.pop(JMP_LEASE_FORWARDS, None)
-        else:
-            os.environ[JMP_LEASE_FORWARDS] = previous
+    path = getattr(config, "path", None)
+    return {
+        JMP_LEASE_FORWARDS: json.dumps(forwards) if forwards else None,
+        JMP_CLIENT_CONFIG: str(Path(path).absolute()) if path else None,
+    }
 
 
 def _forward_line(entry: dict) -> str:
@@ -995,18 +992,18 @@ async def _launch_members_shell(lease, config, command, paths) -> int:
         for forward in forwards:
             click.echo(_forward_line(forward), err=True)
     _warn_about_failed_forwards(forwards)
-    with _exported_forwards(forwards):
-        return await anyio.to_thread.run_sync(
-            lambda: launch_members_shell(
-                members,
-                lease.name,
-                config.drivers.allow,
-                config.drivers.unsafe,
-                config.shell.use_profiles,
-                command=command,
-                lease=lease,
-            )
+    return await anyio.to_thread.run_sync(
+        lambda: launch_members_shell(
+            members,
+            lease.name,
+            config.drivers.allow,
+            config.drivers.unsafe,
+            config.shell.use_profiles,
+            command=command,
+            lease=lease,
+            extra_env=_members_shell_env(config, forwards),
         )
+    )
 
 
 async def _members_shell_with_signal_handling(
