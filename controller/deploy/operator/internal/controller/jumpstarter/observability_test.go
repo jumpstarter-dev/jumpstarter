@@ -452,9 +452,8 @@ func TestPodLabelsDoNotChangeSelector(t *testing.T) {
 }
 
 func TestObservabilityRequeueAfterTelemetryCAWins(t *testing.T) {
-	// A missing telemetry CA is retried every 30s. When the ServiceMonitor CRD
-	// is also absent, that shorter interval must win instead of being replaced
-	// by the two-minute CRD retry.
+	// A missing telemetry CA is retried every 30s. Nothing else shortens the
+	// periodic interval: a missing CRD is picked up by the CRD watch.
 	s := runtime.NewScheme()
 	if err := corev1.AddToScheme(s); err != nil {
 		t.Fatalf("add core scheme: %v", err)
