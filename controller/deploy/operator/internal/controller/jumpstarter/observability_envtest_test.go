@@ -17,6 +17,8 @@ limitations under the License.
 package jumpstarter
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -173,17 +175,24 @@ var _ = Describe("Observability reconciliation", func() {
 		Expect(reason).To(Equal("Disabled"))
 	})
 
-	It("keeps the router metrics Service during router service cleanup", func() {
+	It("keeps the router metrics Service outside the router service prefix", func() {
 		_, err := r.reconcileObservability(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
 
-		// The endpoint reconciler prunes services matching the "<name>-router-"
-		// prefix; the metrics Service uses that prefix and must survive.
+		// cleanupExcessRouterServices deletes the services this CR controls whose
+		// names start with "<name>-router-". The metrics Service is named
+		// "<name>-metrics-router", deliberately outside that prefix, so name-based
+		// pruning cannot reach it. The prefix assertion makes the guard
+		// intentional: a rename back inside the prefix fails here as well as in
+		// the survival check below.
+		metricsService := "jumpstarter-metrics-router"
+		Expect(strings.HasPrefix(metricsService, routerServiceNamePrefix(js))).To(BeFalse(),
+			"the metrics Service must stay outside the router prefix")
 		Expect(r.cleanupExcessRouterServices(ctx, js)).To(Succeed())
 
 		svc := &corev1.Service{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{
-			Name: "jumpstarter-metrics-router", Namespace: namespace.Name,
+			Name: metricsService, Namespace: namespace.Name,
 		}, svc)).To(Succeed())
 	})
 
