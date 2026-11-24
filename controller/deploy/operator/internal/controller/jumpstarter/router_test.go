@@ -25,12 +25,14 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
@@ -223,6 +225,74 @@ var _ = Describe("Router Lifecycle", func() {
 		Expect(configMount).NotTo(BeNil(), "expected the configuration volume to be mounted")
 		Expect(configMount.ReadOnly).To(BeTrue())
 		Expect(container.Args).To(ContainElement("-config-file=" + path.Join(configMount.MountPath, configItem.Path)))
+	})
+
+	It("runs the router pods as their own ServiceAccount without an API token", func() {
+		js := &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       makeJumpstarterSpec(new(int32(1))),
+		}
+		Expect(k8sClient.Create(ctx, js)).To(Succeed())
+
+		doReconcile()
+
+		serviceAccount := &corev1.ServiceAccount{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: crName + "-router", Namespace: crNamespace,
+		}, serviceAccount)).To(Succeed())
+		Expect(metav1.IsControlledBy(serviceAccount, js)).To(BeTrue())
+
+		dep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: routerDeploymentName(0), Namespace: crNamespace,
+		}, dep)).To(Succeed())
+		Expect(dep.Spec.Template.Spec.ServiceAccountName).To(Equal(serviceAccount.Name))
+		Expect(dep.Spec.Template.Spec.AutomountServiceAccountToken).To(HaveValue(BeFalse()))
+	})
+
+	It("grants the router pods no Kubernetes API permissions", func() {
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       makeJumpstarterSpec(new(int32(1))),
+		})).To(Succeed())
+
+		doReconcile()
+
+		dep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: routerDeploymentName(0), Namespace: crNamespace,
+		}, dep)).To(Succeed())
+		serviceAccount := dep.Spec.Template.Spec.ServiceAccountName
+
+		bindings := &rbacv1.RoleBindingList{}
+		Expect(k8sClient.List(ctx, bindings, client.InNamespace(crNamespace))).To(Succeed())
+		for _, binding := range bindings.Items {
+			Expect(binding.Subjects).NotTo(ContainElement(HaveField("Name", serviceAccount)),
+				"RoleBinding %s grants permissions to the router pods", binding.Name)
+		}
+	})
+
+	It("moves an existing router Deployment off the controller ServiceAccount", func() {
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       makeJumpstarterSpec(new(int32(1))),
+		})).To(Succeed())
+		doReconcile()
+
+		By("putting the router Deployment back the way earlier operators deployed it")
+		dep := &appsv1.Deployment{}
+		key := types.NamespacedName{Name: routerDeploymentName(0), Namespace: crNamespace}
+		Expect(k8sClient.Get(ctx, key, dep)).To(Succeed())
+		dep.Spec.Template.Spec.ServiceAccountName = crName + "-controller-manager"
+		dep.Spec.Template.Spec.DeprecatedServiceAccount = crName + "-controller-manager"
+		dep.Spec.Template.Spec.AutomountServiceAccountToken = nil
+		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+
+		doReconcile()
+
+		Expect(k8sClient.Get(ctx, key, dep)).To(Succeed())
+		Expect(dep.Spec.Template.Spec.ServiceAccountName).To(Equal(crName + "-router"))
+		Expect(dep.Spec.Template.Spec.AutomountServiceAccountToken).To(HaveValue(BeFalse()))
 	})
 
 	It("applies default resource requests and limits when none are specified", func() {
