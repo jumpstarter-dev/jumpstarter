@@ -25,6 +25,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -35,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	k8suuid "k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -65,10 +68,11 @@ const (
 	// maxPortLabelLength is the maximum length of a port name and of a
 	// protocol tag.
 	maxPortLabelLength = 63
-	// defaultForwardSetupPollInterval is how often Listen looks at an
-	// exporter whose beforeLease hook is not complete, to send its forward
-	// setups after the hook.
+	// defaultForwardSetupPollInterval is the first interval of the poll of
+	// Listen for an exporter whose beforeLease hook is not complete. Each
+	// poll doubles the interval, to maxForwardSetupPollInterval.
 	defaultForwardSetupPollInterval = time.Second
+	maxForwardSetupPollInterval     = 15 * time.Second
 )
 
 var portNamePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
@@ -79,9 +83,18 @@ var portNamePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 // that is not a DNS label or that two ports of the exporter have, or a port
 // without a direction. An exporter that reports no ports gets devices without
 // ports, as before.
+//
+// An exporter can report one driver more than one time: a proxy driver (a
+// `ref` in the exporter configuration) gives the report of its target again,
+// with the same UUID and the same ports. These are the same ports, not
+// duplicates: the first device with that UUID keeps them, and the later
+// devices get none, so that the status has each port one time.
 func devicesFromReports(reports []*pb.DriverInstanceReport) ([]jumpstarterdevv1alpha1.Device, error) {
 	devices := []jumpstarterdevv1alpha1.Device{}
-	seen := map[string]struct{}{}
+	// owner has the UUID of the driver that declares each port name.
+	owner := map[string]string{}
+	// stored has the UUIDs of the drivers whose ports a device has.
+	stored := map[string]struct{}{}
 	for _, report := range reports {
 		device := jumpstarterdevv1alpha1.Device{
 			Uuid:       report.Uuid,
@@ -92,17 +105,28 @@ func devicesFromReports(reports []*pb.DriverInstanceReport) ([]jumpstarterdevv1a
 			return nil, status.Errorf(codes.InvalidArgument,
 				"driver %s reports %d ports: the maximum is %d", report.GetUuid(), len(report.GetPorts()), maxDevicePorts)
 		}
+		uuid := report.GetUuid()
+		_, repeated := stored[uuid]
+		repeated = repeated && uuid != ""
+		inReport := map[string]struct{}{}
 		for _, reported := range report.GetPorts() {
 			name := reported.GetName()
 			if len(name) > maxPortLabelLength || !portNamePattern.MatchString(name) {
 				return nil, status.Errorf(codes.InvalidArgument,
 					"invalid port name %q: a port name is a DNS label of at most %d characters", name, maxPortLabelLength)
 			}
-			if _, duplicate := seen[name]; duplicate {
+			_, twice := inReport[name]
+			inReport[name] = struct{}{}
+			declaredBy, declared := owner[name]
+			if !twice && repeated && declared && declaredBy == uuid {
+				// The same port of the same driver, reported again.
+				continue
+			}
+			if declared {
 				return nil, status.Errorf(codes.InvalidArgument,
 					"duplicate port name %q: a port name is unique in one exporter", name)
 			}
-			seen[name] = struct{}{}
+			owner[name] = uuid
 			if len(reported.GetProtocol()) > maxPortLabelLength {
 				return nil, status.Errorf(codes.InvalidArgument,
 					"port %q: the protocol has more than %d characters", name, maxPortLabelLength)
@@ -113,6 +137,7 @@ func devicesFromReports(reports []*pb.DriverInstanceReport) ([]jumpstarterdevv1a
 			}
 			device.Ports = append(device.Ports, *port)
 		}
+		stored[uuid] = struct{}{}
 		devices = append(devices, device)
 	}
 	return devices, nil
@@ -380,6 +405,61 @@ func exporterReadyForForwards(exporter *jumpstarterdevv1alpha1.Exporter) bool {
 	return false
 }
 
+// exporterHookFailed reports whether a hook of the exporter failed: its
+// beforeLease hook does not become complete without a new status report.
+func exporterHookFailed(exporter *jumpstarterdevv1alpha1.Exporter) bool {
+	switch exporter.Status.ExporterStatusValue {
+	case jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed, jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHookFailed:
+		return true
+	}
+	return false
+}
+
+// exporterStatusNotifier tells the Listen streams of an exporter, in this
+// process, that ReportStatus wrote a new status for that exporter. Its zero
+// value is ready for use.
+type exporterStatusNotifier struct {
+	mu   sync.Mutex
+	subs map[types.NamespacedName]map[chan struct{}]struct{}
+}
+
+// subscribe returns a channel that gets a signal for each status report of
+// the exporter, and one signal at the start. Signals are not counted: the
+// reader looks at the exporter. The caller must call the returned function at
+// its end.
+func (n *exporterStatusNotifier) subscribe(key types.NamespacedName) (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	ch <- struct{}{}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.subs == nil {
+		n.subs = map[types.NamespacedName]map[chan struct{}]struct{}{}
+	}
+	if n.subs[key] == nil {
+		n.subs[key] = map[chan struct{}]struct{}{}
+	}
+	n.subs[key][ch] = struct{}{}
+	return ch, func() {
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		delete(n.subs[key], ch)
+		if len(n.subs[key]) == 0 {
+			delete(n.subs, key)
+		}
+	}
+}
+
+func (n *exporterStatusNotifier) notify(key types.NamespacedName) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	for ch := range n.subs[key] {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+}
+
 func (s *ControllerService) forwardSetupPollInterval() time.Duration {
 	if s.ForwardSetupPollInterval > 0 {
 		return s.ForwardSetupPollInterval
@@ -447,10 +527,26 @@ func (f *listenForwards) fingerprint(lease *jumpstarterdevv1alpha1.Lease, member
 	return b.String()
 }
 
+// unchanged reports whether this lease, as the watch saw it, asks for the
+// instructions that the stream has: sync has nothing to do, and does not read
+// the lease. Most changes of a lease with forwards are the reports of its
+// ends, which change no instruction.
+func (f *listenForwards) unchanged(observed *jumpstarterdevv1alpha1.Lease) bool {
+	if observed == nil || f.seen == "" || observed.UID != f.leaseUID || observed.Status.Ended {
+		return false
+	}
+	member := observed.MemberStatusForExporter(f.exporterName, jumpstarterdevv1alpha1.LeaseMemberStateBound)
+	return member != nil && f.fingerprint(observed, member.Name) == f.seen
+}
+
 // sync sends the instructions that the current lease asks for and that this
-// stream did not get. It returns the errors of the API server; the error of a
-// send is in sendErr.
-func (f *listenForwards) sync(ctx context.Context) error {
+// stream did not get. observed is the lease as the watch saw it last, or nil:
+// sync reads the lease only when that one asks for a change. It returns the
+// errors of the API server; the error of a send is in sendErr.
+func (f *listenForwards) sync(ctx context.Context, observed *jumpstarterdevv1alpha1.Lease) error {
+	if f.unchanged(observed) {
+		return nil
+	}
 	s := f.service
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := s.Client.Get(ctx, f.leaseKey, &lease); err != nil {
@@ -547,17 +643,29 @@ func (s *ControllerService) recordForwardSetups(
 	})
 }
 
+// leaseChanges is the result of the watch of one lease.
+type leaseChanges struct {
+	// signal gets a signal for each change. Signals are not counted.
+	signal chan struct{}
+	// latest is the lease of the last event, or nil when the reader must
+	// read the lease: at each start of the watch, and after a delete. The
+	// object is not changed after it is stored.
+	latest atomic.Pointer[jumpstarterdevv1alpha1.Lease]
+}
+
+func (c *leaseChanges) notify(lease *jumpstarterdevv1alpha1.Lease) {
+	c.latest.Store(lease)
+	select {
+	case c.signal <- struct{}{}:
+	default:
+	}
+}
+
 // watchLeaseChanges signals each change of one lease until the context ends.
 // It signals once after each start of the watch too, for the changes that the
-// watch did not see. Signals are not counted: the reader looks at the lease.
-func (s *ControllerService) watchLeaseChanges(ctx context.Context, key types.NamespacedName) <-chan struct{} {
-	changes := make(chan struct{}, 1)
-	signal := func() {
-		select {
-		case changes <- struct{}{}:
-		default:
-		}
-	}
+// watch did not see.
+func (s *ControllerService) watchLeaseChanges(ctx context.Context, key types.NamespacedName) *leaseChanges {
+	changes := &leaseChanges{signal: make(chan struct{}, 1)}
 	go func() {
 		logger := log.FromContext(ctx)
 		for ctx.Err() == nil {
@@ -570,7 +678,7 @@ func (s *ControllerService) watchLeaseChanges(ctx context.Context, key types.Nam
 					logger.Error(err, "failed to watch the lease for its forwards", "lease_id", key.Name)
 				}
 			} else {
-				signal()
+				changes.notify(nil)
 				func() {
 					defer watcher.Stop()
 					for {
@@ -581,10 +689,14 @@ func (s *ControllerService) watchLeaseChanges(ctx context.Context, key types.Nam
 							if !ok {
 								return
 							}
-							if lease, isLease := event.Object.(*jumpstarterdevv1alpha1.Lease); isLease && lease.Name != key.Name {
+							lease, isLease := event.Object.(*jumpstarterdevv1alpha1.Lease)
+							if isLease && lease.Name != key.Name {
 								continue
 							}
-							signal()
+							if !isLease || (event.Type != watch.Added && event.Type != watch.Modified) {
+								lease = nil
+							}
+							changes.notify(lease)
 						}
 					}
 				}()

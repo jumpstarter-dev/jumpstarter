@@ -97,7 +97,15 @@ func setExporterStatus(t *testing.T, c client.Client, name, value string) {
 // (requires) and uart (connects). spare has a port and no lease.
 func forwardService(t *testing.T, leases ...*jumpstarterdevv1alpha1.Lease) (*ControllerService, client.WithWatch) {
 	t.Helper()
-	svc, c := memberService(t, nil, leases...)
+	return forwardServiceWith(t, nil, leases...)
+}
+
+// pollProbeKey marks the context of a Listen call whose reads a test counts.
+type pollProbeKey struct{}
+
+func forwardServiceWith(t *testing.T, funcs *interceptor.Funcs, leases ...*jumpstarterdevv1alpha1.Lease) (*ControllerService, client.WithWatch) {
+	t.Helper()
+	svc, c := memberService(t, funcs, leases...)
 	svc.ForwardSetupPollInterval = 5 * time.Millisecond
 	dir := func(name string, direction jumpstarterdevv1alpha1.PortDirection) jumpstarterdevv1alpha1.DevicePort {
 		return jumpstarterdevv1alpha1.DevicePort{Name: name, Direction: direction}
@@ -192,6 +200,37 @@ func TestRegisterPorts(t *testing.T) {
 		}
 	})
 
+	t.Run("accepts the report of one driver two times, and stores its ports one time", func(t *testing.T) {
+		// A proxy driver (a ref in the exporter configuration) gives the
+		// report of its target again: the same UUID and the same ports.
+		svc, c := memberService(t, nil)
+		ports := func() []*pb.PortReport {
+			return []*pb.PortReport{
+				{Name: "rootcanal", Direction: pb.PortDirection_PORT_DIRECTION_PROVIDES, Protocol: &protocol},
+				{Name: "uart", Direction: pb.PortDirection_PORT_DIRECTION_CONNECTS},
+			}
+		}
+		_, err := svc.Register(registering("spare"), &pb.RegisterRequest{Reports: []*pb.DriverInstanceReport{
+			{Uuid: "root"},
+			{Uuid: "target", ParentUuid: new("root"), Labels: map[string]string{"jumpstarter.dev/name": "bt"}, Ports: ports()},
+			{Uuid: "target", ParentUuid: new("root"), Labels: map[string]string{"jumpstarter.dev/name": "alias"}, Ports: ports()},
+		}})
+		if err != nil {
+			t.Fatalf("expected the registration to succeed, got %v", err)
+		}
+		got := devices(t, c)
+		if len(got) != 3 || len(got[1].Ports) != 2 || len(got[2].Ports) != 0 {
+			t.Fatalf("expected three devices, and the ports on the first device of the driver only, got %+v", got)
+		}
+		var exporter jumpstarterdevv1alpha1.Exporter
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: memberNamespace, Name: "spare"}, &exporter); err != nil {
+			t.Fatalf("failed to get exporter: %v", err)
+		}
+		if all := exporter.Ports(); len(all) != 2 || all[0].Name != "rootcanal" || all[1].Name != "uart" {
+			t.Fatalf("expected each port one time, got %+v", all)
+		}
+	})
+
 	t.Run("an exporter that reports no ports registers as before", func(t *testing.T) {
 		svc, c := memberService(t, nil)
 		_, err := svc.Register(registering("spare"), &pb.RegisterRequest{Reports: []*pb.DriverInstanceReport{
@@ -226,6 +265,24 @@ func TestRegisterPorts(t *testing.T) {
 			reports: []*pb.DriverInstanceReport{
 				{Uuid: "a", Ports: []*pb.PortReport{port("uart", pb.PortDirection_PORT_DIRECTION_CONNECTS)}},
 				{Uuid: "b", Ports: []*pb.PortReport{port("uart", pb.PortDirection_PORT_DIRECTION_CONNECTS)}}},
+			message: `duplicate port name "uart"`},
+		{name: "a duplicate name in the repeated report of one driver",
+			reports: []*pb.DriverInstanceReport{
+				{Uuid: "a", Ports: []*pb.PortReport{port("uart", pb.PortDirection_PORT_DIRECTION_CONNECTS)}},
+				{Uuid: "a", Ports: []*pb.PortReport{
+					port("uart", pb.PortDirection_PORT_DIRECTION_CONNECTS),
+					port("can", pb.PortDirection_PORT_DIRECTION_CONNECTS), port("can", pb.PortDirection_PORT_DIRECTION_CONNECTS)}}},
+			message: `duplicate port name "can"`},
+		{name: "the name of another driver in the repeated report of one driver",
+			reports: []*pb.DriverInstanceReport{
+				{Uuid: "a", Ports: []*pb.PortReport{port("uart", pb.PortDirection_PORT_DIRECTION_CONNECTS)}},
+				{Uuid: "b", Ports: []*pb.PortReport{port("can", pb.PortDirection_PORT_DIRECTION_CONNECTS)}},
+				{Uuid: "a", Ports: []*pb.PortReport{port("can", pb.PortDirection_PORT_DIRECTION_CONNECTS)}}},
+			message: `duplicate port name "can"`},
+		{name: "a duplicate name across reports without a UUID",
+			reports: []*pb.DriverInstanceReport{
+				{Ports: []*pb.PortReport{port("uart", pb.PortDirection_PORT_DIRECTION_CONNECTS)}},
+				{Ports: []*pb.PortReport{port("uart", pb.PortDirection_PORT_DIRECTION_CONNECTS)}}},
 			message: `duplicate port name "uart"`},
 		{name: "a name that is not a DNS label",
 			reports: []*pb.DriverInstanceReport{{Uuid: "a", Ports: []*pb.PortReport{port("Root_Canal", pb.PortDirection_PORT_DIRECTION_PROVIDES)}}},
@@ -324,6 +381,28 @@ func TestReportForward(t *testing.T) {
 		end = forwardEnd(t, c, "bt", "phone")
 		if end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateConnected || end.Sequence != 13 || end.Message != "" {
 			t.Fatalf("expected the newer report, got %+v", end)
+		}
+	})
+
+	t.Run("a report that does not change the end writes nothing", func(t *testing.T) {
+		svc, c := forwardService(t, forwardLease(jumpstarterdevv1alpha1.LeaseForwardStatePending, btForward()))
+		if _, err := svc.ReportForward(phone, reportRequest("bt", connected, 20, "")); err != nil {
+			t.Fatalf("expected the report to succeed, got %v", err)
+		}
+		version := getLease(t, c, forwardLeaseName).ResourceVersion
+		for _, req := range []*pb.ReportForwardRequest{
+			// The same report again, an older state, and the same number
+			// with a different state.
+			reportRequest("bt", connected, 20, ""),
+			reportRequest("bt", ready, 19, ""),
+			reportRequest("bt", ready, 20, ""),
+		} {
+			if _, err := svc.ReportForward(phone, req); err != nil {
+				t.Fatalf("expected the report %d to succeed, got %v", req.Sequence, err)
+			}
+		}
+		if got := getLease(t, c, forwardLeaseName).ResourceVersion; got != version {
+			t.Fatalf("a report that changed nothing wrote the lease: resource version %s, then %s", version, got)
 		}
 	})
 
@@ -819,6 +898,109 @@ func TestListenForwardSetup(t *testing.T) {
 		if forwardEnd(t, c, "bt", "phone").SetupTime == nil {
 			t.Fatalf("expected the setup time on the lease")
 		}
+	})
+
+	t.Run("sends the setups when the exporter reports that its hook is complete, without a poll", func(t *testing.T) {
+		svc, c := forwardService(t, forwardLease(pending, btForward()))
+		// The poll does not run in this test: only ReportStatus tells Listen.
+		svc.ForwardSetupPollInterval = time.Hour
+		setExporterStatus(t, c, "phone-1", jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		phone, _ := listenAs(t, ctx, svc, "phone-1")
+		waitForListener(t, svc, forwardLeaseName, "phone-1")
+		expectNoInstruction(t, phone)
+
+		// The status of a different exporter starts nothing.
+		if _, err := svc.ReportStatus(asExporter(context.Background(), "hu-1"),
+			&pb.ReportStatusRequest{Status: pb.ExporterStatus_EXPORTER_STATUS_LEASE_READY}); err != nil {
+			t.Fatalf("expected the status report to succeed, got %v", err)
+		}
+		expectNoInstruction(t, phone)
+
+		if _, err := svc.ReportStatus(asExporter(context.Background(), "phone-1"),
+			&pb.ReportStatusRequest{Status: pb.ExporterStatus_EXPORTER_STATUS_LEASE_READY}); err != nil {
+			t.Fatalf("expected the status report to succeed, got %v", err)
+		}
+		if setup := nextInstruction(t, phone).GetForwardSetup(); setup == nil || setup.ForwardName != "bt" {
+			t.Fatalf("expected the setup after the status report, got %v", setup)
+		}
+		expectNoInstruction(t, phone)
+	})
+
+	t.Run("polls the exporter less and less often during its hook, and not after the hook failed", func(t *testing.T) {
+		var gets atomic.Int32
+		funcs := interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, isExporter := obj.(*jumpstarterdevv1alpha1.Exporter); isExporter && key.Name == "phone-1" && ctx.Value(pollProbeKey{}) != nil {
+				gets.Add(1)
+			}
+			return c.Get(ctx, key, obj, opts...)
+		}}
+		svc, c := forwardServiceWith(t, &funcs, forwardLease(pending, btForward()))
+		svc.ForwardSetupPollInterval = 20 * time.Millisecond
+		setExporterStatus(t, c, "phone-1", jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook)
+		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), pollProbeKey{}, true))
+		defer cancel()
+
+		phone, _ := listenAs(t, ctx, svc, "phone-1")
+		waitForListener(t, svc, forwardLeaseName, "phone-1")
+		// One look at the start, then polls after 20, 60, 140, 300 and 620
+		// ms. A poll with a constant interval of 20 ms does 25 in 500 ms.
+		time.Sleep(500 * time.Millisecond)
+		if got := gets.Load(); got < 3 || got > 7 {
+			t.Fatalf("expected the poll interval to grow: %d reads of the exporter in 500 ms", got)
+		}
+
+		// The hook failed: the next look at the exporter stops the poll.
+		setExporterStatus(t, c, "phone-1", jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHookFailed)
+		svc.exporterStatusChanges.notify(types.NamespacedName{Namespace: memberNamespace, Name: "phone-1"})
+		time.Sleep(100 * time.Millisecond)
+		stopped := gets.Load()
+		time.Sleep(700 * time.Millisecond)
+		if got := gets.Load(); got != stopped {
+			t.Fatalf("expected no poll after the hook failed, got %d more reads", got-stopped)
+		}
+		expectNoInstruction(t, phone)
+	})
+
+	t.Run("does not read the lease for a change that asks for no new instruction", func(t *testing.T) {
+		var leaseGets atomic.Int32
+		funcs := interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, isLease := obj.(*jumpstarterdevv1alpha1.Lease); isLease && ctx.Value(pollProbeKey{}) != nil {
+				leaseGets.Add(1)
+			}
+			return c.Get(ctx, key, obj, opts...)
+		}}
+		svc, c := forwardServiceWith(t, &funcs, forwardLease(pending, btForward()))
+		ctx, cancel := context.WithCancel(context.WithValue(context.Background(), pollProbeKey{}, true))
+		defer cancel()
+		phone, _ := listenAs(t, ctx, svc, "phone-1")
+		if setup := nextInstruction(t, phone).GetForwardSetup(); setup == nil {
+			t.Fatalf("expected the setup")
+		}
+		// The watch of the lease started, and the stream saw its start.
+		time.Sleep(200 * time.Millisecond)
+		before := leaseGets.Load()
+
+		// The reports of the ends change the lease, and no instruction.
+		for sequence, state := range []pb.ForwardEndState{
+			pb.ForwardEndState_FORWARD_END_STATE_READY, pb.ForwardEndState_FORWARD_END_STATE_CONNECTED,
+			pb.ForwardEndState_FORWARD_END_STATE_READY, pb.ForwardEndState_FORWARD_END_STATE_CONNECTED,
+		} {
+			if _, err := svc.ReportForward(asExporter(context.Background(), "hu-1"),
+				reportRequest("bt", state, uint64(sequence+1), "")); err != nil {
+				t.Fatalf("expected the report to succeed, got %v", err)
+			}
+		}
+		if end := forwardEnd(t, c, "bt", "headunit"); end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateConnected {
+			t.Fatalf("expected the reports on the lease, got %+v", end)
+		}
+		time.Sleep(200 * time.Millisecond)
+		if got := leaseGets.Load(); got != before {
+			t.Fatalf("expected no read of the lease on the Listen stream for the reports, got %d", got-before)
+		}
+		expectNoInstruction(t, phone)
 	})
 
 	t.Run("sends no setup for a forward that failed the validation or is Disabled", func(t *testing.T) {

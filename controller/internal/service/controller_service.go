@@ -92,14 +92,19 @@ type ControllerService struct {
 	TelemetryConfig  *config.Telemetry
 	// StatusHeartbeatInterval defaults to 10 seconds.
 	StatusHeartbeatInterval time.Duration
-	// ForwardSetupPollInterval is how often Listen looks at an exporter whose
-	// beforeLease hook is not complete, to send its forward setups after the
-	// hook. It defaults to 1 second.
+	// ForwardSetupPollInterval is the first interval of the poll that Listen
+	// uses, in addition to the notification of ReportStatus, to see that the
+	// beforeLease hook of an exporter is complete and send its forward setups.
+	// Each poll doubles the interval, to a maximum of 15 seconds. It defaults
+	// to 1 second.
 	ForwardSetupPollInterval time.Duration
-	listenQueues             sync.Map
-	leaseLocks               sync.Map
-	authOnce                 sync.Once
-	auth                     *auth.Auth
+	// exporterStatusChanges tells the Listen streams of an exporter that
+	// ReportStatus wrote a new status for it.
+	exporterStatusChanges exporterStatusNotifier
+	listenQueues          sync.Map
+	leaseLocks            sync.Map
+	authOnce              sync.Once
+	auth                  *auth.Auth
 }
 
 type listenQueue struct {
@@ -575,6 +580,10 @@ func (s *ControllerService) ReportStatus(
 		logger.Error(err, "unable to update exporter status")
 		return nil, status.Errorf(codes.Internal, "unable to update exporter status: %s", err)
 	}
+
+	// A Listen stream that waits for the beforeLease hook of this exporter
+	// looks at the new status now (JEP-0016).
+	s.exporterStatusChanges.notify(client.ObjectKeyFromObject(exporter))
 
 	// Handle lease release request from exporter
 	// This allows the exporter to signal that the lease should be released after
@@ -1127,8 +1136,17 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 	// reports no ports cannot be in a forward: it gets none, and a lease
 	// without forwards has none.
 	var forwards *listenForwards
-	var leaseChanged <-chan struct{}
+	var leaseChanged *leaseChanges
+	var leaseSignal <-chan struct{}
+	// While the beforeLease hook of the exporter is not complete, the stream
+	// waits for the status that the exporter reports. ReportStatus of this
+	// process tells it (statusChanged). The poll is for a report that another
+	// replica of the controller got: its interval grows, and it stops when
+	// the hook failed.
+	var statusChanged <-chan struct{}
 	var setupPoll <-chan time.Time
+	var pollTimer *time.Timer
+	pollInterval := s.forwardSetupPollInterval()
 	if lease.HasForwards() && len(exporter.Ports()) > 0 {
 		forwards = &listenForwards{
 			service:      s,
@@ -1141,10 +1159,11 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		watchCtx, stopWatch := context.WithCancel(ctx)
 		defer stopWatch()
 		leaseChanged = s.watchLeaseChanges(watchCtx, forwards.leaseKey)
+		leaseSignal = leaseChanged.signal
 		// A forward starts after the beforeLease hook of the exporter.
 		if exporterReadyForForwards(exporter) {
 			forwards.ready = true
-			if err := forwards.sync(ctx); err != nil {
+			if err := forwards.sync(ctx, nil); err != nil {
 				logger.Error(err, "unable to send forward setups")
 				return err
 			}
@@ -1152,39 +1171,68 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 				return forwards.sendErr
 			}
 		} else {
-			ticker := time.NewTicker(s.forwardSetupPollInterval())
-			defer ticker.Stop()
-			setupPoll = ticker.C
+			// The subscription starts with one signal: the exporter can have
+			// reported its status after this call read it.
+			changes, unsubscribe := s.exporterStatusChanges.subscribe(client.ObjectKeyFromObject(exporter))
+			defer unsubscribe()
+			statusChanged = changes
+			pollTimer = time.NewTimer(pollInterval)
+			defer pollTimer.Stop()
+			if !exporterHookFailed(exporter) {
+				setupPoll = pollTimer.C
+			}
 		}
+	}
+
+	// startForwards looks at the exporter and, when its beforeLease hook is
+	// complete, sends the forward setups. polled says that the poll asked.
+	startForwards := func(polled bool) error {
+		var current jumpstarterdevv1alpha1.Exporter
+		err := s.Client.Get(ctx, client.ObjectKeyFromObject(exporter), &current)
+		switch {
+		case err != nil:
+			logger.Error(err, "unable to get exporter for its forward setups")
+		case exporterReadyForForwards(&current):
+			statusChanged, setupPoll = nil, nil
+			forwards.ready = true
+			if err := forwards.sync(ctx, nil); err != nil {
+				logger.Error(err, "unable to send forward setups")
+				return err
+			}
+			return forwards.sendErr
+		case exporterHookFailed(&current):
+			// The hook failed: the forwards of this exporter do not start.
+			// Only a new status report can change that.
+			setupPoll = nil
+			return nil
+		}
+		if polled || setupPoll == nil {
+			if polled {
+				pollInterval = min(pollInterval*2, maxForwardSetupPollInterval)
+			}
+			pollTimer.Reset(pollInterval)
+			setupPoll = pollTimer.C
+		}
+		return nil
 	}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-setupPoll:
-			var current jumpstarterdevv1alpha1.Exporter
-			if err := s.Client.Get(ctx, client.ObjectKeyFromObject(exporter), &current); err != nil {
-				logger.Error(err, "unable to get exporter for its forward setups")
-				continue
-			}
-			if !exporterReadyForForwards(&current) {
-				continue
-			}
-			setupPoll = nil
-			forwards.ready = true
-			if err := forwards.sync(ctx); err != nil {
-				logger.Error(err, "unable to send forward setups")
+		case <-statusChanged:
+			if err := startForwards(false); err != nil {
 				return err
 			}
-			if forwards.sendErr != nil {
-				return forwards.sendErr
+		case <-setupPoll:
+			if err := startForwards(true); err != nil {
+				return err
 			}
-		case <-leaseChanged:
+		case <-leaseSignal:
 			if !forwards.ready {
 				continue
 			}
-			if err := forwards.sync(ctx); err != nil {
+			if err := forwards.sync(ctx, leaseChanged.latest.Load()); err != nil {
 				// The next change of the lease tries again.
 				logger.Error(err, "unable to update forward instructions")
 			}

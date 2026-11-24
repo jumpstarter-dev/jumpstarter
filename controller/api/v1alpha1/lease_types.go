@@ -154,7 +154,9 @@ const (
 	// Listening or Connected (ForwardsReady is true).
 	LeaseReasonForwardsReady = "ForwardsReady"
 	// LeaseReasonForwardsPending: a minimum of one forward is Pending, and
-	// none is Failed (ForwardsReady and Ready are false).
+	// none is Failed. It is a reason of ForwardsReady only: Ready is false
+	// with the reason BeforeLeaseHook, which a client that does not know
+	// forwards waits for.
 	LeaseReasonForwardsPending = "ForwardsPending"
 	// LeaseReasonForwardFailed: a minimum of one forward is Failed
 	// (ForwardsReady is false, and the lease is Degraded).
@@ -300,7 +302,9 @@ const (
 	LeaseReasonConstraintUnsatisfiable = "ConstraintUnsatisfiable"
 	// LeaseReasonConstraintLimit: the constraint search was stopped at its limit.
 	LeaseReasonConstraintLimit = "ConstraintLimit"
-	// LeaseReasonBeforeLeaseHook: the beforeLease hook of a member still runs.
+	// LeaseReasonBeforeLeaseHook: the beforeLease hook of a member still
+	// runs, or the hooks are complete and a forward of the lease is Pending
+	// (JEP-0016). The message says which.
 	LeaseReasonBeforeLeaseHook = "BeforeLeaseHook"
 	// LeaseReasonBeforeLeaseHookFailed: the beforeLease hook of a member failed.
 	LeaseReasonBeforeLeaseHookFailed = "BeforeLeaseHookFailed"

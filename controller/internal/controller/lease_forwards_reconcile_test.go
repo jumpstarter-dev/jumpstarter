@@ -163,8 +163,9 @@ var _ = Describe("Lease forwards", func() {
 		Expect(forwards.Reason).To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardsPending))
 		ready := condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady)
 		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
-		Expect(ready.Reason).To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardsPending))
-		Expect(ready.Message).To(ContainSubstring("`bt`"))
+		// A client that does not know forwards waits for this reason.
+		Expect(ready.Reason).To(Equal(jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook))
+		Expect(ready.Message).To(Equal("Waiting for forwards: `bt`"))
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeDegraded)).To(BeNil())
 
 		// One end is ready: the forward waits for the other.
@@ -249,7 +250,36 @@ var _ = Describe("Lease forwards", func() {
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStatePending))
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeDegraded)).To(BeNil())
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady).Reason).
+			To(Equal(jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook))
+		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeForwardsReady).Reason).
 			To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardsPending))
+	})
+
+	It("keeps the reason BeforeLeaseHook on Ready for a failed forward while a hook runs", func() {
+		// The port of peer is missing: the forward fails the validation at the bind.
+		online(headunitExporter, headunitLabel, devicePort("rootcanal", provides))
+		online(peerExporter, peerLabel)
+		Expect(k8sClient.Create(ctx, btLease())).To(Succeed())
+		reconcileLeaseOnly(ctx, leaseName)
+		setExporterStatusValue(ctx, headunitExporter, jumpstarterdevv1alpha1.ExporterStatusLeaseReady)
+		setExporterStatusValue(ctx, peerExporter, jumpstarterdevv1alpha1.ExporterStatusBeforeLeaseHook)
+		reconcileLeaseOnly(ctx, leaseName)
+
+		// The forward is Failed, and the client still waits for the hook.
+		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateFailed))
+		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeForwardsReady).Reason).
+			To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardFailed))
+		ready := condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady)
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook))
+		Expect(ready.Message).To(ContainSubstring("`peer`"))
+
+		// The hooks are complete: only the forward keeps the lease from Ready.
+		setExporterStatusValue(ctx, peerExporter, jumpstarterdevv1alpha1.ExporterStatusLeaseReady)
+		reconcileLeaseOnly(ctx, leaseName)
+		ready = condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady)
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardFailed))
 	})
 
 	It("fails two provides ports and ports that are not socket and stream", func() {
@@ -333,13 +363,13 @@ var _ = Describe("Lease forwards", func() {
 
 		setExporterStatusValue(ctx, peerExporter, jumpstarterdevv1alpha1.ExporterStatusLeaseReady)
 		reconcileLeaseOnly(ctx, leaseName)
-		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady).Reason).
-			To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardsPending))
-
-		// The hooks stay complete while the lease waits for its forwards.
-		setExporterStatusValue(ctx, peerExporter, jumpstarterdevv1alpha1.ExporterStatusAfterLeaseHook)
-		reconcileLeaseOnly(ctx, leaseName)
-		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady).Reason).
+		// The hooks are complete: Ready keeps the reason, and the message
+		// and the ForwardsReady condition give the forwards.
+		ready = condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady)
+		Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		Expect(ready.Reason).To(Equal(jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook))
+		Expect(ready.Message).To(Equal("Waiting for forwards: `bt`"))
+		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeForwardsReady).Reason).
 			To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardsPending))
 	})
 

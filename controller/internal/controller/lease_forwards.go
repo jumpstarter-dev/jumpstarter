@@ -521,8 +521,10 @@ func setPendingForwards(lease *jumpstarterdevv1alpha1.Lease) {
 }
 
 // memberHooksComplete reports whether an earlier reconcile found the
-// beforeLease hook of each bound member complete: the lease is Ready, or it
-// waits only for its forwards.
+// beforeLease hook of each bound member complete: the lease is Ready, or
+// only a Failed forward keeps it from Ready. A lease that waits for a Pending
+// forward has the same Ready reason as one that waits for a hook
+// (BeforeLeaseHook), so each reconcile looks at its exporters again.
 func memberHooksComplete(lease *jumpstarterdevv1alpha1.Lease) bool {
 	ready := meta.FindStatusCondition(lease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeReady))
 	if ready == nil {
@@ -531,8 +533,7 @@ func memberHooksComplete(lease *jumpstarterdevv1alpha1.Lease) bool {
 	if ready.Status == "True" {
 		return true
 	}
-	return lease.HasForwards() && (ready.Reason == jumpstarterdevv1alpha1.LeaseReasonForwardsPending ||
-		ready.Reason == jumpstarterdevv1alpha1.LeaseReasonForwardFailed)
+	return lease.HasForwards() && ready.Reason == jumpstarterdevv1alpha1.LeaseReasonForwardFailed
 }
 
 func (r *LeaseReconciler) forwardReportTimeout() time.Duration {
@@ -627,7 +628,12 @@ func (r *LeaseReconciler) reconcileForwards(
 	case len(failed) > 0:
 		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonForwardFailed, "%s", failedMessage)
 	case len(pending) > 0:
-		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonForwardsPending, "%s", pendingMessage)
+		// The reason is the one of a lease that waits for a beforeLease hook:
+		// a client that does not know forwards (JEP-0015) waits for that
+		// reason, and takes each other reason of a false Ready as the end of
+		// the lease. The ForwardsReady condition has the reason
+		// ForwardsPending.
+		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook, "%s", pendingMessage)
 	default:
 		lease.SetStatusReady(true, "Ready", "The exporters of all members are ready")
 	}
