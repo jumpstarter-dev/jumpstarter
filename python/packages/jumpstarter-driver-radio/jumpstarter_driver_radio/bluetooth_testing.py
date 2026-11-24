@@ -6,6 +6,7 @@ from __future__ import annotations
 import anyio
 from bumble import hci
 from bumble.controller import Controller
+from bumble.core import PhysicalTransport
 from bumble.device import Device, DeviceConfiguration
 from bumble.host import Host
 from bumble.keys import MemoryKeyStore
@@ -41,6 +42,11 @@ class VirtualController(Controller):
         self.link_policies: dict[int, int] = {}
         self.default_link_policy: int | None = None
         self.class_of_device = 0
+        self.deaf = False  # the radio is off: nothing on the air reaches it
+
+    def on_lmp_packet(self, sender_address, packet) -> None:
+        if not self.deaf:
+            super().on_lmp_packet(sender_address, packet)
         # Whose key this controller is waiting for from its host: None for a link it is authenticating
         # itself, or the far controller and the key it has to match.
         self.asking: dict[hci.Address, tuple[VirtualController, bytes] | None] = {}
@@ -154,15 +160,32 @@ class HciPort:
         self.controller.set_packet_sink(None)
 
 
-class _Yes(PairingDelegate):
+class Dialog(PairingDelegate):
+    """The pairing dialog of a device, and the person in front of it.
+
+    ``shown`` counts the times the device asked. ``answer`` is what the person presses: True, False, or None
+    for somebody who has not pressed anything yet (``press`` then does).
+    """
+
     def __init__(self) -> None:
         super().__init__(io_capability=PairingDelegate.IoCapability.DISPLAY_OUTPUT_AND_YES_NO_INPUT)
+        self.shown = 0
+        self.answer: bool | None = True
+
+    def press(self, answer: bool) -> None:
+        self.answer = answer
+
+    async def _ask(self) -> bool:
+        self.shown += 1
+        while self.answer is None:
+            await anyio.sleep(0.01)
+        return self.answer
 
     async def confirm(self, auto: bool = False) -> bool:
-        return True
+        return await self._ask()
 
     async def compare_numbers(self, number: int, digits: int) -> bool:
-        return True
+        return await self._ask()
 
     async def accept(self) -> bool:
         return True
@@ -183,11 +206,36 @@ class Air:
         config.classic_enabled, config.le_enabled = True, False
         config.classic_sc_enabled = False
         self.device = Device(config=config, host=Host(self.device_controller, AsyncPipeSink(self.device_controller)))
-        self.device.keystore = MemoryKeyStore()
+        self.store = MemoryKeyStore()
+        self.device.keystore = self.store
+        self.dialog = Dialog()
         self.device.pairing_config_factory = lambda _connection: PairingConfig(
-            sc=False, mitm=False, bonding=True, delegate=_Yes()
+            sc=False, mitm=False, bonding=True, delegate=self.dialog
         )
         self.ports: list[HciPort] = []
+
+    def keys(self) -> list[bytes]:
+        """The link keys the device has kept: one for each device it is paired with."""
+        return [keys.link_key.value for keys in self.store.all_keys.values() if keys.link_key is not None]
+
+    def forget(self) -> None:
+        """The device forgets its pairings, as with "Forget" in its settings."""
+        self.store.all_keys.clear()
+
+    def out_of_reach(self) -> None:
+        """The device's Bluetooth goes away (it is restarting): nothing that calls it gets an answer."""
+        self.device_controller.deaf = True
+
+    def in_reach(self) -> None:
+        self.device_controller.deaf = False
+
+    async def pair(self, address: str | None = None):
+        """What a person does in the device's settings: pick the other device, which calls it, pairs and
+        encrypts the link. Gives the link."""
+        link = await self.device.connect(address or self.bridge_address, transport=PhysicalTransport.BR_EDR, timeout=5)
+        await link.authenticate()
+        await link.encrypt()
+        return link
 
     async def power_on(self) -> None:
         await self.device.power_on()

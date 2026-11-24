@@ -21,6 +21,7 @@ from .bluetooth import RootcanalBluetooth
 from .bluetooth_testing import Air, Inbox
 from .common import BluetoothIdentity
 from .driver import MockRadio
+from .identity import MARK
 from .wmediumd import WmediumdWifi
 from .wmediumd_agent_test import BROADCAST, frame
 from jumpstarter.exporter import Session
@@ -326,3 +327,44 @@ async def test_without_autostart_the_path_is_open_but_idle_until_the_radios_are_
         await head_units.start()
         await until(lambda: phones._half.device is not None and head_units._half.device is not None)
         assert (await phones.status())["peer"]
+
+
+async def test_with_an_identity_source_each_device_sees_the_other_under_its_real_name_and_either_can_pair():
+    """The lab's two exporters: each asks its own Android device who it is. No test says anything."""
+
+    def exporter_of(identity: BluetoothIdentity, configured: str, bridge_address: str) -> VirtualRadio:
+        radio = VirtualRadio(name=configured, identity_from={"adb": "127.0.0.1:6520", "interval": 0.05})
+        radio.air = Air(identity, bridge_address)
+        device_class = ",".join(str(byte) for byte in identity.class_of_device.to_bytes(3, "big"))
+
+        async def adb(_arguments: list[str]) -> str:
+            manager = f"  state: ON\n  Name: {identity.name}\n"
+            return f"{identity.address}\n{MARK}\n{device_class}\n{MARK}\n{identity.name}\n{MARK}\n{manager}"
+
+        assert radio._source is not None
+        radio._source._run = adb
+        return radio
+
+    phones = exporter_of(PHONE, "Cuttlefish phone", "F0:F0:F0:F0:F0:AA")
+    head_units = exporter_of(HEAD_UNIT, "Cuttlefish head unit", "F0:F0:F0:F0:F0:BB")
+    await phones.air.power_on()
+    await head_units.air.power_on()
+    async with lease(phones, head_units) as (one, two):
+        await forward("bt", one, two)
+        # In each radio the half carries the other device's own name and class, not the configured one.
+        await until(lambda: phones.air.bridge_controller.local_name == "Head Unit")
+        await until(lambda: head_units.air.bridge_controller.local_name == "Phone")
+        assert phones.air.bridge_controller.class_of_device == HEAD_UNIT.class_of_device
+        assert await phones.peer() == HEAD_UNIT.model_dump()
+        assert await head_units.peer() == PHONE.model_dump()
+
+        # A person pairs from the head unit: the phone is called (its address came from the phone itself),
+        # both are asked, and both pairings are made.
+        with anyio.fail_after(15):
+            link = await head_units.air.pair()
+        await until(lambda: phones._half.paired() and head_units._half.paired())
+        assert (phones.air.dialog.shown, head_units.air.dialog.shown) == (1, 1)
+        status = await phones.status()
+        assert status["paired"] and status["bonded"] and status["state"] == "secure"
+        assert status["opened_by"] == "bridge" and status["far"] == {"link": "device", "pairing": "complete"}
+        await link.disconnect()

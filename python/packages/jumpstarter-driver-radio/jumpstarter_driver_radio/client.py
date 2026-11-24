@@ -37,7 +37,7 @@ class RadioClient(CompositeClient):
             if not status.get("running"):
                 raise RuntimeError(f"the radio's local end stopped: {status.get('error') or status}")
             if time.monotonic() > deadline:
-                raise TimeoutError(f"{problem}: {status.get('error') or status}")
+                raise TimeoutError(f"{problem}: {status.get('last_error') or status.get('error') or status}")
             time.sleep(1)
 
     def wait_until_attached(self, timeout: float = 120) -> dict:
@@ -115,6 +115,24 @@ class BluetoothRadioClient(RadioClient):
         """The far device, whose name this half carries in the radio. None until the far half has said."""
         said = self.call("peer")
         return BluetoothIdentity.model_validate(said) if said else None
+
+    def wait_until_paired(self, timeout: float = 120) -> dict:
+        """Wait until both devices have a secure link to the bridge: the pairing is made on both sides (or
+        two devices that were paired have reconnected)."""
+        return self._wait_until("paired", timeout, "the devices are not paired")
+
+    def wait_until_idle(self, timeout: float = 60) -> dict:
+        """Wait until nothing is in flight: the half is not calling its device and no pairing is being made."""
+        deadline = time.monotonic() + timeout
+        while True:
+            status = self.status()
+            if not status.get("calling") and not status.get("pairing"):
+                return status
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"the radio is still busy ({status.get('state')}): {status.get('last_error') or status}"
+                )
+            time.sleep(0.5)
 
     def cli(self):
         base = super().cli()

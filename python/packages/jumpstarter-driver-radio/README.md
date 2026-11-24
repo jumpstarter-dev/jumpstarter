@@ -271,9 +271,8 @@ of two radios is the path between the two halves. Each device finds the other by
 devices to pair with.
 
 Everything with a deadline stays beside the radio. The link, its pairing and its encryption are each half's
-own, and happen twice, once in each radio: each device pairs with the half in its own radio, which accepts
-(and each shows the code of its own pairing). What crosses the path is everything above the link: L2CAP, and
-so SDP, RFCOMM and the audio and phone book profiles.
+own, and happen twice, once in each radio: each device pairs with the half in its own radio. What crosses the
+path is everything above the link: L2CAP, and so SDP, RFCOMM and the audio and phone book profiles.
 
 What a half does beside its radio, each for a reason that was found the hard way:
 
@@ -285,13 +284,53 @@ What a half does beside its radio, each for a reason that was found the hard way
 - No link may sleep, and the devices may swap who leads a link: an idle Android asks for sniff mode, a virtual
   radio answers that badly, and a minute later calls the link dead.
 - Secure Connections are off: there is then no key derived across transports to disagree about.
-- One conversation: when one device hangs up, the other is hung up on, unless its link is still being paired.
-  When a half is stopped, or the path is cut, both devices are hung up on. The devices' bonds stay.
+- One conversation: when one device hangs up, the other is hung up on. When a half is stopped, or the path
+  is cut, both devices are hung up on. The devices' bonds stay.
+- Who opened a link is what the radio says (the half leads a link it opened), not what the half was doing: a
+  device that calls while the half is calling it has opened its own link, and is not kept waiting for the half
+  to encrypt it.
+- A call to a device is given up after `call_timeout` seconds, and a device that did not answer is not called
+  again at once (2, 4, 8 … 30 seconds): a device whose Bluetooth is restarting must not keep the other waiting,
+  nor be called while it restarts.
 - The keys of the pairings done in a radio are kept for as long as the lease's session, so a device that
   paired can reconnect after its radio or the far half came back.
 - A device that was made to forget its pairings (a factory reset of its Bluetooth, "Forget" in its settings)
   refuses a link the half authenticates with the key it kept. The half then forgets the key too, hangs up and
-  calls once more, and pairs anew. A link that cannot be made secure at all is hung up, not left standing.
+  calls once more, and pairs anew. Only that answer of the device is taken so. A link that cannot be made
+  secure at all is hung up, not left standing.
+
+### Pairing
+
+There are **two links and two pairings**: device A with the half in A's radio, and the half in B's radio with
+device B. A bridge above HCI cannot make one pairing span both: the exchange that makes a link key happens
+inside each controller, between the two ends of one link. The halves make the two behave as one:
+
+- **Both devices ask at the same time.** When a device opens a link to its half (a person picked the other
+  device in its settings, or a paired device reconnects), the far half calls the far device at once and
+  authenticates that link. If the two have never paired, both show their pairing dialog.
+- **Both have to agree.** The half of the device that started does not agree to its pairing until the far
+  device has agreed to its own. If the far device's person says no, does not answer within `pair_timeout`
+  seconds, or the far device cannot be reached, the pairing of the device that started fails too, and nothing
+  is kept on either side. If the person who started says no, the far device is hung up on and the key made in
+  its radio is forgotten.
+- **Both starting at once** is two devices each pairing with its own half: neither half calls, neither waits.
+- **Paired devices reconnect from either side** without a dialog: each link is authenticated with its key.
+- **"Forget" on one device** leads to a new pairing the next time, from either side. Only the device that
+  forgot is asked again: the other still has its key, and its link is authenticated with it. (Two real
+  devices would both ask.)
+
+What this cannot do:
+
+- **The six-digit codes are per link.** Each device shows the code of its own pairing with its own half. In
+  two rootcanal radios both show the same constant; with a real controller on one side the two differ. A
+  person comparing the two screens sees two codes that need not match, and each is nonetheless the right one
+  for its device. Nobody compares a code *with the bridge*: the half agrees when the far device has agreed.
+- The half cannot see a dialog: it knows that its device is pairing, and how that ended.
+- A device that only looks the other one up (SDP, without pairing) still makes the far half call and
+  authenticate the far device, which then asks its person to pair.
+
+Every change of a half's state is logged at `INFO` with both devices' names: `idle`, `calling`, `linked`,
+`pairing`, `secure`, and why.
 
 ### The port
 
@@ -302,33 +341,55 @@ it is:
 
 | Kind | Name | The rest of the record |
 | --- | --- | --- |
-| 1 | `HELLO` | JSON: `{"version": 1, "name": …, "address": …, "class_of_device": …}`, the device beside the sender's radio. Sent when the path opens, when the half is started and when the identity changes |
+| 1 | `HELLO` | JSON: `{"version": 2, "name": …, "address": …, "class_of_device": …}`, the device beside the sender's radio. Sent when the path opens, when the half is started and when the identity changes |
 | 2 | `L2CAP` | A 2-byte big-endian channel id, then one L2CAP PDU the sender's device said |
-| 3 | `HANGUP` | Nothing: the sender's device hung up its link |
+| 3 | `HANGUP` | Nothing: the sender's link to its device is gone |
 | 4 | `BYE` | Nothing: the sender is being stopped |
+| 5 | `LINK` | JSON: `{"by": "device" \| "bridge"}`: the sender has a link to its device, and who opened it |
+| 6 | `PAIRING` | JSON: `{"state": "started" \| "complete" \| "failed" \| "unavailable", "reason": …}`: where the sender is with making its link secure. `unavailable`: it cannot call its device (no address) |
 
-What is not a record of this kind closes the path; the exporters open it again.
+What is not a record closes the path; the exporters open it again. A kind that is not known is ignored. A half
+that says version 1 knows kinds 1 to 4 only: it is passed on to as before, and its pairing is not waited for.
 
 ### Identity
 
-A half has to be told what the device of its own radio is on the air: its Bluetooth **name**, its **class of
-device** and its own **address**. The far half carries the name and the class; the address is where this half
-calls the device, and is reported to a test by `peer()` on the far side.
+A half has to say what the device of its own radio is on the air: its Bluetooth **name**, its **class of
+device** and its own **address**. The far half carries the name and the class, so that is what the other
+device lists; the address is where this half calls the device, and is reported by `peer()` on the far side.
 
-They come from the exporter's configuration, so that the bridge is whole without a test:
+**Asked of the device itself.** With `identity_from`, the driver asks the device, and goes on asking:
 
-- `name` and `class_of_device` are what the other device shows when it looks for devices to pair with.
-- `address` is needed for a device that is *called*: when the far device is the one a person pairs from, this
-  half has to call its own device, and it can only call an address. Without one the half learns the address
-  the first time its device calls, and until then what the far device says is held. So give the address of
-  every device that is not always the one to start.
+```yaml
+config:
+  identity_from:
+    adb: 127.0.0.1:6520 # the Android device, as the exporter's ADB server knows it
+```
 
-The driver cannot ask its radio who the device is. On the HCI port it is a controller of its own, with its own
-address and name; the device beside it is another station on the air, which answers a search only while its
-own pairing screen is open. A test that has asked the device (over ADB, say) may still say what it found:
+It runs `adb shell` on the exporter (the ADB server of the exporter's `AdbDevice` driver, port 15037, unless
+`server_port` says otherwise) and reads the name and state from `dumpsys bluetooth_manager`, the address from
+`settings --user 0 get secure bluetooth_address` and the class from the `bluetooth.device.class_of_device`
+property. It starts with the lease, before the device is even powered on, and asks every `interval` seconds
+(10) and again after a call to the device failed: a device that boots, is renamed, or has its Bluetooth
+switched off and on is followed without a test. A change is said to the far half, which takes the new name in
+its radio without leaving it: a link that is up stays up. While the device says its Bluetooth is off, it is
+not called.
+
+With that on both exporters, each device lists the other under its real name, and either can start a pairing,
+with no test code.
+
+**From the configuration.** `name`, `class_of_device` and `address` are what is said until the device has
+answered, and all there is without `identity_from`. Without an address a half cannot call its device, and
+learns the address the first time the device calls.
+
+**Over the radio.** For a physical device beside a real controller there is nothing to ask but the device, on
+the air: with `learn_name` (the default of `ControllerBluetooth`), a device that has linked is asked its name
+(an HCI remote name request), and the far half carries that instead of the configured one.
+
+**Said by a test.** `set_identity` says it outright. What is said so stays said, whatever the device is found
+to say later:
 
 ```python
-phone.bluetooth.set_identity(name="Pixel 9", address="DA:4C:10:DE:17:00", class_of_device=0x5A020C)
+phone.bluetooth.set_identity(name="The phone under test")
 ```
 
 A persona cannot carry the far device's *address*: in a radio, the half has the address of its own controller.
@@ -340,9 +401,10 @@ export:
   bluetooth:
     type: jumpstarter_driver_radio.bluetooth.RootcanalBluetooth
     config:
-      name: Cuttlefish phone
+      name: Cuttlefish phone # until the device has said its own
       class_of_device: 0x5A020C
-      address: "DA:4C:10:DE:17:00"
+      identity_from:
+        adb: 127.0.0.1:6520
 ```
 
 | Parameter | Description | Type | Default |
@@ -350,6 +412,10 @@ export:
 | `name` | The Bluetooth name of the device of this radio | str | `Jumpstarter device` |
 | `address` | The device's own Bluetooth address. Empty: learned when the device calls | str | `""` |
 | `class_of_device` | The device's class of device (`0x5A020C` a phone, `0x200408` a car's audio) | int | `0x001F00` |
+| `identity_from` | Where to ask the device who it is: `{adb: <serial or host:port>}`, with `server_port` (15037), `adb_path` (`adb`), `interval` (10) and `timeout` (15) | dict | |
+| `learn_name` | Ask a device that has linked for its name over the radio | bool | `false` (`true` for `ControllerBluetooth`) |
+| `call_timeout` | Seconds a call to the device may take | float | `8.0` |
+| `pair_timeout` | Seconds the device that started a pairing is kept waiting for the other to agree | float | `25.0` |
 | `host`, `port` | The radio's HCI port, H4 over TCP | str, int | `127.0.0.1`, `7300` |
 | `transport` | Any bumble transport instead of `host` and `port`, for example `hci-socket:0` | str | |
 | `retry` | Seconds before a radio that is not there, or went away, is looked for again | float | `2.0` (`5.0` for `ControllerBluetooth`) |
@@ -364,9 +430,21 @@ gateway offers, or the controller itself (`transport: hci-socket:0`, which needs
 controller that nothing else uses). The half is on real air under the far device's name. A gateway that
 serves one host at a time is held from `start` to `stop`.
 
-`status()` adds `on_air` (the half is in the radio under the far device's name), `persona` (that name),
-`linked` and `encrypted` (its link to the device of this radio), `heard` (what that device said and was passed
-on), `sent` (what it was told), `held`, `dropped` and `error`.
+`status()` adds:
+
+| Field | Meaning |
+| --- | --- |
+| `on_air`, `persona` | The half is in the radio, and the name it carries there |
+| `state` | `off`, `idle`, `calling`, `linked`, `pairing` or `secure`: the half's link to its device |
+| `linked`, `calling`, `pairing`, `encrypted` | The same as flags; `opened_by` is `device` or `bridge` |
+| `bonded` | A key is kept here for the device |
+| `paired` | Both devices have a secure link to the bridge: the conversation is whole |
+| `far` | What the far half says of its own link: `{"link": …, "pairing": …}` |
+| `last_error` | Why the last call or pairing failed; empty once a link is good again |
+| `call_backoff` | Seconds before the device is called again after a call that failed |
+| `device_up`, `identity_source` | What the identity source says: the device's Bluetooth is on; whether it answers |
+| `heard`, `sent`, `held`, `dropped`, `calls`, `pairings` | Counts: what the device said and was passed on, what it was told, … |
+| `error` | Trouble with the radio's HCI port or the path |
 
 ### Usage
 
@@ -377,8 +455,11 @@ device's own settings, as a person would. What a test may want besides:
 phone = members.phone.bluetooth
 phone.wait_until_joined()  # returns once the far half is on the path (the radio is started already)
 phone.peer()  # BluetoothIdentity(name="Head Unit", ...): whose name is carried here
-# ... pair from either device's own settings ...
-phone.status()  # {"linked": True, "encrypted": True, "heard": 212, "sent": 198, ...}
+# ... pair from either device's own settings, and agree on both ...
+phone.wait_until_paired(timeout=60)  # both devices have a secure link to the bridge
+phone.status()  # {"state": "secure", "paired": True, "bonded": True, "heard": 212, "sent": 198, ...}
+# ... forget the pairing on a device, restart its Bluetooth ...
+phone.wait_until_idle()  # nothing is in flight: no call, no pairing
 phone.stop()  # out of each other's reach; phone.start() brings it back
 ```
 

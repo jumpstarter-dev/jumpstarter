@@ -41,11 +41,12 @@ async def until(what, timeout: float = 10):
 class Bridged:
     """A phone and a head unit, each in a radio of its own with a bridge half."""
 
-    def __init__(self, phone: BluetoothIdentity = PHONE, head_unit: BluetoothIdentity = HEAD_UNIT) -> None:
+    def __init__(self, phone: BluetoothIdentity = PHONE, head_unit: BluetoothIdentity = HEAD_UNIT, **half) -> None:
         self.phone_air = Air(PHONE, IN_PHONES_RADIO)
         self.head_unit_air = Air(HEAD_UNIT, IN_HEAD_UNITS_RADIO)
-        self.beside_phone = BridgeHalf(open_radio=self.phone_air.open_radio, identity=phone, retry=0.05)
-        self.beside_head_unit = BridgeHalf(open_radio=self.head_unit_air.open_radio, identity=head_unit, retry=0.05)
+        half.setdefault("retry", 0.05)
+        self.beside_phone = BridgeHalf(open_radio=self.phone_air.open_radio, identity=phone, **half)
+        self.beside_head_unit = BridgeHalf(open_radio=self.head_unit_air.open_radio, identity=head_unit, **half)
         self.received = Inbox()
 
     async def power_on(self) -> None:
@@ -73,6 +74,11 @@ class Bridged:
             channel.send_pdu(b"hello")
             assert await self.received.get() == b"hello"
             assert await answers.get() == b"HELLO"
+
+
+def kept(half: BridgeHalf) -> list[bytes]:
+    """The link keys a half has kept."""
+    return [keys.link_key.value for keys in half.keys.all_keys.values() if keys.link_key is not None]
 
 
 @asynccontextmanager
@@ -112,7 +118,7 @@ def test_records_are_length_prefixed_and_survive_any_chunking():
         buffer.append(byte)
         found += list(records(buffer))
     assert [kind for kind, _ in found] == [HELLO, L2CAP, HANGUP, BYE]
-    assert read_hello(found[0][1]) == PHONE
+    assert read_hello(found[0][1]) == (PHONE, 2)
     assert found[1][1] == b"\x00\x40payload"
     assert not buffer
 
@@ -224,23 +230,22 @@ async def test_a_device_that_forgot_its_pairing_is_paired_with_anew():
 
         # The head unit starts: the half beside the phone calls the phone and pairs with it. Both keep a key.
         await head_unit_uses_a_service_of_the_phone(bridged)
-        phones_keys = bridged.phone_air.device.keystore
-        (first,) = [keys.link_key.value for _, keys in await beside_phone.keys.get_all()]
-        assert [keys.link_key.value for _, keys in await phones_keys.get_all()] == [first]
+        (first,) = kept(beside_phone)
+        assert bridged.phone_air.keys() == [first]
 
         # Called again, the phone is authenticated with that key: nobody pairs twice.
         await head_unit_uses_a_service_of_the_phone(bridged)
-        assert [keys.link_key.value for _, keys in await beside_phone.keys.get_all()] == [first]
+        assert kept(beside_phone) == [first]
 
         # The phone is made to forget its pairings (a factory reset of its Bluetooth). The half still has
         # the key, and the phone refuses a link authenticated with it. The half forgets the key too, calls
         # again and pairs anew; what the head unit said meanwhile is not lost, and the head unit is not hung
         # up on.
-        await phones_keys.delete_all()
+        bridged.phone_air.forget()
         await head_unit_uses_a_service_of_the_phone(bridged)
-        (second,) = [keys.link_key.value for _, keys in await beside_phone.keys.get_all()]
+        (second,) = kept(beside_phone)
         assert second != first
-        assert [keys.link_key.value for _, keys in await phones_keys.get_all()] == [second]
+        assert bridged.phone_air.keys() == [second]
         assert beside_phone.status()["dropped"] == 0 and not beside_phone.recalling
 
 
@@ -254,7 +259,8 @@ async def test_a_link_that_cannot_be_made_secure_is_hung_up():
 
     async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
         await until(lambda: beside_phone.device and beside_head_unit.device)
-        beside_phone.device.authenticate = refuse
+        assert beside_phone.device is not None
+        beside_phone.device.authenticate = refuse  # ty: ignore[invalid-assignment]
         called = []
         bridged.phone_air.device.on("connection", called.append)
         link = await bridged.head_unit_air.device.connect(
@@ -356,3 +362,44 @@ async def test_what_is_not_a_bridge_at_the_far_end_closes_the_path():
         with anyio.fail_after(5), pytest.raises(anyio.EndOfStream):
             await path.receive()
         assert "not understood" in half.status()["error"]
+
+
+async def test_a_device_that_is_renamed_is_carried_under_its_new_name_without_leaving_the_radio():
+    bridged = Bridged()
+    await bridged.power_on()
+    beside_phone, beside_head_unit = bridged.beside_phone, bridged.beside_head_unit
+    in_head_units_radio = bridged.head_unit_air.bridge_controller
+    async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
+        await until(lambda: beside_phone.device and beside_head_unit.device)
+        link = await bridged.phone_calls()
+        await bridged.phone_uses_the_service(link)
+        assert in_head_units_radio.local_name == "Phone"
+
+        # The phone is found to be called something else (its exporter asked it, or somebody renamed it).
+        beside_phone.learn(name="Kirk's Pixel", class_of_device=0x5A0204)
+        await until(lambda: in_head_units_radio.local_name == "Kirk's Pixel")
+        assert in_head_units_radio.class_of_device == 0x5A0204
+        assert beside_head_unit.status()["persona"] == "Kirk's Pixel"
+        # The half in the head unit's radio is the same device as before: its link to the head unit is up.
+        assert len(bridged.head_unit_air.ports) == 1 and beside_head_unit.secure()
+        await bridged.phone_uses_the_service(link)
+
+        # What was said outright is not replaced by what is learned.
+        beside_phone.set_identity(beside_phone.identity.model_copy(update={"name": "Phone"}), pinned={"name"})
+        await until(lambda: in_head_units_radio.local_name == "Phone")
+        beside_phone.learn(name="Something else", address="")
+        assert beside_phone.identity.name == "Phone"
+
+
+async def test_a_device_nothing_can_be_asked_about_is_asked_its_name_over_the_radio():
+    # Beside a physical device there is a controller and nothing else: the configured name is a guess.
+    bridged = Bridged(phone=PHONE.model_copy(update={"name": "Bench tablet", "address": ""}), learn_name=True)
+    await bridged.power_on()
+    beside_phone, beside_head_unit = bridged.beside_phone, bridged.beside_head_unit
+    async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
+        await until(lambda: beside_phone.device and beside_head_unit.device)
+        assert bridged.head_unit_air.bridge_controller.local_name == "Bench tablet"
+        await bridged.phone_calls()
+        # It called: its address is known, and it says what it is called.
+        await until(lambda: beside_phone.identity == PHONE)
+        await until(lambda: bridged.head_unit_air.bridge_controller.local_name == "Phone")

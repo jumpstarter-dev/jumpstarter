@@ -16,7 +16,8 @@ export:
   # Bluetooth: one half of a bridge, on the real controller. Port `bluetooth` (connects, bt-l2cap-bridge).
   # In the controller's radio the half carries the name of the device at the other end of the forward: the
   # tablet finds that name when it looks for devices to pair with. `name`, `address` and `class_of_device`
-  # are the tablet's own, as the far half is to carry them in its radio.
+  # are the tablet's own, as the far half is to carry them in its radio. There is no asking a tablet who it
+  # is but over the radio: once it has linked, it is asked its name, which then replaces `name` (`learn_name`).
   bluetooth:
     type: jumpstarter_driver_radio.bluetooth.ControllerBluetooth
     config:

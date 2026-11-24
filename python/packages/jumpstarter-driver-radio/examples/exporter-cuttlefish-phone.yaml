@@ -27,13 +27,14 @@ export:
     config:
       port: 7310
   # Bluetooth: one half of a bridge, on the virtual radio's HCI port. Port `bluetooth` (connects,
-  # bt-l2cap-bridge). It runs from the start of the lease. `name` and `class_of_device` are what the other
-  # device shows for this one; `address` is this device's own Bluetooth address, where the half calls it when
-  # the other device is the one that starts (leave it out for a device that always starts itself).
+  # bt-l2cap-bridge). It runs from the start of the lease, and asks the device itself who it is (over the
+  # ADB server of `android` above): the other device lists this one under its real name, and either can
+  # start a pairing. `name` and `class_of_device` are what is said until the device has booted.
   bluetooth:
     type: jumpstarter_driver_radio.bluetooth.RootcanalBluetooth
     config:
       name: Cuttlefish phone
       class_of_device: 0x5A020C # a smartphone
-      address: "DA:4C:10:DE:17:00" # the phone's own: Settings, About phone, Bluetooth address
+      identity_from:
+        adb: 127.0.0.1:6520 # the device itself says its name, address and class
       port: 7300 # --hci_port: 7300 + instance_num - 1
