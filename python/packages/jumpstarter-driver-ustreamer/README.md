@@ -84,8 +84,8 @@ Usage: j video stream [OPTIONS]
 
   Start local MJPEG streaming server
 
-  Proxies the source's native MJPEG stream through the jumpstarter tunnel. Frame
-  rate is controlled by the video source.
+  Proxies the source's native MJPEG stream through the jumpstarter tunnel.
+  Frame rate is controlled by the video source.
 
 Options:
   -p, --port INTEGER        Local server port (0 = auto)

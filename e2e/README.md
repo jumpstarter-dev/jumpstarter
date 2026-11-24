@@ -109,7 +109,7 @@ restarting the exporter.
 
 ## Lane: `direct-listener` (`direct_listener_test.go`)
 
-Prereq: no controller/lease needed — exporter runs standalone with `jmp run --listen`
+Prereq: no controller/lease needed — exporter runs standalone with `jmp run --tls-grpc-listener`
 on port 19090; each test starts its own process against a config in `e2e/exporters/`.
 
 | Test Name | Prerequisite | Steps | Pass Check |
@@ -142,7 +142,7 @@ offering the `dut-network` driver (nftables NAT/masquerade + DHCP/DNS). CI insta
 | should show active NAT rules | `j dut-network nat-rules` | contains "masquerade" and nft table `jumpstarter_jmp_vhost` |
 | should allow DUT to reach external via NAT | ping from DUT netns to ext IP `10.99.0.1` | ping succeeds (`Eventually`) |
 | should return error for unknown MAC | `j dut-network get-ip ff:ff:ff:ff:ff:ff` | errors; "No lease found" |
-| should add and remove an address entry via CLI | `add-address 192.168.200.99 --mac 02:00:00:00:00:99` then `remove-address` | "Added" then "Removed" |
+| should add and remove an address entry via CLI | `add-address 192.168.200.99 --mac 02:00:00:00:00:99 -n e2e-test` then `remove-address` | "Added" then "Removed" |
 | should add, list, and remove DNS entries via CLI | `add-dns e2e-test.lab.local 10.0.0.42`, `dns-entries`, `remove-dns`, `dns-entries` | entry appears then disappears |
 | should allow TCP connections from DUT to external via NAT | start Python TCP echo in ext ns, connect from DUT ns via NAT | client receives "E2E_OK" |
 | should allow TCP from DUT via VLAN PBR | create `jmp-vext.100` with `10.100.0.1/24` in ext ns; `add-address 192.168.200.50 --vlan-id 100 --public-ip 10.100.0.50 --public-gateway 10.100.0.1`; add DUT IP; TCP from `192.168.200.50` to `10.100.0.1` | client receives "E2E_OK" |
@@ -191,7 +191,7 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 |---|---|---|
 | brings an Exporter Online with a Ready Pod | wait for ExporterSet-created Exporter, wait Online/Registered/Available, wait Pod Running+Ready | Pod ready; `target-runtime` container has the expected `qemu-system-*` binary |
 | leases, flashes Alpine, and boots to a console login marker | run `qemu_flash_boot.py` under `jmp shell --duration 1h` | script output contains "OK: matched marker" |
-| power cycles QEMU then rotates the Pod/Exporter and stays responsive | record old Pod name/UID; `j qemu power on/off` inside shell, verify qemu binary is the running process; wait old Pod+Exporter deleted, one new Pod/Exporter running w/ new UID; re-run `j qemu power on/off` | ExitAndReplace produced exactly one new, ready, differently-UID'd Pod/Exporter that still answers power commands |
+| power cycles QEMU then rotates the Pod/Exporter and stays responsive | record old Pod name/UID; in one shell `j qemu power on`, verify qemu binary is the running process, `j qemu power off`; wait old Pod+Exporter deleted, one new Pod/Exporter running w/ new UID; re-run `j qemu power on && j qemu power off` | ExitAndReplace produced exactly one new, ready, differently-UID'd Pod/Exporter that still answers power commands |
 
 ---
 

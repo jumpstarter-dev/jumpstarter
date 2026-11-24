@@ -65,9 +65,7 @@ j tmt --forward-ssh ....
 j tmt --tmt-username root --tmt-password mypassword ...
 
 # Raise log level of the tmt wrapper driver
-j --log-level DEBUG tmt --root . -c tracing=off -c arch=aarch64 -c distro=rhel-9 -c hw_target=r
-car_s4 run --workdir-root /tmp/ -a -vv provision .. some other provisioning... plan -vv --name ^/podman/plans/fusa/te
-sts$
+j --log-level DEBUG tmt --root . -c tracing=off -c arch=aarch64 -c distro=rhel-9 -c hw_target=rcar_s4 run --workdir-root /tmp/ -a -vv provision .. some other provisioning... plan -vv --name ^/podman/plans/fusa/tests$
 [09/22/25 13:27:18] DEBUG    Using direct SSH connection for tmt - host: 127.0.0.1, port: 2222           client.py:64
                     DEBUG    Provision to be replaced: ('provision', '..', 'some', 'other',             client.py:117
                              'provisioning...')                                                                      

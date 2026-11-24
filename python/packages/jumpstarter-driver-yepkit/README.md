@@ -76,8 +76,10 @@ Options:
   --help                          Show this message and exit.
 
 Commands:
+  all     Generic power
   power   Generic power
   power2  Generic power
+  power3  Generic power
 
 $$ j power on
 INFO:Ykush:Power ON for Ykush YK25838 on port 1

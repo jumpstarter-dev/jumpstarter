@@ -166,7 +166,7 @@ Commands:
   connections         Show active connections.
   events              Show events since timestamp.
   pair                Authenticate and encrypt a connection.
-  pause               Suspend the stream, keeping the track and its position.
+  pause               Suspend the stream, keeping the track and its...
   play                Stream an audio file to the DUT over A2DP.
   playback            Show what is currently streaming.
   resume              Restart a stream suspended by pause.

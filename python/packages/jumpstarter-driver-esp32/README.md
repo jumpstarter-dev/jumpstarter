@@ -69,7 +69,7 @@ Commands:
   console          Start serial port console
   console-status   Show serial console session status
   pipe             Pipe serial port data to stdout or file.
-  release          Release the remote tty so another exporter-side process...
+  release          Release the remote tty so another exporter-side...
   release-console  Force-release the serial console write token
 ```
 

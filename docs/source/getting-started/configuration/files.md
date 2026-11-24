@@ -135,7 +135,7 @@ endpoint: "jumpstarter.my-lab.com:1443" # The Jumpstarter service endpoint
 token: "******************" # An authentication token
 motd: | # Optional message of the day shown to clients when they enter a shell
   Welcome to myexporter!
-  Flash the device with: j storage flash
+  Open the console with: j serial console
 statusStreamRetryTimeout: 1800 # Retry time after Status fails or ends (default: 1800s)
 exitOnLeaseEnd: false # Exit after one lease instead of waiting for the next (default: false)
 export: # Configure drivers to expose to the clients
