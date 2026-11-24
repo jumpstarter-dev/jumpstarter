@@ -39,10 +39,25 @@ for all tests the client needs to execute. Within this {term}`session`, the spec
 instances live throughout the {term}`session`'s duration, maintaining state and
 executing setup/teardown logic.
 
+The {term}`session` calls `reset()` on the root driver when it starts, and
+`shutdown()` followed by `close()` when it ends; the base `Driver`
+implementations pass each call on to the child drivers. Background work that
+should run for as long as the {term}`session` serves a driver belongs in the
+driver's `serving()` async context manager. The {term}`session` enters it for
+every driver before it accepts calls. When it stops serving, it cancels the
+work started there in a task group and waits for it to finish, before
+`shutdown()` runs. Code after the `yield` runs cancelled, so cleanup that
+awaits must shield itself. An exception raised before the `yield` makes the
+{term}`session` fail to start. If the background work fails later, the
+{term}`session` logs the error and keeps serving.
+
 On the client side, a `DriverClient` subclass is instantiated for each exported
 interface. Since clients may run on different machines than {term}`exporter`s,
-`DriverClient` classes are loaded dynamically when specified in the allowed
-packages list.
+`DriverClient` classes are loaded dynamically, and only when their class path
+matches the client's driver allow list or the client allows all drivers. A
+driver that is not allowed, or whose client package is not installed, gets a
+stub client instead, which raises an error explaining why when the driver is
+used.
 
 To maintain compatibility, avoid making breaking changes to interfaces. Add new
 methods when needed but preserve existing signatures. If breaking changes are
@@ -75,6 +90,8 @@ Some categories of drivers include:
   Provide interfaces for flashing firmware and programming devices.
 - [Emulation](../reference/package-apis/drivers/index.md#emulation):
   Manage virtual and emulated targets.
+- [Test and Measurement](../reference/package-apis/drivers/index.md#test-and-measurement):
+  Capture and decode signals, such as logic analyzer traces.
 - [Utility](../reference/package-apis/drivers/index.md#utility): Provide
   utility functions, such as shell driver commands on an {term}`exporter`.
 
@@ -134,11 +151,10 @@ export:
 
   # Virtual device drivers
   qemu:
-    type: "jumpstarter_driver_qemu.driver.QEMU"
+    type: "jumpstarter_driver_qemu.driver.Qemu"
     config:
-      image_path: "/var/lib/jumpstarter/images/vm.qcow2"
-      memory: "1G"
-      cpu_cores: 2
+      mem: "1G"
+      smp: 2
 ```
 
 ## Communication
@@ -210,10 +226,10 @@ When using {term}`distributed mode`, driver security considerations include:
 
 - **Package Verification**: Clients can verify that only trusted driver packages
   are loaded by configuring allowlists
-- **Capability Restrictions**: Access to specific driver functionality can be
-  restricted based on client permissions
-- **{term}`Session` Isolation**: Each client {term}`session` operates with its own driver
-  instances to prevent interference between users
+- **Access Policies**: [ExporterAccessPolicy](../reference/crds/exporteraccesspolicy.md)
+  resources control which clients can lease which {term}`exporter`s, and for how long
+- **{term}`Session` Isolation**: Each {term}`lease` gets its own {term}`session` with new
+  driver instances, so driver state does not carry over from one {term}`lease` to the next
 
 ## Custom Drivers
 

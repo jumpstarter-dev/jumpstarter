@@ -12,7 +12,7 @@ DUT
   Device Under Test.
 
 gRPC
-  Google Remote Procedure Call - Jumpstarter's communication framework.
+  gRPC Remote Procedure Calls - Jumpstarter's communication framework.
 
 HiL
   Hardware-in-the-Loop - testing with real hardware in the loop.
@@ -48,7 +48,7 @@ host
   Machine running the exporter, typically a single board computer.
 
 operator
-  Kubernetes operator that deploys the controller, router, and CRDs.
+  Kubernetes operator that deploys the controller, router, optional telemetry service, and CRDs.
 
 router
   Routes traffic between clients and exporters through a gRPC tunnel.
@@ -84,7 +84,7 @@ exporter shell
   Interactive shell spawned by `jmp shell` for driver CLI access.
 
 hook
-  Shell script that runs automatically at lease boundaries.
+  Script that runs automatically on the exporter at lease boundaries.
 
 label selector
   Key-value metadata for selecting exporters when leasing.

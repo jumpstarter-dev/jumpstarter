@@ -29,7 +29,10 @@ The {term}`Controller` is implemented as a Kubernetes controller using
 
 When a client requests access to an {term}`exporter` and a matching instance is found, a
 {term}`lease` is created. The {term}`lease` ensures that each lessee (client) has exclusive
-access to a specific {term}`device`/{term}`exporter`.
+access to a specific {term}`device`/{term}`exporter`. The client holding a {term}`lease`
+can share it with other clients, which can then connect to the {term}`exporter` but
+cannot change, share, transfer or release the {term}`lease`; see
+[Lease Sharing](../getting-started/guides/examples/lease-sharing.md).
 
 Clients can be scheduled to access a specific {term}`exporter` or any {term}`exporter` that
 matches a set of requested labels, similar to [node
@@ -37,12 +40,19 @@ selection](https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-no
 in Kubernetes. This enables flexible CI-driven testing even when physical
 resources are limited.
 
+An administrator can take an {term}`exporter` out of rotation without deleting it by
+setting `spec.enabled: false` on its Exporter resource. The {term}`controller` then
+assigns it no new {term}`lease`s, unless the {term}`lease` request allows disabled
+{term}`exporter`s, for example with `jmp shell --allow-disabled` or
+`jmp create lease --allow-disabled`.
+
 ## Router
 
 The {term}`router` routes traffic between clients and {term}`exporter`s through a {term}`gRPC` tunnel.
 This allows clients to reach {term}`exporter`s without public IP addresses or behind
 NATs/firewalls. Clients on the same network can also connect directly to an
-{term}`exporter`, bypassing the {term}`router`.
+{term}`exporter` in {term}`direct mode`, bypassing the {term}`controller` and the
+{term}`router`.
 
 Once a {term}`lease` is established, all traffic flows through a {term}`router` instance. While
 there may only be one {term}`controller`, the {term}`router` can be scaled with multiple
@@ -51,3 +61,17 @@ instances to handle many clients and {term}`exporter`s simultaneously.
 All communication between clients and drivers uses {term}`gRPC` with three RPC styles
 (unary, server streaming, and bidirectional streaming). See
 [Driver Communication](drivers.md#communication) for details.
+
+## Telemetry
+
+The optional telemetry service collects logs and metrics. {term}`Exporter`s and
+`jmp shell` sessions push their log entries to it. It requests metrics from each
+connected {term}`exporter` over a stream the {term}`exporter` keeps open, and publishes
+them on a Prometheus `/metrics` endpoint. Log entries go to Loki when a Loki
+endpoint is configured, and are otherwise written to the service's standard
+output as JSON.
+
+The {term}`controller` tells clients and {term}`exporter`s where to reach the telemetry
+service, and they connect to it directly rather than through the {term}`router`. See
+[Telemetry endpoints](../getting-started/installation/service/production.md#telemetry-endpoints)
+for how to enable and expose it.

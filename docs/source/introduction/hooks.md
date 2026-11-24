@@ -53,7 +53,8 @@ The {term}`exporter` transitions through these states during a {term}`lease`:
 3. **`LEASE_READY`** - The {term}`hook` succeeded and the client can now access
    drivers.
 4. **Client {term}`session`** - The client uses drivers normally.
-5. **{term}`Session` ends** - The client disconnects or the {term}`lease` is released.
+5. **{term}`Session` ends** - The client ends its {term}`session` (`jmp shell` does
+   this when it exits, for a {term}`lease` it acquired itself) or the {term}`lease` ends.
 6. **`AFTER_LEASE_HOOK`** - The `afterLease` script runs. The {term}`session` remains
    open so `j` commands can still interact with drivers.
 7. **`AVAILABLE`** - The {term}`hook` completed and the {term}`lease` is released. The
@@ -161,16 +162,24 @@ emit a prompt.
 
 ## Logging
 
-{term}`Hook` output is streamed to the client in real time. Every line written to
+{term}`Hook` output is forwarded to the client. Every line written to
 stdout or stderr by the {term}`hook` script is captured and forwarded to the client
 through the {term}`exporter`'s log stream. The `beforeLease` {term}`hook` output is tagged
 with the `BEFORE_LEASE_HOOK` log source, and `afterLease` output is tagged
-with `AFTER_LEASE_HOOK`.
+with `AFTER_LEASE_HOOK`. Every client connected while a line is written
+receives it, including clients a {term}`lease` is shared with.
+
+In {term}`distributed mode`, the {term}`exporter` routes client connections only after
+the `beforeLease` {term}`hook` has finished. Records logged while no client is
+connected are kept, at most the 256 most recent, and handed to the next client
+that connects. A client that joins while another client is already connected sees
+only output written after it joins, and any client may miss the beginning of a
+long {term}`hook`'s output.
 
 {term}`Hook`s run inside a pseudo-terminal (PTY) to force line buffering, so output
-appears on the client as each line is written rather than being held in a
+reaches a connected client as each line is written rather than being held in a
 block buffer. This means `echo` statements, `j` CLI output, and any other
-text written to the terminal will be visible immediately.
+text written to the terminal are not held back by buffering.
 
 ```{note}
 Because {term}`hook`s use a PTY, programs that detect terminal mode (such as
@@ -222,11 +231,12 @@ the client to know immediately that the {term}`device` is not ready.
 The {term}`exporter` shuts down entirely with exit code `1` (Failure):
 
 - **`beforeLease`**: The exporter status transitions to
-  `BEFORE_LEASE_HOOK_FAILED`. The {term}`exporter` then shuts down, going offline. The
-  shutdown is deferred until the client has had a chance to observe the failure
-  status.
+  `BEFORE_LEASE_HOOK_FAILED`. The {term}`exporter` then reports itself offline and
+  shuts down once the {term}`lease` ends, so the client can observe the failure
+  status first.
 - **`afterLease`**: The exporter status transitions to
-  `AFTER_LEASE_HOOK_FAILED` and the {term}`exporter` shuts down immediately.
+  `AFTER_LEASE_HOOK_FAILED` and the {term}`exporter` shuts down as soon as the
+  {term}`lease` has ended.
 
 The exit code `1` signals to service managers such as `systemd` that the shutdown
 was intentional. If your `systemd` unit uses `Restart=always`, you should
@@ -262,7 +272,7 @@ hooks:
       j power on
       echo "Waiting for SSH to become available..."
       for i in $(seq 1 30); do
-        if j ssh -o ConnectTimeout=2 - echo "Device ready"; then
+        if j ssh -o ConnectTimeout=2 echo "Device ready"; then
           exit 0
         fi
         sleep 1
@@ -303,7 +313,7 @@ hooks:
   beforeLease:
     script: |
       echo "Flashing firmware..."
-      j storage write --image /var/lib/jumpstarter/images/firmware.bin
+      j storage flash /var/lib/jumpstarter/images/firmware.bin
       j power cycle
       sleep 10
     timeout: 180
@@ -321,7 +331,7 @@ hooks:
     exec: /bin/bash
     script: |
       echo "Checking device readiness..."
-      [[ -f /dev/ttyUSB0 ]] || { echo "Serial device missing"; exit 1; }
+      [[ -c /dev/ttyUSB0 ]] || { echo "Serial device missing"; exit 1; }
       j power on
     timeout: 60
     onFailure: endLease
@@ -391,7 +401,7 @@ hooks:
   bad state poses a safety risk.
 - Reserve `onFailure: exit` for critical failures that require manual
   intervention.
-- {term}`Hook` output is streamed to the client in real time. Include informative
+- {term}`Hook` output is forwarded to the client. Include informative
   `echo` statements for observability.
 - The interpreter is auto-detected from the file extension (`.py` uses the
   {term}`exporter`'s Python, `.sh` uses `/bin/sh`). Set `exec` explicitly to

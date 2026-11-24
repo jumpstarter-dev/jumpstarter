@@ -20,7 +20,9 @@ Exporters use a YAML configuration file (exporter config) to define which Driver
 and the configuration required.
 
 Here is an example exporter config file which would typically be saved at
-`/etc/jumpstarter/exporters/demo.yaml`:
+`~/.config/jumpstarter/exporters/demo.yaml`, where `jmp config exporter create`
+puts new configs, or at `/etc/jumpstarter/exporters/demo.yaml` for a
+system-wide exporter:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -30,7 +32,7 @@ metadata:
   name: demo
 endpoint: grpc.jumpstarter.example.com:443
 token: xxxxx
-grpcConfig:
+grpcOptions:
     grpc.keepalive_time_ms: 20000
 export:
   power:
@@ -56,9 +58,13 @@ export:
     ref: "power"
 ```
 
-Note that the `grpcConfig` section supports all options documented in the [gRPC
+Note that the `grpcOptions` section supports all options documented in the [gRPC
 argument keys
 documentation](https://grpc.github.io/grpc/core/group__grpc__arg__keys.html).
+
+The optional `motd` field sets a message that clients see when they enter an
+interactive shell on the {term}`exporter`. A `beforeLease` {term}`hook` can
+append to it, see [Hooks](hooks.md#environment-variables).
 
 ### Token renewal
 
@@ -110,6 +116,21 @@ $ jmp run --exporter myexporter
 {term}`Exporter`s can also be run in a privileged container or as a `systemd` daemon. It
 is recommended to run the {term}`exporter` service in the background with auto-restart
 capabilities in case something goes wrong and it needs to be restarted.
+
+By default the {term}`exporter` waits for the next {term}`lease` when one ends. With
+`--exit-on-lease-end`, or `exitOnLeaseEnd: true` in the exporter config,
+`jmp run` exits after serving one {term}`lease` instead.
+
+On `SIGINT`, `SIGTERM` or `SIGQUIT`, `jmp run` stops without waiting for the current
+{term}`lease` to end. On `SIGHUP`, it waits for the current {term}`lease` to end, and
+stops right away when no {term}`lease` is active. It then exits with status 128 plus the
+signal number.
+
+When its standard error is not a terminal, as under a service manager, `jmp run`
+writes its logs as one JSON object per line, and as readable text otherwise.
+`jmp --log-format json run` or `jmp --log-format text run` selects the format
+explicitly. While a {term}`lease` is active, log lines include the {term}`lease` name and
+any context the {term}`lease` was created with (`jmp create lease --context key=value`).
 
 ## Lifecycle Hooks
 
