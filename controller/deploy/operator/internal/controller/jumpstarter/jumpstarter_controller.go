@@ -1301,6 +1301,7 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 	auth := config.Authentication{
 		JWT: resolvedJWT,
 	}
+	auth.Internal.AllowStoredTokenFallback = jumpstarter.Spec.Authentication.Internal.AllowStoredTokenFallback
 
 	// Internal authentication
 	if jumpstarter.Spec.Authentication.Internal.Enabled {

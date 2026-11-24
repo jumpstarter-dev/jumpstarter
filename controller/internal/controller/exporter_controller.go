@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 )
 
@@ -46,6 +47,7 @@ const (
 
 // ExporterReconciler reconciles a Exporter object
 type ExporterReconciler struct {
+	DisableLegacyTokenAuthentication bool
 	client.Client
 	Scheme   *runtime.Scheme
 	Signer   *oidc.Signer
@@ -84,6 +86,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	prevRegistered := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeRegistered))
 	prevCredential := exporter.Status.Credential
 	prevExpiry := tokenExpiringCondition(&exporter)
+	prevUpdateRequired := meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeCredentialUpdateRequired))
 
 	warningThreshold, err := r.reconcileStatusCredential(ctx, &exporter)
 	if err != nil {
@@ -111,6 +114,10 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	// Emit only after status patch succeeds.
+	if !prevUpdateRequired && meta.IsStatusConditionTrue(exporter.Status.Conditions, string(jumpstarterdevv1alpha1.ExporterConditionTypeCredentialUpdateRequired)) {
+		r.emitEventf(&exporter, corev1.EventTypeWarning, "CredentialUpdateRequired",
+			"Signing key changed; update the local token from Secret %s and reconnect", exporter.CredentialSecretName())
+	}
 	if prevCredential == nil && exporter.Status.Credential != nil {
 		r.emitEventf(&exporter, corev1.EventTypeNormal, "CredentialCreated",
 			"Credential secret created for exporter: secret=%s", exporter.Status.Credential.Name)
@@ -173,18 +180,46 @@ func (r *ExporterReconciler) reconcileStatusCredential(
 	secret, expiry, err := ensureSecret(ctx, client.ObjectKey{
 		Name:      exporter.CredentialSecretName(),
 		Namespace: exporter.Namespace,
-	}, r.Client, r.Scheme, r.Signer, exporter.InternalSubject(), exporter, r.markExpiredCredential)
+	}, r.Client, r.Scheme, r.Signer, exporter.InternalSubject(), exporter, r.DisableLegacyTokenAuthentication, r.markExpiredCredential)
 	if err != nil {
 		return 0, fmt.Errorf("reconcileStatusCredential: failed to prepare credential for exporter: %w", err)
 	}
 	exporter.Status.Credential = &corev1.LocalObjectReference{
 		Name: secret.Name,
 	}
+	updateCondition := string(jumpstarterdevv1alpha1.ExporterConditionTypeCredentialUpdateRequired)
 	conditionType := string(jumpstarterdevv1alpha1.ExporterConditionTypeTokenExpiring)
 	if exporter.Spec.Username != nil {
+		if _, ok := secret.Annotations[credentialUpdateAnnotation]; ok {
+			original := client.MergeFromWithOptions(secret.DeepCopy(), client.MergeFromWithOptimisticLock{})
+			delete(secret.Annotations, credentialUpdateAnnotation)
+			if err := r.Patch(ctx, secret, original); err != nil {
+				return 0, err
+			}
+		}
 		exporter.Status.TokenExpiresAt = nil
 		meta.RemoveStatusCondition(&exporter.Status.Conditions, conditionType)
+		meta.RemoveStatusCondition(&exporter.Status.Conditions, updateCondition)
 		return tokenExpiryWarningThreshold, nil
+	}
+	if secret.Annotations[credentialUpdateAnnotation] != "" || meta.IsStatusConditionTrue(exporter.Status.Conditions, updateCondition) {
+		if exporter.Annotations[AuthenticatedTokenHashAnnotation] == TokenHash(string(secret.Data[TokenKey])) {
+			original := client.MergeFromWithOptions(secret.DeepCopy(), client.MergeFromWithOptimisticLock{})
+			delete(secret.Annotations, authentication.LegacyTokenHashAnnotation)
+			delete(secret.Annotations, credentialUpdateAnnotation)
+			if err := r.Patch(ctx, secret, original); err != nil {
+				return 0, err
+			}
+			meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+				Type: updateCondition, Status: metav1.ConditionFalse, ObservedGeneration: exporter.Generation,
+				Reason: "CredentialUpdated", Message: "Exporter authenticated with the replacement credential",
+			})
+		} else {
+			meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
+				Type: updateCondition, Status: metav1.ConditionTrue, ObservedGeneration: exporter.Generation,
+				Reason: "SigningKeyChanged", Message: fmt.Sprintf("Update the local token from Secret %s and reconnect", secret.Name),
+			})
+		}
 	}
 	warningThreshold := tokenExpiryWarningThreshold
 	lifetime, err := r.Signer.TokenLifetime(string(secret.Data[TokenKey]))

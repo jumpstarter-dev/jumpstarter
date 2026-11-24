@@ -331,6 +331,7 @@ class StatusResponse(google.protobuf.message.Message):
     CONTEXT_FIELD_NUMBER: builtins.int
     LEASE_HOOKS_FIELD_NUMBER: builtins.int
     LEASE_UID_FIELD_NUMBER: builtins.int
+    TOKEN_ROTATION_ADVISED_FIELD_NUMBER: builtins.int
     leased: builtins.bool
     """Whether the exporter is currently leased."""
     lease_name: builtins.str
@@ -339,6 +340,10 @@ class StatusResponse(google.protobuf.message.Message):
     """Name of the connected client, if any."""
     lease_uid: builtins.str
     """UID of the active lease, if any. Tells it apart from an earlier lease with the same name."""
+    token_rotation_advised: builtins.bool
+    """The exporter should call RotateToken now, even before its expiry-based renewal window.
+    Advisory only: RotateToken still authenticates the credential and enforces eligibility.
+    """
     @property
     def context(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """User-defined lease context metadata."""
@@ -356,9 +361,10 @@ class StatusResponse(google.protobuf.message.Message):
         context: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         lease_hooks: Global___LeaseHooks | None = ...,
         lease_uid: builtins.str | None = ...,
+        token_rotation_advised: builtins.bool = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "_lease_uid", b"_lease_uid", "client_name", b"client_name", "lease_hooks", b"lease_hooks", "lease_name", b"lease_name", "lease_uid", b"lease_uid"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "_lease_uid", b"_lease_uid", "client_name", b"client_name", "context", b"context", "lease_hooks", b"lease_hooks", "lease_name", b"lease_name", "lease_uid", b"lease_uid", "leased", b"leased"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_client_name", b"_client_name", "_lease_name", b"_lease_name", "_lease_uid", b"_lease_uid", "client_name", b"client_name", "context", b"context", "lease_hooks", b"lease_hooks", "lease_name", b"lease_name", "lease_uid", b"lease_uid", "leased", b"leased", "token_rotation_advised", b"token_rotation_advised"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_client_name", b"_client_name"]) -> typing.Literal["client_name"] | None: ...
     @typing.overload

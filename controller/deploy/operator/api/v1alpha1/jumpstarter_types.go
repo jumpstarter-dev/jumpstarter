@@ -710,6 +710,11 @@ type InternalAuthConfig struct {
 	// After this duration, tokens expire and must be renewed.
 	// +kubebuilder:default="43800h"
 	TokenLifetime *metav1.Duration `json:"tokenLifetime,omitempty"`
+
+	// Allow exact stored credentials during signing-key migrations.
+	// Set to false after clients and exporters have adopted their replacement tokens.
+	// When omitted, uses the controller's current default (true).
+	AllowStoredTokenFallback *bool `json:"allowStoredTokenFallback,omitempty"`
 }
 
 // K8sAuthConfig defines Kubernetes service account authentication.
