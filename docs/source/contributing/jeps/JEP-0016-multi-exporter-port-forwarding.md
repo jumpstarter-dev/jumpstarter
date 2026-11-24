@@ -1352,8 +1352,8 @@ these rules:
   local side does not open, the end closes the stream and sends no frame.
 - A path end that listens waits 20 seconds for a local client. If none
   connects, it closes the stream and sends no frame.
-- The initiator of a path increases the delay between its tries, to a
-  maximum of 30 seconds, when a path stays open for less than 5 seconds.
+- When a path stays open for less than 5 seconds, the initiator increases
+  the delay before its subsequent try. The maximum delay is 30 seconds.
 
 These rules apply after an interruption:
 
