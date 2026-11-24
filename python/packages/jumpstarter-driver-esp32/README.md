@@ -37,7 +37,7 @@ export:
 | Parameter | Description                          | Type | Required | Default       |
 | --------- | ------------------------------------ | ---- | -------- | ------------- |
 | baudrate  | Baud rate for esptool communication  | int  | no       | 115200        |
-| chip      | Target chip type                     | str  | no       | esp32         |
+| chip      | Not used; esptool detects the chip   | str  | no       | esp32         |
 
 The ESP32 driver requires a `serial` child driver (PySerial) for serial port
 access. DTR/RTS control signals and the serial port path are managed through
@@ -56,7 +56,7 @@ Usage: j storage [OPTIONS] COMMAND [ARGS]...
 Commands:
   bootloader  Enter download mode
   chip-info   Get chip info (name, features, MAC)
-  dump        Dump flash content to file
+  dump        Dump image from DUT to file
   erase       Erase entire flash
   flash       Flash firmware to ESP32
   reset       Hard reset the chip
@@ -65,8 +65,12 @@ $ j serial
 Usage: j serial [OPTIONS] COMMAND [ARGS]...
 
 Commands:
-  console        Start serial port console
-  pipe           Pipe serial port data to stdout or file
+  acquire          Re-acquire the remote tty previously released.
+  console          Start serial port console
+  console-status   Show serial console session status
+  pipe             Pipe serial port data to stdout or file.
+  release          Release the remote tty so another exporter-side process...
+  release-console  Force-release the serial console write token
 ```
 
 ### CLI usage

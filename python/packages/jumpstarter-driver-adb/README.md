@@ -264,9 +264,9 @@ whatever it chose. Nothing on the exporter has to be kept clear of a guessed ran
 CI job that ran `j adb shell`, `j adb logcat`, `j adb install` and so on needs updating —
 see the table below. Nothing else about the CLI or the config is source-incompatible.
 
-**Exporter configs need no changes.** `adb_path`, `host`, `port` (still 15037) and
-`connect_timeout` keep their names, types and defaults. `adopt_existing_server` is new and
-defaults to `true`.
+**Exporter configs need no changes.** `adb_path`, `host` and `port` (still 15037) keep
+their names, types and defaults. `connect_timeout` (default 30 seconds) and
+`adopt_existing_server` (default `true`) are new.
 
 Three behaviors changed, all in the safer direction:
 
@@ -287,13 +287,14 @@ CLI; it gives you an address and you use your own adb:
 | Before | Now |
 | --- | --- |
 | `j adb devices` | unchanged |
-| `j adb shell`, `j adb logcat`, any other passthrough | `j <device>.adb connect`, then your own `adb -s <address> shell` |
-| pointing tools at the exporter's whole server | `j adb serve`, then export the printed `ANDROID_ADB_SERVER_*` variables |
+| `j adb shell`, `j adb logcat`, any other passthrough | `j <device> connect`, then your own `adb -s <address> shell` |
+| `j adb tunnel`, pointing tools at the exporter's whole server | `j adb serve`, then export the printed `ANDROID_ADB_SERVER_*` variables |
 
 **Drivers that embed `AdbServer`** — such as the Cuttlefish and Android emulator drivers —
-need no changes. `start_server`, `kill_server`, `connect_device`, `disconnect_device`,
-`list_devices` and `adb_env` keep their signatures and their failure behavior. The only
-difference to be aware of is that `close()` may now leave the server running.
+need no changes. `start_server`, `kill_server` and `list_devices` keep their signatures, and
+`connect_device`, `disconnect_device` and `adb_env` are new. Two differences to be aware of:
+`close()` may now leave the server running, and `start_server` and `kill_server` raise
+`RuntimeError` when adb fails or times out, where they used to log the error and return.
 
 ## Usage
 
@@ -342,7 +343,7 @@ connected as 127.0.0.1:41000
 Your ADB server now lists it; use it with:  adb -s 127.0.0.1:41000 shell
 Android Studio will list it too.
 
-Press Ctrl+C to detach
+Press Ctrl+C to disconnect
 ```
 
 Leave it running for as long as you want the device available. Then, in another
@@ -439,7 +440,8 @@ Appium uses the exporter's shared ADB server. Every session is pinned to the
 device's serial (or `host:port` for `transport: tcp`) and to that server, with
 `appium:suppressKillServer` fixed on so Appium never kills a server other drivers
 share. `appium:avd`, `appium:avdArgs`, `appium:avdEnv` and `appium:remoteAdbHost`
-are rejected. The options are described in {doc}`appium`.
+are rejected. The `appium` block accepts `executable`, `home`, `capabilities`, `env`,
+`startup_timeout` and `max_upload_bytes`, described in {doc}`appium`.
 
 ```python
 from appium import webdriver
@@ -548,16 +550,15 @@ export `ANDROID_ADB_SERVER_PORT`.
 ### Python API
 
 Drive a device programmatically with [`adbutils`](https://github.com/openatx/adbutils)
-against the endpoint, no CLI involved:
+once `connect()` has added it to your local ADB server. The endpoint itself speaks to the
+device's adbd, not to an ADB server, so `adbutils.AdbClient` cannot be pointed at it:
 
 ```python
 # Requires: pip install jumpstarter-driver-adb[python-api]
 import adbutils
 
-with client.phone.serve() as target:
-    host, port = target.rsplit(":", 1)
-    adb = adbutils.AdbClient(host=host, port=int(port))
-    print(adb.device().prop.model)
+with client.phone.connect() as target:
+    print(adbutils.adb.device(serial=target).prop.model)
 ```
 
 ### Connecting the exporter's server to a networked device
@@ -573,14 +574,16 @@ For a networked device you want in *your* ADB server, prefer an `AdbDevice` with
 
 ## CLI
 
-### Per-device (`j <device>.adb ...`)
+### Per-device (`j <device> ...`)
+
+`<device>` is the `AdbDevice`'s name in the exporter config, such as `phone` above.
 
 | Usage | Description |
 | --- | --- |
-| `j <device>.adb connect` | Add this device to your own ADB server; holds until Ctrl+C |
-| `j <device>.adb serve` | Serve the device's adbd at a local address; holds until Ctrl+C |
-| `j <device>.adb info` | Show the device's transport, selector and whether it is present |
-| `j <device>.adb appium` | With `appium` configured: the device's Appium endpoint; see [Appium](#appium) |
+| `j <device> connect` | Add this device to your own ADB server; holds until Ctrl+C |
+| `j <device> serve` | Serve the device's adbd at a local address; holds until Ctrl+C |
+| `j <device> info` | Show the device's transport, selector and whether it is present |
+| `j <device> appium` | With `appium` configured: the device's Appium endpoint; see [Appium](#appium) |
 
 Options for `connect` and `serve`:
 

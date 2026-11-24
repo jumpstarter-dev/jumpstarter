@@ -56,6 +56,8 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  info           Get target information
-  console        Start BLE console
+  console  Start BLE console
+  info     Get target information
 ```
+
+`start-console` is still accepted as an alias for `console`.

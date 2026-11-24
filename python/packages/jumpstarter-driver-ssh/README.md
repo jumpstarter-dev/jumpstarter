@@ -68,7 +68,7 @@ The driver supports multiple ways to specify the username:
 1. **`-l username` flag**: Explicit username specification (takes precedence)
 2. **Default username**: Used when no username is specified in arguments
 
-If no `-l` flag or `user@hostname` format is provided, the default username from the driver configuration will be used automatically.
+If no `-l` flag is provided, the default username from the driver configuration will be used automatically. The client adds the host itself, so a `user@hostname` argument is not treated as a login; it becomes part of the remote command.
 
 ## API Reference
 
@@ -86,6 +86,8 @@ If no `-l` flag or `user@hostname` format is provided, the default username from
 | ---------------- | ---------------------------------------------------------------------------------------------- | ---- | -------- | ------------------------------------------------------------------------------------------ |
 | default_username | Default SSH username to use when no username is specified in the command                      | str  | no       | ""                                                                                         |
 | ssh_command      | SSH command to use for connections                                                             | str  | no       | "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"      |
+| ssh_identity     | SSH private key content, written to a temporary file (mode 600) on the client and passed with `-i` | str | no  | None                                                                                       |
+| ssh_identity_file | Path to an SSH private key file on the exporter, read on first use. Cannot be combined with `ssh_identity` | str | no | None                                                                                |
 
 ### Required Children
 

@@ -222,11 +222,12 @@ and fills the gap:
 
 - `appium:app`, `appium:otherApps` and `mobile: installApp` take tokens from
   `target.upload_app()` (an `.ipa`, a zipped `.app` or an `.app` bundle built
-  for devices). The gateway installs them with `xcrun devicectl`, removing an
-  installed copy first unless you ask for `appium:noReset`, as Appium does,
-  and starts `appium:app` by its bundle identifier. Tokens from
-  `ios.appium.upload_app()` belong to the exporter's Appium and do not work
-  here.
+  for devices). The gateway installs them with `xcrun devicectl` and starts
+  `appium:app` by its bundle identifier. It removes an installed copy of
+  `appium:app` first unless you ask for `appium:noReset`, as Appium does, or
+  set `appium:enforceAppInstall` to false, and always installs
+  `appium:otherApps` afresh. Tokens from `ios.appium.upload_app()` belong to
+  the exporter's Appium and do not work here.
 - `appium:bundleId` works: Appium checks for installed apps through devicectl.
 - `mobile: removeApp` uninstalls with devicectl, and `mobile: killApp` stops
   the app as `mobile: terminateApp` does.
@@ -352,9 +353,9 @@ provide.
   can replace the bootstrap metadata. Native TLS terminates at the trusted
   exporter, not at the device.
 - **Device isolation:** Discovery, pair-record reads and connections are scoped
-  to the selected device on its USB link; a Wi-Fi copy of the same device is
-  ignored. Pair-record writes are rejected; exporter mode also rejects client
-  pairing changes.
+  to the selected device, and with USB transport to its USB link; a Wi-Fi copy
+  of the same device is then ignored. Pair-record writes are rejected; exporter
+  mode also rejects client pairing changes.
 - **Lease access:** A lease grants full control of the device. The policy above
   protects the exporter's pairing identity, not device capabilities: services
   started through lockdown, including the iOS 17.4+ CoreDevice tunnel, reach

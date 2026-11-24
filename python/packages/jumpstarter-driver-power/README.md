@@ -18,8 +18,6 @@ Example configuration:
 export:
   power:
     type: jumpstarter_driver_power.driver.MockPower
-    config:
-      # Add required config parameters here
 ```
 
 ## API Reference

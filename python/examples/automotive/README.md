@@ -26,7 +26,7 @@ pipeline (driver -> gRPC -> client), validating the end-to-end use case.
 From the `python/` directory:
 
 ```shell
-make pkg-test-jumpstarter_example_automotive
+uv run --directory examples/automotive pytest -v
 ```
 
 ## How it maps to real deployments

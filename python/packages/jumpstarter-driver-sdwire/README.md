@@ -28,6 +28,16 @@ Traceback (most recent call last):
 FileNotFoundError: failed to find sd-wire device...
 ```
 
+### Config parameters
+
+| Parameter               | Description                                                                                                                                                      | Type | Required | Default |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- | ------- |
+| `serial`                | Serial number of the SD Wire. Required for a factory-default FT200X (see below). When unset, the one programmed SD Wire attached is used; finding more than one is an error | str  | no       | unset   |
+| `storage_device`        | Block device of the SD card. Detected automatically when unset                                                                                                   | str  | no       | _auto_  |
+| `storage_timeout`       | Seconds to wait for the SD card block device to appear and become ready                                                                                          | int  | no       | `10`    |
+| `storage_leeway`        | Seconds to wait after a write has been flushed before returning                                                                                                  | int  | no       | `6`     |
+| `storage_fsync_timeout` | Seconds allowed for flushing a write to the SD card                                                                                                              | int  | no       | `900`   |
+
 ## Unprogrammed (factory-default) SD Wire devices
 
 SD Wires are normally initialized with `sd-mux-ctrl --init`, which rewrites the
@@ -90,10 +100,14 @@ On macOS (`Darwin`) the driver does extra work that is unnecessary on Linux:
 
 ## API Reference
 
-The SDWire driver implements the `StorageMuxClient` class, which is a generic
-storage class.
+The SDWire driver uses the `StorageMuxFlasherClient` class, a generic storage
+client that adds `flash` and `dump` to `StorageMuxClient`. `flash` connects the
+card to the host, writes the image and connects the card back to the DUT.
+Images written to the card that are compressed with gzip, xz, bz2 or zstd are
+detected from their file signature and decompressed on the exporter, so
+`compression` (`--compression`) does not need to be set.
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxClient()
-    :members:
+.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxFlasherClient()
+    :members: flash, dump, host, dut, off, write_local_file, read_local_file
 ```

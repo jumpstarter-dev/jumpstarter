@@ -17,6 +17,10 @@ Example configuration:
 export:
   power:
     type: jumpstarter_driver_tasmota.driver.TasmotaPower
+    config:
+      host: "mqtt.example.com"
+      cmnd_topic: "cmnd/tasmota_6990F2/POWER"
+      stat_topic: "stat/tasmota_6990F2/POWER"
 ```
 
 ### Config parameters

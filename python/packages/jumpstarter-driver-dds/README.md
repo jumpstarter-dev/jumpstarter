@@ -13,6 +13,14 @@ enables remote DDS domain participation, topic management, and pub/sub messaging
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-dds
 ```
 
+The package does not pull in the CycloneDDS Python bindings. Install them on
+the exporter as well; without them the driver fails to load unless
+`use_mock: true` is set:
+
+```shell
+pip3 install cyclonedds
+```
+
 ## Configuration
 
 | Parameter              | Type   | Default      | Description                              |
@@ -21,6 +29,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 | `default_reliability`  | str    | `RELIABLE`   | Default QoS reliability (`RELIABLE` or `BEST_EFFORT`) |
 | `default_durability`   | str    | `VOLATILE`   | Default QoS durability (`VOLATILE`, `TRANSIENT_LOCAL`, `TRANSIENT`, `PERSISTENT`) |
 | `default_history_depth`| int    | 10           | Default history depth for topics         |
+| `use_mock`             | bool   | false        | Use an in-memory backend instead of CycloneDDS (for testing) |
 
 ### Example exporter configuration
 
@@ -49,8 +58,10 @@ export:
 
 | Method                                                 | Description                        |
 |--------------------------------------------------------|------------------------------------|
-| `create_topic(name, fields, reliability, durability, history_depth)` | Create a topic with schema and QoS |
+| `create_topic(name, fields, reliability, durability, history_depth)` | Create a topic with schema and QoS; QoS arguments left out use the configured defaults |
 | `list_topics()`                                        | List all registered topics         |
+
+With CycloneDDS, every field in a topic schema is typed as a string.
 
 ### Publish / Subscribe
 
@@ -58,7 +69,10 @@ export:
 |-------------------------------------|------------------------------------------|
 | `publish(topic_name, data)`         | Publish a data sample to a topic         |
 | `read(topic_name, max_samples=10)`  | Read (take) samples from a topic         |
-| `monitor(topic_name)`               | Stream samples from a topic as they arrive |
+| `monitor(topic_name, max_iterations=0)` | Stream samples from a topic as they arrive, polling every 0.1 s; `max_iterations=0` polls until the stream is closed |
+
+`read` and `monitor` take from the same reader buffer, so do not use both on
+the same topic at the same time.
 
 ### QoS Options
 
@@ -106,3 +120,38 @@ with env() as client:
 
     dds.disconnect()
 ```
+
+## CLI
+
+Inside `jmp shell`, the same operations are available as `j dds` commands:
+
+```console
+$ j dds
+Usage: j dds [OPTIONS] COMMAND [ARGS]...
+
+  DDS pub/sub communication
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  connect       Connect to DDS domain
+  create-topic  Create a topic: create-topic NAME FIELD1 FIELD2 ...
+  disconnect    Disconnect from DDS domain
+  info          Show DDS participant info
+  monitor       Monitor samples from a topic
+  publish       Publish JSON data to a topic: publish TOPIC '{"key": "val"}'
+  read          Read samples from a topic
+  topics        List registered topics
+```
+
+```console
+$ j dds connect
+$ j dds create-topic sensor/temperature value unit location
+$ j dds publish sensor/temperature '{"value": "22.5", "unit": "C", "location": "lab1"}'
+$ j dds read sensor/temperature
+```
+
+`create-topic` takes `--reliability`, `--durability` and `--history-depth`,
+and `read` takes `--max-samples`. `monitor --count N` (default 10) polls the
+topic N times, 0.1 s apart, and prints at most N samples.

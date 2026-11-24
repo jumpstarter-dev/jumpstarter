@@ -80,13 +80,17 @@ send error.
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
-| always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open for the lifetime of the exporter, which can be useful to avoid HUPCL-triggered resets between sessions | bool  | no       | False   |
+| always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open from the first client attach until the lease ends, which can be useful to avoid HUPCL-triggered resets between client connections | bool  | no       | False   |
 
 ### NVDemuxSerial Driver
 
 The `NVDemuxSerial` driver provides serial access to NVIDIA Tegra demultiplexed UART channels using the [nv_tcu_demuxer](https://docs.nvidia.com/jetson/archives/r38.2.1/DeveloperGuide/AT/JetsonLinuxDevelopmentTools/TegraCombinedUART.html) tool. It automatically handles device reconnection when the target device restarts.
 
 The nv_tcu_demuxer tool can be obtained from the NVIDIA Jetson BSP, at this path: `Linux_for_Tegra/tools/demuxer/nv_tcu_demuxer`.
+
+`NVDemuxSerial` uses the same client as `PySerial`, so `console`, `pipe`,
+`--observe`, `release-console` and `console-status` described below work the
+same way. `release` and `acquire` are not supported.
 
 #### Multi-Instance Support
 
@@ -169,7 +173,7 @@ When the target device restarts (e.g., power cycle), the serial device disappear
 3. Restarts the demuxer with the new device
 4. Discovers the new pts path (which changes on each restart)
 
-Active connections will receive errors when the device disconnects. Clients should reconnect, and the driver will wait for the device to be available again.
+Attached clients stay connected while the device restarts: input sent in the meantime is discarded, and a `[reconnected]` line marks where output from the new pts begins.
 
 #### Configuration Validation / Limitations
 
@@ -186,11 +190,12 @@ If these requirements are not met, the driver will raise a `ValueError` during i
 
 ## Usage
 
-The pyserial driver provides two CLI commands for interacting with serial ports:
+The pyserial driver provides the following CLI commands for interacting with serial ports:
 
 ### console
 
 Start an interactive serial console with direct terminal access.
+`start-console` is still accepted as an alias.
 
 ```bash
 j serial console
@@ -198,7 +203,7 @@ j serial console
 
 **Hotkeys:**
 - **CTRL+B x3**: Exit the console
-- **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above)
+- **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above; not with `--observe`)
 
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is
@@ -250,6 +255,8 @@ cat commands.txt | j serial pipe --no-output
 - `-a, --append`: Append to output file instead of overwriting
 - `--no-output`: Disable serial output handling (stdin -> serial only, exits at EOF)
 - `--observe`: Watch-only mode (read-only). Use when another session holds exclusive write access.
+- `--retry-count N`: Retry attaching this many times while another client holds the console (default: 0)
+- `--retry-interval SECONDS`: Seconds between attach attempts (default: 0.5)
 
 Notes:
 - `--no-output` cannot be combined with `--output` or `--append`.
@@ -289,7 +296,9 @@ client drives it.
 Access is coordinated by an exclusive **write token**:
 
 - The first client to open an interactive session (`console` or `pipe` with
-  input) acquires the write token and may write to the port.
+  input) acquires the write token and may write to the port. Taking the token
+  clears the scrollback, so the writer sees only live output and observers
+  that attach later replay only output from this session.
 - Additional clients attach as **observers**, receiving all serial output
   (including a replay of recent scrollback on attach) but unable to write. A
   client observes when it passes `--observe`, or when a `pipe` has no stdin to
@@ -337,7 +346,7 @@ reset some boards unless `disable_hupcl` is set.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_pyserial.client.PySerialClient()
-    :members: pexpect, open, stream, open_stream, close
+    :members: pexpect, open, stream, open_stream, close, release, acquire, released
 ```
 
 ### Examples

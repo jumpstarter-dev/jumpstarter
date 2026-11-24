@@ -25,11 +25,15 @@ export:
       # Optional parameters
       # device_os: "1.0"
       # device_build: "Critical Application Monitor (Baremetal)"
+      # console_name: "Primary Compute Non-Secure"
 ```
+
+The exporter reads the Corellium server's host name and API token from the
+`CORELLIUM_API_HOST` and `CORELLIUM_API_TOKEN` environment variables.
 
 ### ExporterConfig Example
 
-You can run an exporter by running: `jmp exporter shell -c $file`:
+You can run an exporter by running: `jmp shell --exporter-config $file`:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1

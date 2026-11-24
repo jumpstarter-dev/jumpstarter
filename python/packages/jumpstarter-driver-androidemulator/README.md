@@ -68,14 +68,14 @@ export:
 # Power on the emulator
 j android power on
 
-# Check ADB devices through the tunnel
+# List devices visible to the exporter's ADB server
 j android adb devices
 
-# Run ADB commands
-j android adb shell getprop ro.product.model
+# Serve the exporter's ADB server on a local port; holds until Ctrl+C
+j android adb serve
 
-# Create a persistent ADB tunnel
-j android adb tunnel
+# In another terminal, after exporting the ANDROID_ADB_SERVER_* variables it prints
+adb shell getprop ro.product.model
 
 # Power off the emulator
 j android power off
@@ -144,12 +144,13 @@ the endpoint. See {doc}`adb` for the capabilities Android targets reject.
 
 ## Architecture
 
-This is a composite driver with two children:
+This is a composite driver with two children, plus `appium` when it is configured:
 
 - **`adb`** (`AdbServer` from `jumpstarter-driver-adb`): Manages the ADB server
   and provides TCP tunneling for remote ADB access
 - **`power`** (`AndroidEmulatorPower`): Controls the emulator process lifecycle
-  via the standard `PowerInterface` (on/off/read)
+  via the standard `PowerInterface` (on/off/read). Power on is ignored while the
+  emulator is running, and starts a new one if the previous emulator has exited.
 
 The emulator registers with the custom ADB server on port 15037 (via the
 `ANDROID_ADB_SERVER_PORT` environment variable) to avoid conflicts with any

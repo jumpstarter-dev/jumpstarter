@@ -10,7 +10,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 
 ## Configuration
 
-The VNC driver is a composite driver that requires a TCP child driver to establish the underlying network connection. The TCP driver should be configured to point to the VNC server's host and port, which is often `127.0.0.1` from the perspective of the Jumpstarter server.
+The VNC driver is a composite driver that requires a TCP child driver named `tcp` to establish the underlying network connection. The TCP driver should be configured to point to the VNC server's host and port, which is often `127.0.0.1` from the perspective of the exporter.
 
 Example `exporter.yaml` configuration:
 
@@ -18,9 +18,10 @@ Example `exporter.yaml` configuration:
 export:
   vnc:
     type: jumpstarter_driver_vnc.driver.Vnc
-    # You can set the default encryption behavior for the `j vnc session` command.
-    # If not set, it defaults to False (unencrypted).
-    default_encrypt: false
+    config:
+      # You can set the default encryption behavior for the `j vnc session` command.
+      # If not set, it defaults to False (unencrypted).
+      default_encrypt: false
     children:
       tcp:
         type: jumpstarter_driver_network.driver.TcpNetwork

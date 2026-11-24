@@ -59,6 +59,7 @@ source.
 | `companion_timeout` | `30` | Companion readiness timeout in seconds |
 | `shutdown_timeout` | `30` | Shutdown, deletion and process-stop timeout in seconds |
 | `http_service` | Unconfigured | HTTPS provider class and options from trusted exporter configuration |
+| `appium` | Unconfigured | Run Appium on the exporter for the simulator; see [Appium](#appium) |
 
 ## Usage
 

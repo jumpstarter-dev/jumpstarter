@@ -28,7 +28,7 @@ Example configuration:
 
 The OpenDAL driver tracks all files and directories created during a session:
 
-- **File Creation**: Files opened in write modes (`"wb"`, `"w"`, `"ab"`, `"a"`)
+- **File Creation**: Files opened in write mode (`"wb"`)
 - **Directory Creation**: Directories created via `create_dir()`
 - **Copy Operations**: Target files/directories from `copy()` operations
 - **Rename Operations**: Target files/directories from `rename()` operations (source is removed from tracking)

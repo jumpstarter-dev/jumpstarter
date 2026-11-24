@@ -173,7 +173,8 @@ a `(service_id, method_id)` and the server serves it. This maps naturally onto
 getter-style SOME/IP methods; update the response to change what a client reads.
 opensomeip 0.2 serves those methods on the application socket for every
 service this driver has offered or given a method response. A client reaches
-the simulated ECU by setting `remote_host` to this exporter's `host` and `port`.
+the simulated ECU by setting `remote_host` and `remote_port` to this exporter's
+`host` and `port`.
 
 ```python
 from jumpstarter.common.utils import env
@@ -200,6 +201,14 @@ with env() as client:
     someip.stop_offer_service(0x1801, 0x0001)
     someip.stop_server()
 ```
+
+`offer_service()` rejects the instance IDs `0x0000` (reserved) and `0xFFFF`
+(all instances). `publish_event()` and `set_field()` address events by
+`event_id` only; their `service_id` argument is currently unused.
+`clear_method_response(service_id, method_id)` removes a canned response, after
+which the method answers with an empty `E_OK` reply. `stop_server()` discards
+all server state: offers, canned responses, registered methods, events and
+field values must be configured again after the server restarts.
 
 ## API Reference
 

@@ -14,5 +14,5 @@ children:
       # serial:
       #   ref: "dutlink.console"
 config:
-  prompt: "=>" # the u-boot command prompt to expect, defaults to "=>"
+  prompt: "=>" # the u-boot command prompt to expect, defaults to "\n=>"
   prompt_timeout: 15 # seconds the board may take from a power cycle to the prompt, defaults to 15

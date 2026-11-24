@@ -4,5 +4,5 @@ config:
   # defaults to finding ustreamer from path
   executable: "ustreamer"
   args: # extra arguments to pass to ustreamer
-    brightness: auto # --brightness=auto
-    contrast: default # --contract=default
+    brightness: auto # --brightness auto
+    contrast: default # --contrast default

@@ -1,4 +1,4 @@
-# BtPeer Driver
+# BT Peer Driver
 
 `jumpstarter-driver-bt-peer` provides a Bluetooth peer device powered by
 [bumble](https://github.com/google/bumble). It can pair, connect, and stream
@@ -6,8 +6,9 @@ A2DP audio to a DUT over BR/EDR.
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-bt-peer
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-bt-peer
 ```
 
 ## Configuration
@@ -22,6 +23,13 @@ export:
       transport: "tcp-client:127.0.0.1:7300"  # bumble transport string
 ```
 
+### Config parameters
+
+| Parameter | Description | Type | Required | Default |
+| --------- | ----------- | ---- | -------- | ------- |
+| transport | Bumble transport string (e.g. `tcp-client:host:port`, `usb:0`, `serial:/dev/ttyUSB0`) | str | no | `tcp-client:127.0.0.1:7300` |
+| follow_transport_keys | Let PLAY/PAUSE/STOP pressed on the DUT control playback. Off by default, because a DUT that sends PAUSE on connect would otherwise silence a track that was just started. | bool | no | `false` |
+
 ## Usage
 
 Start the peer, pair with a DUT, and verify the connection:
@@ -34,6 +42,15 @@ j bt_peer connections
 j bt_peer pair --handle 0
 j bt_peer stop
 ```
+
+`start` takes an optional JSON object: `name` (default `Bumble-Phone`),
+`classic_enabled` (default `true`) and `class_of_device` (an integer; by
+default a smartphone with the audio and telephony service classes).
+
+`connect ADDRESS` opens a BR/EDR connection from the peer to a remote device
+instead of waiting for one. `events` prints what the peer has recorded
+(connections, pairing, stream and track changes, AVRCP keys) as JSON; pass
+`--since` a Unix timestamp to see only newer events.
 
 The `transport` config accepts any bumble transport string:
 - `tcp-client:host:port` - rootcanal / netsim
@@ -54,7 +71,7 @@ j bt_peer stop-playback
 ```
 
 `play` starts the stream itself rather than waiting to be asked: in A2DP the
-source drives it, and the DUT opens the signalling channel and then waits. A
+source drives it, and the DUT opens the signaling channel and then waits. A
 track loaded before the DUT's AVDTP channel exists is started as soon as it
 arrives, so the two can race without the track being left silent.
 
@@ -105,7 +122,8 @@ device.
 
 Track details come from the source file's tags, read locally with `ffprobe`,
 and are shown by the DUT along with a duration and progress position. Override
-them per track when a file is untagged:
+them per track with `--title`, `--artist` and `--album` when a file is
+untagged:
 
 ```bash
 j bt_peer play untagged.mp3 --title "Chime" --artist "Test Fixture"
@@ -124,4 +142,37 @@ player, which would otherwise silence a track that was just started.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_bt_peer.driver.BtPeer()
+```
+
+```{eval-rst}
+.. autoclass:: jumpstarter_driver_bt_peer.client.BtPeerClient()
+    :members:
+```
+
+### CLI
+
+```console
+$ j bt_peer
+Usage: j bt_peer [OPTIONS] COMMAND [ARGS]...
+
+  Bluetooth peer device (bumble).
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  address             Show the peer's Bluetooth address.
+  connect             Connect to a remote device (e.g.
+  connections         Show active connections.
+  events              Show events since timestamp.
+  pair                Authenticate and encrypt a connection.
+  pause               Suspend the stream, keeping the track and its position.
+  play                Stream an audio file to the DUT over A2DP.
+  playback            Show what is currently streaming.
+  resume              Restart a stream suspended by pause.
+  start               Start the BT peer device.
+  stop                Stop the BT peer device.
+  stop-playback       Stop the current track and suspend the stream.
+  wait-connection     Wait for an incoming connection.
+  wait-disconnection  Wait for a disconnection.
 ```

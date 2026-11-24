@@ -20,7 +20,7 @@ export:
     type: jumpstarter_driver_probe_rs.driver.ProbeRs
     config:
       probe: "2e8a:000c:5798DE5E500ACB60"
-      probe_rs_path: "/home/majopela/.cargo/bin/probe-rs"
+      probe_rs_path: "/home/user/.cargo/bin/probe-rs"
       chip: "RP2350"
       protocol: "swd"
       connect_under_reset: false
@@ -32,7 +32,7 @@ export:
 | Parameter           | Description                                                    | Type            | Required | Default  |
 | ------------------- | -------------------------------------------------------------- | --------------- | -------- | -------- |
 | probe               | The probe id, can be in VID:PID format or VID:PID:SERIALNUMBER | str             | no       |          |
-| probe_rs_path       | The path to the probe-rs binary                                | str             | no       | probe-rs |
+| probe_rs_path       | The path to the probe-rs binary; a bare name is only looked up in `/bin` and `/usr/bin` | str             | no       | probe-rs |
 | chip                | The target chip                                                | str             | no       |          |
 | protocol            | The target protocol                                            | "swd" or "jtag" | no       |          |
 | connect_under_reset | Connect to the target while asserting reset                    | bool            | no       | false    |

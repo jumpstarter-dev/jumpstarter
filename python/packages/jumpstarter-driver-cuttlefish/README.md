@@ -83,8 +83,8 @@ All per-instance ports use the same offset: `base + instance_num - 1`.
 | Netsim REST | 7681 | 7681 | 7682 |
 | Rootcanal HCI | 7300 | 7300 | 7301 |
 
-When using `instance_num > 1`, update the netsim `port` and bt_peer
-`hci_port` in the exporter config to match.
+When using `instance_num > 1`, update the netsim `port` and the port in the
+bt_peer `transport` in the exporter config to match.
 
 ### SSH tunnel (local development only)
 
@@ -153,8 +153,7 @@ export:
   bt_peer:
     type: jumpstarter_driver_bt_peer.driver.BtPeer
     config:
-      hci_host: 127.0.0.1
-      hci_port: 7300    # 7300 + instance_num - 1
+      transport: "tcp-client:127.0.0.1:7300"    # 7300 + instance_num - 1
   power:
     ref: cuttlefish.power
   adb:
@@ -165,14 +164,17 @@ export:
 
 | Parameter       | Description                         | Type | Required | Default     |
 | --------------- | ----------------------------------- | ---- | -------- | ----------- |
+| scheme          | Host Orchestrator URL scheme, also used for the default `webrtc_url` | str | no | "http" |
 | host            | Host Orchestrator hostname          | str  | no       | "localhost" |
 | port            | Host Orchestrator HTTP port         | int  | no       | 2080        |
-| group           | CVD group name passed to `cvd load`. HO auto-assigns a different group name (e.g. `cvd_1`); the driver tracks the assigned name internally. | str  | no       | "cvd"       |
+| group           | CVD group name used to find and address the CVD. HO auto-assigns a different group name (e.g. `cvd_1`); the driver tracks the assigned name internally. | str  | no       | "cvd"       |
 | name            | CVD instance name within the group  | str  | no       | "1"         |
-| instance_num    | CVD instance number (determines ADB/netsim/HCI ports). Must match HO's assigned slot. Pinning avoids drift (see `env_config` example). | int  | no       | 1           |
+| instance_num    | CVD instance number (determines ADB/netsim/HCI ports). Must match HO's assigned slot. Pinning avoids drift (see `env_config` example). If a newly created CVD reports a different ADB port, power on deletes it and fails. | int  | no       | 1           |
 | adb_server_port | ADB server port on the exporter     | int  | no       | 15037       |
 | boot_timeout    | Seconds to wait for boot on power on; values above 600 also extend the creation timeout | int | no | 300 |
 | env_config      | Default env_config for CVD creation | dict | no       | {}          |
+| webrtc_url      | URL that `j cuttlefish webrtc` prints without `--forward`. When empty, `<scheme>://<host>:1080`. | str | no | "" |
+| managed         | Managed ExporterSet Pod mode. Set by the ExporterSet provisioner together with the liveness state settings `health_state_path`, `runtime_id_path` and `health_ports`; requires exactly one instance in `env_config`. | bool | no | false |
 | launcher_socket | Exec backend: `jumpstarter-exec` launcher socket shared with the Cuttlefish runtime container. When set, every operation runs `cvd` there instead of calling Host Orchestrator. Injected by the ExporterSet provisioner with `backend: exec`. | str | no | "" |
 | cvd_user        | Exec backend: non-root user that runs `jumpstarter-exec serve` and its `cvd` children in the runtime container. Must match the owner of CVD state; Host Orchestrator uses `httpcvd`. | str | no | "" |
 | webui_port      | Port of the in-Pod nginx vhost serving the WebRTC client page with a TURN-aware `/infra_config`. Creates a `webui` child when set. Injected by the ExporterSet provisioner with `webrtc_turn: true`. | int | no | 0 |
@@ -277,6 +279,11 @@ j cuttlefish powerbtn
 # List running operations
 j cuttlefish ops
 
+# Wait for boot (--timeout 0, the default, uses boot_timeout)
+j cuttlefish wait-boot
+
+# Delete all CVDs and clean up stale state
+j cuttlefish reset
 ```
 
 The display command requires the CVD to be powered on and its WebRTC device ID
@@ -334,10 +341,11 @@ with serve(driver) as client:
                                                             └──────────────────┘
 ```
 
-The driver is a thin REST client that translates Jumpstarter driver calls into
-Host Orchestrator API requests. Long-running operations (create, start, stop,
-delete) are handled asynchronously - the driver polls the `/operations/:wait`
-endpoint until completion or timeout.
+With the Host Orchestrator backend, the driver is a thin REST client that
+translates Jumpstarter driver calls into Host Orchestrator API requests.
+Long-running operations (create, start, stop, delete) are handled
+asynchronously - the driver polls the `/operations/<name>/:wait` endpoint until
+completion or timeout.
 
 `power.on()` waits for full boot by default (`boot_timeout=300`). It polls
 `adb connect` + `adb devices` until the device is online, then waits for

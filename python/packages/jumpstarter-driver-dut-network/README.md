@@ -16,10 +16,19 @@ The following must be available on the exporter host:
 
 - `ip` (iproute2) - for interface management
 - `nft` (nftables) - for NAT and firewall rules
+- `sysctl` - for per-interface IP forwarding
 - `dnsmasq` - for DHCP serving
 
 Optional:
 - `nmcli` (NetworkManager) - only needed if NM is running; the driver marks its interfaces as unmanaged
+- `tcpdump` - only needed with `enable_tcpdump: true`
+
+When the exporter does not run as root, the driver runs `ip`, `nft`,
+`sysctl`, `dnsmasq`, `nmcli` and `kill` through `sudo`, plus `mkdir`, `chown`
+and `chmod` when it cannot create its state directory itself, so the exporter
+user needs passwordless sudo for them. `tcpdump` and the `local_ntp` server do not use
+`sudo`, so packet capture and binding UDP port 123 need root or the
+corresponding capabilities.
 
 ## Configuration
 
@@ -102,7 +111,7 @@ source-IP PBR uses routing table `int(<dut private IPv4>)`.
           public_gateway: "203.0.113.254"
 ```
 
-Omit both fields to keep today's untagged-upstream behaviour.
+Omit both fields to keep today's untagged-upstream behavior.
 
 **1:1 NAT on a VLAN:**
 
@@ -205,8 +214,11 @@ export:
 ### Traffic Filtering
 
 Control which network destinations DUTs can reach using nftables-based egress
-and ingress rules.  Filters are applied at the **interface level** (all traffic
-through the DUT interface), so they cannot be bypassed by MAC or IP spoofing.
+and ingress rules.  Filters are applied at the **interface level** (traffic
+forwarded between the DUT interface and the upstream interfaces), so they
+cannot be bypassed by MAC or IP spoofing.  Traffic from the DUT to the
+exporter host itself is not filtered.  The filter is installed together with
+the NAT rules, so it has no effect when `nat_mode` is `disabled` or `none`.
 
 **Egress allowlist** — block everything except specific destinations:
 
@@ -256,6 +268,10 @@ return traffic for DUT-initiated connections is always allowed via conntrack):
               protocol: tcp
 ```
 
+In `1to1` mode, inbound traffic to a mapped DUT (an address entry with
+`public_ip`) is accepted before the ingress rules are evaluated, so the
+ingress filter does not restrict it.
+
 Both `egress` and `ingress` can be combined in the same config.  The filter
 is set by the exporter admin and is not modifiable by the DUT user at runtime.
 
@@ -285,7 +301,9 @@ is set by the exporter admin and is not modifiable by the DUT user at runtime.
 | `addresses` | list | `[]` | Address entries: `{ip, mac?, hostname?, public_ip?, vlan_id?, public_gateway?}`. Entries with `mac` generate DHCP static leases; entries without `mac` are used for 1:1 NAT only. |
 | `dns_servers` | list | `[8.8.8.8, 8.8.4.4]` | DNS servers for DHCP clients |
 | `dns_entries` | list | `[]` | Custom DNS records: `{hostname, ip}` |
-| `state_dir` | str | `/var/lib/jumpstarter/dut-network-{interface}/` | Directory for dnsmasq state files |
+| `local_ntp` | bool | `false` | Run a minimal SNTP server on `gateway_ip` and redirect NTP requests (UDP 123) arriving on `interface` to it |
+| `enable_tcpdump` | bool | `false` | Allow `tcpdump` captures on `interface` (requires `tcpdump` on the host) |
+| `state_dir` | str | `/var/lib/jumpstarter/dut-network-{interface}/` | Directory for dnsmasq state files; deleted with its contents on cleanup |
 | `nat_mode` | str | `masquerade` | NAT mode: `masquerade`, `1to1`, `disabled`, or `none` |
 | `public_interface` | str | None | Interface for IP alias (defaults to upstream) |
 | `filter` | dict | None | Traffic filter config: `{egress?, ingress?}` with `policy` and `rules` (see above) |
@@ -298,7 +316,7 @@ is set by the exporter admin and is not modifiable by the DUT user at runtime.
 | `mac` | no | MAC address of the DUT. Required for DHCP static lease; omit for 1:1 NAT-only entries |
 | `hostname` | no | Hostname for DHCP |
 | `public_ip` | no | Public IP for 1:1 NAT (per-entry). At least one entry must have `public_ip` when `nat_mode=1to1`. Also assigned to the VLAN sub-interface when `vlan_id` is set |
-| `vlan_id` | no | 802.1Q VLAN ID (1–4094). When set, NAT uses `<upstream>.<vlan_id>` instead of the untagged upstream. Omit for untagged behaviour |
+| `vlan_id` | no | 802.1Q VLAN ID (1–4094). When set, NAT uses `<upstream>.<vlan_id>` instead of the untagged upstream. Omit for untagged behavior |
 | `public_gateway` | no | Gateway for policy-based routing. With `vlan_id`, DUT traffic exits via the VLAN (table ID = VLAN ID). Without `vlan_id`, traffic exits via the untagged upstream (table ID = DUT private IPv4 as an integer) |
 
 ## Usage
@@ -337,6 +355,12 @@ j dut-network add-dns controller.lab.local 198.51.100.1
 
 # Remove a DNS entry
 j dut-network remove-dns controller.lab.local
+
+# Show the local NTP server status
+j dut-network ntp-status
+
+# Stream tcpdump output from the DUT interface (needs enable_tcpdump: true)
+j dut-network tcpdump -n port 53
 ```
 
 ### Python
@@ -345,36 +369,39 @@ j dut-network remove-dns controller.lab.local
 from jumpstarter.common.utils import env
 
 with env() as client:
+    # The export is named "dut-network", which is not a valid attribute name
+    dut_network = client.children["dut-network"]
+
     # Get network status
-    status = client.dut_network.status()
+    status = dut_network.status()
     print(status["interface_status"]["name"])
 
     # Get all DHCP leases
-    leases = client.dut_network.get_leases()
+    leases = dut_network.get_leases()
     for lease in leases:
         print(f"{lease['mac']} -> {lease['ip']}")
 
     # Look up DUT IP
-    ip = client.dut_network.get_dut_ip("8a:12:4e:25:f4:8e")
+    ip = dut_network.get_dut_ip("8a:12:4e:25:f4:8e")
 
     # Manage address entries at runtime
     # With MAC: creates a DHCP static lease + optional 1:1 NAT mapping
-    client.dut_network.add_address("192.168.100.50", mac="02:00:00:aa:bb:cc", hostname="new-dut")
+    dut_network.add_address("192.168.100.50", mac="02:00:00:aa:bb:cc", hostname="new-dut")
     # Without MAC: 1:1 NAT mapping only (no DHCP lease)
-    client.dut_network.add_address("192.168.100.51", public_ip="198.51.100.90")
+    dut_network.add_address("192.168.100.51", public_ip="198.51.100.90")
     # VLAN + PBR
-    client.dut_network.add_address(
+    dut_network.add_address(
         "192.168.100.125",
         public_ip="203.0.113.1",
         vlan_id=905,
         public_gateway="203.0.113.254",
     )
-    client.dut_network.remove_address("192.168.100.50")
+    dut_network.remove_address("192.168.100.50")
 
     # Manage DNS entries at runtime
-    client.dut_network.add_dns_entry("myhost.lab.local", "10.0.0.99")
-    entries = client.dut_network.get_dns_entries()
-    client.dut_network.remove_dns_entry("myhost.lab.local")
+    dut_network.add_dns_entry("myhost.lab.local", "10.0.0.99")
+    entries = dut_network.get_dns_entries()
+    dut_network.remove_dns_entry("myhost.lab.local")
 ```
 
 ## Architecture
@@ -526,11 +553,12 @@ the exporter is never restarted, manual cleanup may be necessary.
 |----------|-------------|----------------------|------------------|
 | **VLAN sub-interfaces** (e.g. `eth0.905`) | Address entry has `vlan_id` | Yes — deleted by `cleanup()` | Yes |
 | **nftables table** (`jumpstarter_<iface>`) | NAT mode is not `disabled` | Yes — flushed on cleanup | Yes |
+| **NTP redirect table** (`jumpstarter_<iface>_ntp`) | `local_ntp` is `true` | Yes - deleted on cleanup | Yes |
 | **FORWARD chain accept rules** (in `ip filter`) | Docker sets FORWARD policy to `drop` | Yes — removed by handle | Yes |
 | **IP forwarding sysctls** (`net.ipv4.conf.<iface>.forwarding`) | NAT mode is not `disabled` | Yes — restored to previous value | Yes |
 | **IP aliases** (e.g. `203.0.113.1/24` on upstream) | 1:1 NAT with `public_ip` | Yes — removed on cleanup | Yes |
 | **Policy routes and IP rules** | `public_gateway` is set | Yes — flushed on cleanup | Yes |
-| **dnsmasq process** | DHCP is enabled | Yes — stopped on cleanup | No (orphan process) |
+| **dnsmasq process** | DHCP is enabled | Yes — stopped on cleanup | Yes (orphan process) |
 
 ### Cleaning up after a crash
 
@@ -544,8 +572,9 @@ sudo ip link del eth0.905
 # Flush the driver's nftables table
 sudo nft delete table ip jumpstarter_eth2
 
-# Remove stale FORWARD chain rules (find handles first)
-sudo nft -a list chain ip filter FORWARD | grep jmp
+# Remove stale FORWARD chain rules (find the handles of the
+# "iifname/oifname <interface> accept" rules first)
+sudo nft -a list chain ip filter FORWARD | grep -E 'eth2|eth0'
 sudo nft delete rule ip filter FORWARD handle <N>
 
 # Remove IP aliases

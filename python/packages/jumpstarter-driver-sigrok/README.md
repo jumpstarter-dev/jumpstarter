@@ -12,6 +12,9 @@
 pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-sigrok
 ```
 
+The exporter host also needs `sigrok-cli`. The driver looks it up on `PATH`
+unless `executable` is set.
+
 ## Configuration (exporter)
 
 ```yaml
@@ -32,27 +35,29 @@ export:
 
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
-| `driver` | Sigrok driver name (e.g., `demo`, `fx2lafw`, `rigol-ds`) | str | yes | - |
+| `driver` | Sigrok driver name (e.g., `demo`, `fx2lafw`, `rigol-ds`) | str | no | "demo" |
 | `conn` | Connection string (USB VID.PID, serial path, or `"auto"` for auto-detect) | str \| None | no | "auto" |
 | `executable` | Path to `sigrok-cli` executable | str | no | Auto-detected from PATH |
 | `channels` | Channel mapping from device names (D0, A0) to semantic names (clk, voltage) | dict[str, str] | no | {} (empty) |
+| `timeout` | Timeout in seconds for `sigrok-cli` runs by `scan()` and `capture()` | int | no | 300 |
 
 ## CaptureConfig Parameters (client-side)
 
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
 | `sample_rate` | Sampling rate (e.g., `"1M"`, `"8MHz"`, `"24000000"`) | str | no | "1M" |
-| `samples` | Number of samples to capture (`None` for continuous) | int \| None | no | None |
+| `samples` | Number of samples to capture (`None`: 1000 for `capture()`, continuous for `capture_stream()`) | int \| None | no | None |
 | `pretrigger` | Number of samples to capture before trigger | int \| None | no | None |
 | `triggers` | Trigger conditions by channel name (e.g., `{"cs": "falling"}`) | dict[str, str] \| None | no | None |
 | `channels` | List of channel names to capture (overrides defaults) | list[str] \| None | no | None |
 | `output_format` | Output format (vcd, csv, bits, ascii, srzip, binary) | str | no | "vcd" |
+| `decoders` | Protocol decoders (`DecoderConfig`: `name`, `channels`, `options`, `annotations`, `stack`), passed to sigrok-cli as `-P` and `-A` | list[DecoderConfig] \| None | no | None |
 
 ## Client API
 
 - `scan()` — list devices for the configured driver
 - `capture(config)` — one-shot capture, returns `CaptureResult` with base64 data
-- `capture_stream(config)` — streaming capture via `--continuous`
+- `capture_stream(config)` — streaming capture via `--continuous` (or `--samples` when `samples` is set)
 - `get_driver_info()` — driver, conn, channel map
 - `get_channel_map()` — device-to-semantic name mappings
 - `list_output_formats()` — supported formats (csv, srzip, vcd, binary, bits, ascii)
@@ -79,7 +84,7 @@ The driver supports multiple output formats. **VCD (Value Change Dump) is the de
 ### Output Format Constants
 
 ```python
-from jumpstarter_driver_sigrok.common import OutputFormat
+from jumpstarter_driver_sigrok.common import CaptureConfig, OutputFormat
 
 config = CaptureConfig(
     sample_rate="1MHz",
@@ -148,7 +153,7 @@ for sample in samples[:3]:
 **Equivalent sigrok-cli command:**
 ```bash
 sigrok-cli -d fx2lafw -C D0,D1,D2,D3 \
-  -c samplerate=8MHz,samples=20000,pretrigger=5000 \
+  -c samplerate=8MHz,pretrigger=5000 --samples 20000 \
   --triggers D0=rising \
   -O vcd -o /tmp/capture.vcd
 ```
@@ -162,11 +167,12 @@ sigrok-cli -d fx2lafw -C D0,D1,D2,D3 \
 export:
   oscilloscope:
     type: jumpstarter_driver_sigrok.driver.Sigrok
-    driver: rigol-ds  # or demo for testing
-    conn: usb  # or serial path
-    channels:
-      A0: CH1
-      A1: CH2
+    config:
+      driver: rigol-ds  # or demo for testing
+      conn: usb  # or serial path
+      channels:
+        A0: CH1
+        A1: CH2
 ```
 
 **Python client code:**

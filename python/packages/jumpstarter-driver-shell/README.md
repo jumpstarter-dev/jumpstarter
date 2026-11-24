@@ -92,7 +92,13 @@ For the dict format, each method supports:
 
 ## Usage
 
-The shell driver also provides a CLI when using `jmp shell`. All configured methods become available as CLI commands, except for methods starting with `_` which are considered private and hidden from the end user.
+The shell driver also provides a CLI when using `jmp shell`. All configured methods become available as CLI commands.
+
+`j shell <method>` exits with the method's return code. A method still running
+when its timeout expires is stopped along with its process group and returns
+199. Once the script exits and its output goes quiet, the method returns even if
+a background job the script started still holds the output open; that job keeps
+running.
 
 ### CLI Help Output
 
@@ -104,6 +110,9 @@ $ j shell
 Usage: j shell [OPTIONS] COMMAND [ARGS]...
 
   Shell command executor
+
+Options:
+  --help  Show this message and exit.
 
 Commands:
   deploy  Deploy application using Ansible
@@ -118,6 +127,9 @@ $ j shell
 Usage: j shell [OPTIONS] COMMAND [ARGS]...
 
   Shell command executor
+
+Options:
+  --help  Show this message and exit.
 
 Commands:
   deploy  Execute the deploy shell method
@@ -157,7 +169,22 @@ Options:
   --help          Show this message and exit.
 ```
 
+Options go before the method's arguments: everything after the first argument,
+including `--env`, is passed to the script as an argument.
+
 ### Examples
+
+With these methods configured:
+
+```yaml
+methods:
+  ls: "ls"
+  method2: "echo 'Hello World 2'"
+  method3: |
+    echo "Hello World $1"
+    echo "Hello World $2"
+  env_var: "echo $1,$2,$ENV_VAR"
+```
 
 ```console
 # Execute simple commands
@@ -170,13 +197,13 @@ Hello World first arg
 Hello World second arg
 
 # Set environment variables
-$ j shell env_var arg1 arg2 --env ENV_VAR=myvalue
+$ j shell env_var --env ENV_VAR=myvalue arg1 arg2
 arg1,arg2,myvalue
 ```
 
 ## API Reference
 
-Assuming the exporter driver is configured as in the example above, the client
+Assuming the exporter driver is configured as in the examples above, the client
 methods will be generated dynamically, and they will be available as follows:
 
 ```{eval-rst}
@@ -186,20 +213,20 @@ methods will be generated dynamically, and they will be available as follows:
 .. function:: ls()
    :noindex:
 
-   :returns: A tuple(stdout, stderr, return_code)
+   :returns: The return code of the command; its stdout and stderr are printed as they arrive
 
 .. function:: method2()
     :noindex:
 
-    :returns: A tuple(stdout, stderr, return_code)
+    :returns: The return code of the command; its stdout and stderr are printed as they arrive
 
 .. function:: method3(arg1, arg2)
     :noindex:
 
-    :returns: A tuple(stdout, stderr, return_code)
+    :returns: The return code of the command; its stdout and stderr are printed as they arrive
 
 .. function:: env_var(arg1, arg2, ENV_VAR="value")
     :noindex:
 
-    :returns: A tuple(stdout, stderr, return_code)
+    :returns: The return code of the command; its stdout and stderr are printed as they arrive
 ```

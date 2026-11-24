@@ -76,8 +76,8 @@ cmds = obd.supported_commands()   # ["RPM", "SPEED", "COOLANT_TEMP", ...]
 
 # Query individual PIDs by name
 rpm   = obd.query("RPM")          # "3000.0 revolutions_per_minute"
-speed = obd.query("SPEED")        # "60.0 kph"
-temp  = obd.query("COOLANT_TEMP") # "90.0 degC"
+speed = obd.query("SPEED")        # "60.0 kilometer_per_hour"
+temp  = obd.query("COOLANT_TEMP") # "90 degree_Celsius"
 
 # Clearing trouble codes is a separate, explicit call (see note below)
 obd.clear_dtc()

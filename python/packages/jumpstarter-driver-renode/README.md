@@ -29,6 +29,7 @@ code changes are needed for new targets.
 | `machine_name` | `str` | `machine-0` | Name of the Renode machine instance |
 | `monitor_port` | `int` | `0` (auto) | TCP port for the Renode monitor (0 = auto-assign) |
 | `extra_commands` | `list[str]` | `[]` | Additional monitor commands run after platform load |
+| `allow_raw_monitor` | `bool` | `false` | Allow clients to send arbitrary monitor commands (see [Monitor Commands](#monitor-commands)) |
 
 ### Examples
 
@@ -42,6 +43,9 @@ export:
       platform: "platforms/boards/stm32f4_discovery-kit.repl"
       uart: "sysbus.usart2"
 ```
+
+`examples/stm32f407-rust-blink` in this package holds a prebuilt Rust blink
+firmware for this board, its source, and an exporter configuration to run it.
 
 #### NXP S32K388 (opensomeip Zephyr)
 
@@ -92,7 +96,9 @@ with serve(
 
 ### Monitor Commands
 
-Send arbitrary Renode monitor commands via the client:
+Send arbitrary Renode monitor commands via the client. This requires
+`allow_raw_monitor: true` in the exporter configuration; otherwise the call
+fails:
 
 ```python
 response = renode.monitor_cmd("sysbus GetRegistrationPoints sysbus.usart2")
@@ -107,7 +113,7 @@ The driver follows the composite driver pattern:
 - **`Renode`** - root composite driver, manages the simulation lifecycle
 - **`RenodePower`** - starts/stops the Renode process and controls the
   simulation via the telnet monitor interface
-- **`RenodeFlasher`** - loads firmware (ELF/BIN/HEX) into the simulated MCU
+- **`RenodeFlasher`** - loads firmware (ELF or raw binary) into the simulated MCU
 - **`console`** - UART output via PTY terminal, reusing the `PySerial` driver
 
 ### Design Decisions
@@ -119,7 +125,8 @@ Key decisions:
 - **UART exposure**: PTY terminal reusing `PySerial` (consistent with QEMU)
 - **Configuration model**: Managed mode with `extra_commands` for
   target-specific customization
-- **Firmware loading**: `flash()` stores path, `on()` loads into simulation
+- **Firmware loading**: `flash()` stores path, `on()` loads into simulation;
+  flashing a running simulation loads the firmware and resets the machine
 
 ## API Reference
 

@@ -63,6 +63,10 @@ The power driver is used to control power cycling of the DUT, and the serial
 interface is used to communicate with the DUT bootloader via serial. TFTP and
 HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 
+The `tftp` and `http` children can also be configured explicitly or as a
+`ref:`, as long as they are `Tftp` and `HttpServer` drivers. `tftp_dir`,
+`http_dir` and `exporter_ip` only apply to the auto-created ones.
+
 The auto-created `uboot` child waits up to 15 seconds for the U-Boot prompt
 after each power cycle. For a board that takes longer to reach U-Boot, or one
 with a different prompt, configure the child explicitly with its own
@@ -92,15 +96,16 @@ export:
 
 | Parameter      | Description                                | Type | Required | Default                      |
 | -------------- | ------------------------------------------ | ---- | -------- | ---------------------------- |
-| flasher_bundle | The OCI bundle to use for the flasher      | str  | yes      |                              |
+| flasher_bundle | The OCI bundle to use for the flasher      | str  | no       | (the flasher class's own bundle, such as the one in the table above for TIJ784S4Flasher) |
 | cache_dir      | The directory to cache the bundles. A cached bundle is reused across sessions until its tag moves to another manifest digest; older versions are removed by a later session once no other session uses the bundle | str  | no       | /var/lib/jumpstarter/flasher |
 | tftp_dir       | The directory to serve the images via TFTP | str  | no       | /var/lib/tftpboot            |
 | http_dir       | The directory to serve the images via HTTP | str  | no       | /var/www/html                |
 | variant        | The variant of the DUT DTB to flash to     | str  | no       | (the default defined in the manifest) |
 | manifest       | The manifest to use from the bundle. Every bundle can have multiple manifests, this is the name of the manifest to use  | str  | no       | manifest.yaml |
 | default_target | The default target to flash to if none specified | str  | no       |                              |
+| cacert         | Path on the exporter to a CA certificate passed to the DUT for the HTTPS downloads it makes itself, not through the exporter. A client `--cacert` takes precedence | str | no |                    |
 | exporter_ip        | IP address the DUT uses to reach the exporter tftp/http servers. Passed as `advertised_host` to the auto-created tftp/http children, overriding the detected server IP | str | no | (detected from the tftp/http server) |
-| fls_version    | fls version the DUT downloads from GitHub releases. When unset, the DUT fetches the fls binary shipped in the exporter image from the exporter's HTTP server. Clients can still override with `--fls-version` or `--fls-binary-url` | str | no | (serve the exporter's fls binary) |
+| fls_version    | fls version the DUT downloads from GitHub releases. When unset, the DUT fetches the fls binary shipped in the exporter image (`/usr/local/bin/fls-aarch64` or `/usr/local/bin/fls`) from the exporter's HTTP server; if the exporter has none, the DUT downloads a default fls release from GitHub. Clients can still override with `--fls-version` or `--fls-binary-url` | str | no | (serve the exporter's fls binary) |
 
 ### oci-bundles
 
@@ -128,7 +133,7 @@ artifacts and metadata. It is a container that contains the following:
 | `bootcmd`            | Command used to boot the device (e.g. booti, bootz)                        |         |
 | `default_target`     | Default target device to flash to if none specified                        |         |
 | `targets`            | Map of target names to device paths                                        |         |
-| `login.type`         | Type of login shell                                                        | busybox |
+| `shelltype`          | Type of shell the flasher boots into, only `busybox` is supported          | busybox |
 | `login.login_prompt` | Expected login prompt string                                               | login:  |
 | `login.username`     | Username to log in with, leave empty if not needed                         |         |
 | `login.password`     | Password for login, leave empty if not needed                              |         |
@@ -140,7 +145,7 @@ artifacts and metadata. It is a container that contains the following:
 | `initram.address`    | Memory address to load initramfs to (if any)                               |         |
 | `dtb.default`        | Default DTB variant to use                                                 |         |
 | `dtb.address`        | Memory address to load DTB to                                              |         |
-| `dtb.variants`       | Map of DTB variant names to files                                          |         |
+| `dtb.variants`       | Map of DTB variant names to a `file` and/or a `bootcmd` that replaces the default `bootcmd` |         |
 
 ### Bundle Examples
 
@@ -182,7 +187,7 @@ Options:
 Commands:
   bootloader-shell  Start a uboot/bootloader interactive console
   busybox-shell     Start a busybox shell
-  flash             Flash image to DUT from file
+  flash             Flash image(s) to DUT
 
 ```
 
@@ -222,7 +227,7 @@ Options:
   --force-exporter-http          Force use of exporter HTTP
   --force-flash-bundle TEXT      Force use of a specific flasher OCI bundle
   --cacert FILE                  CA certificate to use for HTTPS
-  --insecure-tls / -k            Skip TLS certificate verification
+  -k, --insecure-tls             Skip TLS certificate verification
   --header TEXT                  Custom HTTP header in 'Key: Value' format
   --bearer TEXT                  Bearer token for HTTP authentication
   --retries INTEGER              Number of retry attempts for flash operation
@@ -313,7 +318,7 @@ GNU ld version 2.35.2-42.el9
 ```shell
 Usage: j storage busybox-shell [OPTIONS]
 
-  Start a busybox interactive console
+  Start a busybox shell
 
 Options:
   --console-debug  Enable console debug mode
@@ -368,17 +373,19 @@ and tftp servers will be online and serving the images from the flasher bundle.
 Get the busybox shell on the device
 ```python
 with flasherclient.busybox_shell() as serial:
-    serial.send("ls -la\n")
-    serial.expect("#")
-    print(serial.before)
+    with serial.pexpect() as console:
+        console.send("ls -la\n")
+        console.expect("#")
+        print(console.before)
 ```
 
 Get the bootloader shell on the device
 ```python
 with flasherclient.bootloader_shell() as serial:
-    serial.send("version\n")
-    serial.expect("=>")
-    print(serial.before)
+    with serial.pexpect() as console:
+        console.send("version\n")
+        console.expect("=>")
+        print(console.before)
 ```
 
 ## API Reference

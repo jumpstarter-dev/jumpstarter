@@ -31,6 +31,15 @@ export:
 | `baudrate` | Console baud rate. | `115200` |
 | `timeout_s` | Timeout for USB control transfers, in seconds. Power sequences can block for a long time. | `20` |
 
+The driver does not power off the DUT or switch the storage mux when a lease
+starts or ends, so the board stays as the last client left it. To power it off
+between leases, run `j dutlink power off` in an `afterLease`
+{doc}`hook <../../../introduction/hooks>`.
+
+The console gets the board's power control as its `power` child, so pressing
+Ctrl-] three times in `j dutlink console console` power cycles the DUT (see the
+{doc}`PySerial driver <pyserial>`).
+
 ### Firmware
 
 Power and storage control need DUT Link firmware 0.08 or later: older firmware has

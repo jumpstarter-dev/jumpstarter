@@ -52,7 +52,7 @@ client.power.off()
 ### CLI
 
 ```bash
-$ sudo uv run jmp exporter shell -c ./packages/jumpstarter-driver-energenie/examples/exporter.yaml
+$ sudo uv run jmp shell --exporter-config ./packages/jumpstarter-driver-energenie/examples/exporter.yaml
 
 $$ j
 Usage: j [OPTIONS] COMMAND [ARGS]...
@@ -60,10 +60,12 @@ Usage: j [OPTIONS] COMMAND [ARGS]...
   Generic composite device
 
 Options:
-  --help  Show this message and exit.
+  --log-level [DEBUG|INFO|WARNING|ERROR|CRITICAL]
+                                  Set the log level
+  --help                          Show this message and exit.
 
 Commands:
-  power   Generic power
+  power  Generic power
 
 $$ j power on
 

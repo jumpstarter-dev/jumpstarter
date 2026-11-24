@@ -4,8 +4,9 @@
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-tmt
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-tmt
 ```
 
 ## Configuration
@@ -33,7 +34,7 @@ export:
 
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
-| reboot_cmd | Command to reboot the target device | str | no | "j power cycle" |
+| reboot_cmd | Command tmt runs to hard-reboot the target device; when set, it is passed to tmt as `--feeling-safe --hard-reboot <reboot_cmd>` | str | no | "" |
 | default_username | Default username for SSH connections | str | no | "" |
 | default_password | Default password for SSH connections | str | no | "" |
 
@@ -96,7 +97,7 @@ sts$
 The driver automatically handles TMT provision arguments by:
 
 1. **Detecting provision sections**: Looks for `provision` or `run` commands in the TMT arguments
-2. **Replacing connection details**: Automatically replaces or adds SSH connection parameters (`-h connect -g <host> -P <port> -u <username> -p <password>`)
+2. **Replacing connection details**: Automatically replaces or adds SSH connection parameters (`-h connect -g <host> -P <port> -u <username> -p <password>`), followed by `--feeling-safe --hard-reboot <reboot_cmd>` when `reboot_cmd` is set
 3. **Preserving other arguments**: Keeps all other TMT arguments intact
 
 Example of how arguments are transformed:
@@ -104,8 +105,9 @@ Example of how arguments are transformed:
 # Input command
 j tmt run --name /my/test/plan provision -h connect -g 192.168.1.100 -P 22
 
-# Automatically transformed to use SSH connection
-# TMT receives: run --name /my/test/plan provision -h connect -g <forwarded_host> -P <forwarded_port> -u root -p password
+# TMT receives the address of the ssh child (a forwarded local port with
+# --forward-ssh) and the configured credentials:
+# run --name /my/test/plan provision -h connect -g <ssh_host> -P <ssh_port> -u root -p somePassword --feeling-safe --hard-reboot "j power cycle"
 ```
 
 ## API Reference

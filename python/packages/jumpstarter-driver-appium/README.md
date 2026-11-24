@@ -64,6 +64,11 @@ export:
 | `startup_timeout` | Seconds to wait for Appium to become ready | `60` |
 | `max_upload_bytes` | Largest application a client may upload | 4 GiB |
 
+A target driver's `appium` option accepts `executable`, `home`,
+`capabilities`, `env`, `startup_timeout` and `max_upload_bytes`; the target
+chooses the Appium driver itself and rejects `drivers` and `state_dir`. Some
+targets accept further options, described on their pages.
+
 ## Usage
 
 ```python
@@ -95,7 +100,8 @@ with env() as root, root.appium.serve() as target:
   Node's `NODE_EXTRA_CA_CERTS`, for tools written in other languages.
 
 Closing the block removes the listener. Appium keeps running until `stop()`,
-reset or the end of the lease.
+reset or the end of the lease; emulator and simulator targets also stop it at
+power off.
 
 ### Applications
 

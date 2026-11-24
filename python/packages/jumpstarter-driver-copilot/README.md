@@ -17,7 +17,7 @@ Hardware references:
 ## Installation and host setup
 
 ```shell
-pip install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-copilot
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-copilot
 ```
 
 The exporter requires Linux, a kernel exposing the CoPilot GPIO chip, and the
@@ -42,7 +42,7 @@ The driver does not install rules, change permissions or bind kernel drivers.
 
 The controller currently manages **outputs only**, not GPIO inputs. Readback is
 of an output GPIO; it does not measure supply voltage or confirm physical relay
-contact closure. The upstream candidate is covered by simulated GPIO and real
+contact closure. The driver is covered by simulated GPIO and real
 RPC tests; these examples are not a claim of physical validation on every HAT.
 
 For a complete bench with native supply, three named relay contacts and UART,

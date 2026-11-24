@@ -31,7 +31,11 @@ export:
 | ------------- | --------------------------------------------------- | ----- | -------- | ------------------ |
 | host          | Hostname or IP address of the DUT                   | str   | yes      |                    |
 | port          | Port number of the DUT service to connect to        | int   | yes      |                    |
-| enable_address | Whether to enable address mode (reporting the address of the client) | bool  | no | true   |
+| enable_address | Whether to enable address mode (reporting the DUT host and port to the client) | bool  | no | true   |
+
+`UdpNetwork` takes the same parameters. `UnixNetwork` takes a single required
+`path` (str), the Unix domain socket to connect to, and has no address mode.
+`EchoNetwork` takes no parameters.
 
 ## API Reference
 

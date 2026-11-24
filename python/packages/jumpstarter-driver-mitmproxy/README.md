@@ -77,16 +77,16 @@ export:
 
 | Parameter | Description | Type | Default |
 | --------- | ----------- | ---- | ------- |
-| `listen.host` | Proxy listener bind address | str | `0.0.0.0` |
+| `listen.host` | Proxy listener bind address | str | `127.0.0.1` |
 | `listen.port` | Proxy listener port | int | `8080` |
-| `web.host` | mitmweb UI bind address | str | `0.0.0.0` |
+| `web.host` | mitmweb UI bind address | str | `127.0.0.1` |
 | `web.port` | mitmweb UI port | int | `8081` |
-| `directories.data` | Base data directory | str | `/opt/jumpstarter/mitmproxy` |
+| `directories.data` | Base data directory | str | `jumpstarter-mitmproxy-<user>` in the system temp directory |
 | `directories.conf` | mitmproxy config/certs dir | str | `{data}/conf` |
 | `directories.flows` | Recorded flow files dir | str | `{data}/flows` |
 | `directories.addons` | Custom addon scripts dir | str | `{data}/addons` |
 | `directories.mocks` | Mock definitions dir | str | `{data}/mock-responses` |
-| `directories.files` | Files to serve from mocks | str | `{data}/mock-files` |
+| `directories.files` | Files to serve from mocks. Deleted with its contents when the proxy stops | str | `{data}/mock-files` |
 | `ssl_insecure` | Skip upstream SSL verification | bool | `true` |
 | `mock_scenario` | Scenario file to auto-load on startup | str | `""` |
 | `mocks` | Inline mock endpoint definitions | dict | `{}` |
@@ -234,6 +234,8 @@ with proxy.mock_scenario("happy-path.yaml"):
     run_tests()
 ```
 
+`j proxy mock load` reads the file on the client and uploads it, together with any files its `file:` entries reference. `load_mock_scenario()` and `mock_scenario()` read the file on the exporter, inside `directories.mocks`.
+
 See `examples/scenarios/` in the package source for complete scenario examples including conditional rules, templates, and sequences.
 
 ### Web UI Port Forwarding
@@ -246,7 +248,7 @@ j proxy web                              # tunnel to localhost:8081
 j proxy web --port 9090                  # use a custom local port
 ```
 
-Then open `http://localhost:8081` in your browser to inspect traffic in real time.
+Then open `http://localhost:8081` in your browser to inspect traffic in real time. The UI is protected by a token that the driver generates; use the `token` value from the Web UI URL that `j proxy start -w` and `j proxy status` print.
 
 ### Python API
 
@@ -317,6 +319,8 @@ def test_telemetry_sent(client):
     assert len(cap.requests) >= 1
     cap.assert_request_made("POST", "/api/v1/telemetry")
 ```
+
+Response bodies that are binary or larger than 256 KB are not sent inline; they are spooled to `{data}/capture-spool` on the exporter, in a directory with mode `0700` and files with mode `0600`. `j proxy capture save` removes them after downloading, and stopping the proxy removes the directory.
 
 #### Advanced Mocking
 
@@ -390,6 +394,8 @@ proxy.set_mock_addon(
 )
 ```
 
+The addon name is the file name, without `.py`, of a script in `directories.addons` that defines a `Handler` class with a `handle(flow, config)` method. Names that resolve outside that directory, such as `../other` or an absolute path, are refused, and the request gets the same `500 Addon not found` reply as a missing script.
+
 #### State Store
 
 Share state between tests and conditional mock rules:
@@ -412,13 +418,13 @@ proxy.clear_state()
 
 ### Container Deployment
 
-```bash
-podman build -t jumpstarter-mitmproxy:latest .
+The `quay.io/jumpstarter-dev/jumpstarter` image already contains this driver and mitmproxy:
 
+```bash
 podman run --rm -it --privileged \
   -v /dev:/dev \
   -v /etc/jumpstarter:/etc/jumpstarter:Z \
   -p 8080:8080 -p 8081:8081 \
-  jumpstarter-mitmproxy:latest \
-  jmp exporter start my-bench
+  quay.io/jumpstarter-dev/jumpstarter:latest \
+  jmp run --exporter my-bench
 ```

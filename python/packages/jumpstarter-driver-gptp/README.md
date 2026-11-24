@@ -106,8 +106,8 @@ export:
 | profile            | `"gptp"` (802.1AS-2020) or `"default"` (1588-2019)  | str        | no       | `"gptp"` |                     |
 | transport          | `"L2"`, `"UDPv4"`, or `"UDPv6"`                     | str        | no       | `"L2"`   |                     |
 | role               | `"master"`, `"slave"`, or `"auto"` (BMCA election)  | str        | no       | `"auto"` |                     |
-| sync_system_clock  | Run `phc2sys` to sync CLOCK_REALTIME to PHC          | bool       | no       | true     |                     |
-| ptp4l_extra_args   | Additional ptp4l command-line arguments              | list[str]  | no       | []       |                     |
+| sync_system_clock  | Run `phc2sys` to sync CLOCK_REALTIME to PHC (only when hardware timestamping is available) | bool       | no       | true     |                     |
+| ptp4l_extra_args   | Additional ptp4l command-line arguments; `-f`, `--config`, `-i`, `--interface`, `--uds_address` and `--log_file` are rejected | list[str]  | no       | []       |                     |
 
 ## PTP Standards Reference
 
@@ -224,8 +224,9 @@ j gptp start              # Start PTP synchronization
 j gptp stop               # Stop PTP synchronization
 j gptp status             # Show sync status
 j gptp offset             # Show current clock offset
+j gptp port-stats         # Show port statistics (only the sync count is live)
 j gptp monitor -n 20      # Monitor 20 sync events
-j gptp set-priority 0     # Force grandmaster role
+j gptp set-priority 0     # Set priority1 (MockGptp only, see the note above)
 ```
 
 ## Hardware Requirements

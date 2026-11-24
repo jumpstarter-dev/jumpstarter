@@ -9,8 +9,9 @@ built-in mass storage interface handles all the flash programming.
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-stlink-msd
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-stlink-msd
 ```
 
 ## Configuration
@@ -20,7 +21,7 @@ export:
   flasher:
     type: jumpstarter_driver_stlink_msd.driver.StlinkMsdFlasher
     config:
-      # volume_name: "NOD_H755ZI"   # optional: auto-detected if only one ST-LINK is connected
+      volume_name: "NOD_H755ZI"   # optional: auto-detected if only one ST-LINK is connected
 ```
 
 | Parameter     | Description                                                      | Type           | Required | Default      |

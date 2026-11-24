@@ -6,7 +6,8 @@ Jumpstarter gRPC pipeline, and runs tests using the `adbutils` Python API.
 
 ## Prerequisites
 
-- Android SDK with emulator and platform-tools
+- Android SDK with emulator and platform-tools (and the command-line tools,
+  which `setup.sh` uses for `sdkmanager` and `avdmanager`)
 - An Android Virtual Device (AVD) created
 
 ## Quick Setup
