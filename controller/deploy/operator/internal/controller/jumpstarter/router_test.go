@@ -19,6 +19,7 @@ package jumpstarter
 import (
 	"context"
 	"fmt"
+	"path"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
@@ -182,7 +184,45 @@ var _ = Describe("Router Lifecycle", func() {
 		for _, e := range dep.Spec.Template.Spec.Containers[0].Env {
 			envNames = append(envNames, e.Name)
 		}
-		Expect(envNames).To(ContainElements("GRPC_ROUTER_ENDPOINT", "ROUTER_KEY", "NAMESPACE"))
+		Expect(envNames).To(ContainElements("GRPC_ROUTER_ENDPOINT", "ROUTER_KEY"))
+		Expect(envNames).NotTo(ContainElement("NAMESPACE"))
+	})
+
+	It("hands the router the controller configuration as a read-only file", func() {
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       makeJumpstarterSpec(new(int32(1))),
+		})).To(Succeed())
+
+		doReconcile()
+
+		dep := &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{
+			Name: routerDeploymentName(0), Namespace: crNamespace,
+		}, dep)).To(Succeed())
+
+		podSpec := dep.Spec.Template.Spec
+		var configVolume *corev1.Volume
+		for i := range podSpec.Volumes {
+			if podSpec.Volumes[i].ConfigMap != nil && podSpec.Volumes[i].ConfigMap.Name == "jumpstarter-controller" {
+				configVolume = &podSpec.Volumes[i]
+			}
+		}
+		Expect(configVolume).NotTo(BeNil(), "expected a volume from the jumpstarter-controller ConfigMap")
+		Expect(configVolume.ConfigMap.Items).To(HaveLen(1))
+		configItem := configVolume.ConfigMap.Items[0]
+		Expect(configItem.Key).To(Equal("config"))
+
+		container := podSpec.Containers[0]
+		var configMount *corev1.VolumeMount
+		for i := range container.VolumeMounts {
+			if container.VolumeMounts[i].Name == configVolume.Name {
+				configMount = &container.VolumeMounts[i]
+			}
+		}
+		Expect(configMount).NotTo(BeNil(), "expected the configuration volume to be mounted")
+		Expect(configMount.ReadOnly).To(BeTrue())
+		Expect(container.Args).To(ContainElement("-config-file=" + path.Join(configMount.MountPath, configItem.Path)))
 	})
 
 	It("applies default resource requests and limits when none are specified", func() {
@@ -229,6 +269,32 @@ var _ = Describe("Router Lifecycle", func() {
 		Expect(*containerSC.AllowPrivilegeEscalation).To(BeFalse())
 		Expect(containerSC.Capabilities).NotTo(BeNil())
 		Expect(containerSC.Capabilities.Drop).To(ContainElement(corev1.Capability("ALL")))
+	})
+
+	It("leaves the router Deployment unchanged on the next reconcile", func() {
+		Expect(k8sClient.Create(ctx, &operatorv1alpha1.Jumpstarter{
+			ObjectMeta: metav1.ObjectMeta{Name: crName, Namespace: crNamespace},
+			Spec:       makeJumpstarterSpec(new(int32(1))),
+		})).To(Succeed())
+		recorder := record.NewFakeRecorder(100)
+		reconciler := newReconciler()
+		reconciler.Recorder = recorder
+		request := reconcile.Request{NamespacedName: types.NamespacedName{Name: crName, Namespace: crNamespace}}
+
+		_, err := reconciler.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+		for len(recorder.Events) > 0 {
+			<-recorder.Events
+		}
+
+		_, err = reconciler.Reconcile(ctx, request)
+		Expect(err).NotTo(HaveOccurred())
+
+		var events []string
+		for len(recorder.Events) > 0 {
+			events = append(events, <-recorder.Events)
+		}
+		Expect(events).NotTo(ContainElement(ContainSubstring("RouterDeploymentUpdated")))
 	})
 
 	It("creates one Deployment and Service per replica when replicas=3", func() {
