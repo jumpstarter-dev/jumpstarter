@@ -906,9 +906,11 @@ class TestMonitorTokenExpiry:
 class _FakeStatusMonitor:
     """Minimal stand-in for StatusMonitor in shell tests."""
 
-    def __init__(self, statuses=None, connection_lost=False):
+    def __init__(self, statuses=None, connection_lost=False, previous_status=None, status_message=""):
         self._statuses = list(statuses or [ExporterStatus.LEASE_READY])
         self._connection_lost = connection_lost
+        self._previous_status = previous_status
+        self._status_message = status_message
         self._get_status_unsupported = False
         self.end_session_called = False
 
@@ -917,8 +919,12 @@ class _FakeStatusMonitor:
         return self._statuses[0] if self._statuses else None
 
     @property
+    def previous_status(self):
+        return self._previous_status
+
+    @property
     def status_message(self):
-        return ""
+        return self._status_message
 
     @property
     def connection_lost(self):
@@ -1123,6 +1129,56 @@ class TestRunShellWithLeaseAsync:
 
         assert exit_code == 42
         client.end_session_async.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("previous_status", "status_message", "warnings"),
+        [
+            (
+                ExporterStatus.AFTER_LEASE_HOOK_FAILED,
+                "Exporter shutting down due to afterLease hook failure",
+                ["Warning: Exporter shutting down due to afterLease hook failure"],
+            ),
+            (ExporterStatus.AFTER_LEASE_HOOK, "Exporter shutting down", []),
+            (ExporterStatus.AVAILABLE, "Exporter shutting down", []),
+        ],
+        ids=["hook-failed", "hook-running", "exporter-available"],
+    )
+    async def test_exporter_offline_ends_after_lease_wait_with_exit_code(
+        self, previous_status, status_message, warnings, capsys, caplog
+    ):
+        """An exporter that goes OFFLINE ends the afterLease wait with the command's exit code.
+
+        With on_failure=exit the exporter reports AFTER_LEASE_HOOK_FAILED and
+        OFFLINE back to back, and an exitOnLeaseEnd exporter reports AVAILABLE
+        and OFFLINE; either then waits for the lease to be released before it
+        exits. The status before OFFLINE can come and go between two polls,
+        and waiting on for it ran out the full afterLease timeout. Only
+        AFTER_LEASE_HOOK_FAILED before OFFLINE is reported, as a warning: an
+        exitOnLeaseEnd exporter need not report AVAILABLE before it leaves.
+        """
+        monitor = _FakeStatusMonitor(
+            statuses=[ExporterStatus.LEASE_READY, ExporterStatus.OFFLINE],
+            previous_status=previous_status,
+            status_message=status_message,
+        )
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        lease = _make_shell_lease(release=True, lease_ended=False)
+        cancel_scope = Mock(cancel_called=False)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=42),
+            caplog.at_level(logging.WARNING),
+        ):
+            exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
+
+        assert exit_code == 42
+        assert [line for line in capsys.readouterr().out.splitlines() if line.startswith("Warning:")] == warnings
+        assert "Timeout waiting for afterLease hook" not in caplog.text
 
     async def test_unreachable_after_shell_exit_returns_exit_code(self):
         """An exporter lost while the user is at the prompt must not trigger a reconnect.
