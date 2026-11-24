@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import sys
 from collections import OrderedDict
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
 from functools import partial
@@ -29,6 +32,7 @@ class WithOptions:
     show_leases: bool = False
     show_status: bool = False
     show_disabled: bool = False
+    show_ports: bool = False
 
 
 def add_display_columns(table, options: WithOptions | None = None):
@@ -44,6 +48,8 @@ def add_display_columns(table, options: WithOptions | None = None):
     if options.show_status:
         table.add_column("STATUS")
     table.add_column("LABELS")
+    if options.show_ports:
+        table.add_column("PORTS")
     if options.show_leases:
         table.add_column("LEASED BY")
         table.add_column("LEASE STATUS")
@@ -68,6 +74,8 @@ def add_exporter_row(
         row_data.append(status_str)
     labels = exporter.labels
     row_data.append(",".join((f"{k}={v}" for k, v in sorted(labels.items()))))
+    if options.show_ports:
+        row_data.append(",\n".join(port.summary() for port in exporter.ports))
     if options.show_leases:
         if lease_info:
             lease_client, lease_status, expected_release = lease_info
@@ -113,6 +121,27 @@ _MEMBER_STATES = {
     client_pb2.LEASE_MEMBER_STATE_LOST: "Lost",
 }
 
+_FORWARD_STATES = {
+    client_pb2.LEASE_FORWARD_STATE_PENDING: "Pending",
+    client_pb2.LEASE_FORWARD_STATE_DISABLED: "Disabled",
+    client_pb2.LEASE_FORWARD_STATE_LISTENING: "Listening",
+    client_pb2.LEASE_FORWARD_STATE_CONNECTED: "Connected",
+    client_pb2.LEASE_FORWARD_STATE_FAILED: "Failed",
+}
+
+# The enums of jumpstarter.v1.PortReport, by number. The zero value of the
+# attachment means socket, and the zero value of the transport means stream.
+_PORT_DIRECTIONS = {1: "provides", 2: "requires", 3: "connects"}
+_PORT_ATTACHMENTS = {0: "socket", 1: "socket", 2: "wired", 3: "wireless"}
+_PORT_TRANSPORTS = {0: "stream", 1: "stream", 2: "datagram", 3: "frame"}
+
+# A forward name and a port name are DNS labels, as a role name is.
+_DNS_LABEL = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+_MAX_DNS_LABEL = 63
+MAX_FORWARDS = 16
+MIN_FORWARD_ENDPOINTS = 2
+MAX_FORWARD_ENDPOINTS = 8
+
 # The answer of a controller that predates lease members to a request that
 # has neither `selector` nor `exporter_name`.
 _OLD_CONTROLLER_CREATE_DETAILS = "one of selector or exporter_name is required"
@@ -122,6 +151,200 @@ _TOO_OLD_MEMBERS = (
     "upgrade the controller, or request one exporter with a selector"
 )
 _TOO_OLD_TEMPLATES = "the controller is too old for lease templates: upgrade the controller"
+_DELETE_UNUSABLE_LEASE_TIMEOUT = 15.0
+_TOO_OLD_FORWARDS = (
+    "the controller is too old for port forwards: it created the lease without its forwards. "
+    "Upgrade the controller, or request the members without forwards"
+)
+
+
+def is_dns_label(value: str) -> bool:
+    """Whether value can be a role name, a forward name or a port name."""
+    return len(value) <= _MAX_DNS_LABEL and bool(_DNS_LABEL.match(value))
+
+
+def _arrows() -> tuple[str, str]:
+    """The signs between the endpoints of a forward, in ASCII where the output cannot show the arrows."""
+    try:
+        "\u2192\u2194".encode(getattr(sys.stdout, "encoding", None) or "utf-8")
+    except (UnicodeError, LookupError):
+        return "->", "<->"
+    return "\u2192", "\u2194"
+
+
+class PortReport(BaseModel):
+    """A port that a driver of an exporter declares. It has no local address."""
+
+    name: str
+    direction: str  # provides | requires | connects
+    protocol: str | None = None
+    attachment: str = "socket"  # socket | wired | wireless
+    transport: str = "stream"  # stream | datagram | frame
+
+    @classmethod
+    def from_protobuf(cls, data) -> PortReport:
+        return cls(
+            name=data.name,
+            direction=_PORT_DIRECTIONS.get(data.direction, "unspecified"),
+            protocol=data.protocol if data.HasField("protocol") and data.protocol else None,
+            attachment=_PORT_ATTACHMENTS.get(data.attachment, "socket"),
+            transport=_PORT_TRANSPORTS.get(data.transport, "stream"),
+        )
+
+    @model_serializer(mode="wrap")
+    def _omit_defaults(self, handler):
+        # A port prints as its declaration: without the values that it does not set.
+        data = handler(self)
+        if self.protocol is None:
+            data.pop("protocol", None)
+        if self.attachment == "socket":
+            data.pop("attachment", None)
+        if self.transport == "stream":
+            data.pop("transport", None)
+        return data
+
+    @property
+    def forwardable(self) -> bool:
+        """Whether a forward can use the port: only a socket that carries a TCP stream (DD-8, DD-9)."""
+        return self.attachment == "socket" and self.transport == "stream"
+
+    def summary(self) -> str:
+        """`name (direction, protocol)`, with the attachment and the transport that a forward cannot use."""
+        details = [self.direction]
+        if self.protocol:
+            details.append(self.protocol)
+        if self.attachment != "socket":
+            details.append(self.attachment)
+        if self.transport != "stream":
+            details.append(self.transport)
+        return f"{self.name} ({', '.join(details)})"
+
+
+class ForwardEndpoint(BaseModel):
+    """One end of a forward: a member of the lease and a port of its exporter."""
+
+    member_name: str
+    port_name: str
+
+    @classmethod
+    def from_protobuf(cls, data: client_pb2.ForwardEndpoint) -> ForwardEndpoint:
+        return cls(member_name=data.member_name, port_name=data.port_name)
+
+    def to_protobuf(self) -> client_pb2.ForwardEndpoint:
+        return client_pb2.ForwardEndpoint(member_name=self.member_name, port_name=self.port_name)
+
+    def __str__(self) -> str:
+        return f"{self.member_name}.{self.port_name}"
+
+
+class LeaseForward(BaseModel):
+    """A forward of a lease or of a lease template: it connects ports on different members."""
+
+    name: str
+    endpoints: list[ForwardEndpoint]
+
+    @classmethod
+    def from_protobuf(cls, data: client_pb2.LeaseForward) -> LeaseForward:
+        return cls(name=data.name, endpoints=[ForwardEndpoint.from_protobuf(e) for e in data.endpoints])
+
+    def to_protobuf(self) -> client_pb2.LeaseForward:
+        return client_pb2.LeaseForward(name=self.name, endpoints=[e.to_protobuf() for e in self.endpoints])
+
+    def describe(self, directions: Mapping[tuple[str, str], str] | None = None) -> str:
+        """The endpoints of the forward, for display.
+
+        directions gives the direction of a port by (member, port). With
+        them, an arrow points from the `provides` port to each `requires`
+        port, and a double arrow connects the two ends of a path. Without
+        them, the endpoints are in the order of the lease.
+        """
+        known = [(directions or {}).get((e.member_name, e.port_name)) for e in self.endpoints]
+        arrow, both = _arrows()
+        if len(self.endpoints) == 2 and known == ["connects", "connects"]:
+            return f"{self.endpoints[0]} {both} {self.endpoints[1]}"
+        if len(known) > 1 and known.count("provides") == 1 and known.count("requires") == len(known) - 1:
+            source = self.endpoints[known.index("provides")]
+            targets = [str(e) for e, direction in zip(self.endpoints, known, strict=True) if direction == "requires"]
+            return f"{source} {arrow} {', '.join(targets)}"
+        return ", ".join(str(e) for e in self.endpoints)
+
+
+class LeaseForwardStatus(BaseModel):
+    name: str
+    state: str  # Pending | Disabled | Listening | Connected | Failed
+    message: str | None = None
+
+    @classmethod
+    def from_protobuf(cls, data: client_pb2.LeaseForwardStatus) -> LeaseForwardStatus:
+        return cls(
+            name=data.name,
+            state=_FORWARD_STATES.get(data.state, "Unknown"),
+            message=data.message if data.HasField("message") and data.message else None,
+        )
+
+    @property
+    def failed(self) -> bool:
+        return self.state == "Failed"
+
+    @property
+    def usable(self) -> bool:
+        """Whether the setup of the forward is complete: it is Listening or Connected."""
+        return self.state in ("Listening", "Connected")
+
+    def describe_failure(self) -> str:
+        """Why a Failed or Disabled forward does not operate, for an error message."""
+        # The name is not known when only the condition of the lease says that a forward failed.
+        subject = f"forward '{self.name}'" if self.name else "a forward"
+        text = f"{subject} {'is disabled' if self.state == 'Disabled' else 'failed'}"
+        if self.message:
+            text += f": {self.message}"
+        return text
+
+
+def validate_forwards(forwards: Iterable[LeaseForward], member_names: Iterable[str]) -> None:  # noqa: C901
+    """Check the forwards of a request against its members, as the admission rules of the Lease do.
+
+    :raises ValueError: with the forward and the rule that it breaks
+    """
+    forwards = list(forwards)
+    members = list(member_names)
+    if len(forwards) > MAX_FORWARDS:
+        raise ValueError(f"too many forwards (max {MAX_FORWARDS})")
+    seen: set[str] = set()
+    for forward in forwards:
+        if not is_dns_label(forward.name):
+            raise ValueError(
+                f"invalid forward name {forward.name!r} (lowercase letters, digits and '-', at most "
+                f"{_MAX_DNS_LABEL} characters)"
+            )
+        if forward.name in seen:
+            raise ValueError(f"the forward '{forward.name}' is given more than once")
+        seen.add(forward.name)
+        if forward.name in members:
+            raise ValueError(f"'{forward.name}' is a member: a forward and a member cannot have the same name")
+        if not MIN_FORWARD_ENDPOINTS <= len(forward.endpoints) <= MAX_FORWARD_ENDPOINTS:
+            raise ValueError(
+                f"the forward '{forward.name}' has {len(forward.endpoints)} endpoints: a forward connects "
+                f"{MIN_FORWARD_ENDPOINTS} to {MAX_FORWARD_ENDPOINTS} endpoints"
+            )
+        used: set[str] = set()
+        for endpoint in forward.endpoints:
+            if endpoint.member_name not in members:
+                raise ValueError(
+                    f"the forward '{forward.name}' names the member '{endpoint.member_name}', which the request "
+                    f"does not define (members: {', '.join(members) or 'none'})"
+                )
+            if endpoint.member_name in used:
+                raise ValueError(
+                    f"the forward '{forward.name}' has two endpoints on the member '{endpoint.member_name}': "
+                    "each endpoint is on a different member"
+                )
+            used.add(endpoint.member_name)
+            if not is_dns_label(endpoint.port_name):
+                raise ValueError(
+                    f"the forward '{forward.name}' has the invalid port name {endpoint.port_name!r} (lowercase "
+                    f"letters, digits and '-', at most {_MAX_DNS_LABEL} characters)"
+                )
 
 
 class LeaseMember(BaseModel):
@@ -249,11 +472,27 @@ class Exporter(BaseModel):
     enabled: bool = True
     lease: Lease | None = None
     deprecated_labels: dict[str, str] = Field(default_factory=dict)
+    # The ports that the drivers of the exporter declare. A forward of a lease connects them.
+    ports: list[PortReport] = Field(default_factory=list)
 
     @field_serializer("status", when_used="json")
     def serialize_status(self, status: ExporterStatus | None):
         # emit the status name instead of the raw protobuf integer
         return status.name if status is not None else None
+
+    @model_serializer(mode="wrap")
+    def _omit_ports_of_exporter_without_ports(self, handler):
+        # An exporter that declares no ports prints as it did before ports existed.
+        data = handler(self)
+        if not self.ports:
+            data.pop("ports", None)
+        return data
+
+    def port(self, name: str) -> PortReport | None:
+        for port in self.ports:
+            if port.name == name:
+                return port
+        return None
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.Exporter) -> Exporter:
@@ -269,6 +508,7 @@ class Exporter(BaseModel):
             status=status,
             enabled=data.enabled if data.HasField("enabled") else True,
             deprecated_labels=dict(data.deprecated_labels),
+            ports=[PortReport.from_protobuf(port) for port in data.ports],
         )
 
     @classmethod
@@ -339,6 +579,10 @@ class Lease(BaseModel):
     constraints: list[LeaseConstraint] = Field(default_factory=list)
     template: LeaseTemplateUse | None = None
     member_statuses: list[LeaseMemberStatus] = Field(default_factory=list)
+    # Set only for a member-form lease with forwards: what connects its members,
+    # and the state of each forward.
+    forwards: list[LeaseForward] = Field(default_factory=list)
+    forward_statuses: list[LeaseForwardStatus] = Field(default_factory=list)
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
@@ -355,6 +599,11 @@ class Lease(BaseModel):
         data = handler(self)
         if not self.members:
             for key in ("members", "constraints", "template", "member_statuses"):
+                if not data.get(key):
+                    data.pop(key, None)
+        if not self.forwards:
+            # A lease without forwards prints as it did before forwards existed.
+            for key in ("forwards", "forward_statuses"):
                 if not data.get(key):
                     data.pop(key, None)
         return data
@@ -379,6 +628,26 @@ class Lease(BaseModel):
 
     def lost_members(self) -> list[LeaseMemberStatus]:
         return [status for status in self.member_statuses if status.lost]
+
+    def forward(self, name: str) -> LeaseForward | None:
+        for forward in self.forwards:
+            if forward.name == name:
+                return forward
+        return None
+
+    def forward_status(self, name: str) -> LeaseForwardStatus | None:
+        for status in self.forward_statuses:
+            if status.name == name:
+                return status
+        return None
+
+    def forward_state(self, name: str) -> str:
+        """The state of a forward. Pending for a forward that the controller did not report yet."""
+        status = self.forward_status(name)
+        return status.state if status is not None else "Pending"
+
+    def failed_forwards(self) -> list[LeaseForwardStatus]:
+        return [status for status in self.forward_statuses if status.failed]
 
     def holds_exporter(self, exporter: str) -> bool:
         """Whether this lease has the exporter, as its one exporter or as a bound member."""
@@ -440,6 +709,8 @@ class Lease(BaseModel):
             constraints=[LeaseConstraint.from_protobuf(constraint) for constraint in data.constraints],
             template=LeaseTemplateUse.from_protobuf(data.template) if data.HasField("template") else None,
             member_statuses=[LeaseMemberStatus.from_protobuf(status) for status in data.member_statuses],
+            forwards=[LeaseForward.from_protobuf(forward) for forward in data.forwards],
+            forward_statuses=[LeaseForwardStatus.from_protobuf(status) for status in data.forward_statuses],
         )
 
     def is_accessible_by(self, client_name: str) -> bool:
@@ -453,7 +724,7 @@ class Lease(BaseModel):
         return client_name == self.client or client_name in self.effective_shared_with
 
     @staticmethod
-    def _add_columns(table, show_template: bool):
+    def _add_columns(table, show_template: bool, show_forwards: bool = False):
         table.add_column("NAME", no_wrap=True)
         table.add_column("SELECTOR")
         if show_template:
@@ -462,14 +733,25 @@ class Lease(BaseModel):
         table.add_column("REMAINING")
         table.add_column("CLIENT")
         table.add_column("EXPORTER")
+        if show_forwards:
+            table.add_column("FORWARDS")
         table.add_column("TAGS")
         table.add_column("SHARED WITH")
 
-    # The TEMPLATE column is shown only for a lease from a template, which the
-    # class alone cannot know: `Lease.rich_add_columns(table)` still works.
+    # The TEMPLATE column is shown only for a lease from a template, and the
+    # FORWARDS column only for a lease with forwards, which the class alone
+    # cannot know: `Lease.rich_add_columns(table)` still works.
     @_class_or_instance_method
     def rich_add_columns(self, table, **kwargs):
-        Lease._add_columns(table, show_template=isinstance(self, Lease) and self.template is not None)
+        Lease._add_columns(
+            table,
+            show_template=isinstance(self, Lease) and self.template is not None,
+            show_forwards=isinstance(self, Lease) and bool(self.forwards),
+        )
+
+    def _forwards_cell(self) -> str:
+        """The FORWARDS column: one `forward=State` line for each forward."""
+        return ",\n".join(f"{forward.name}={self.forward_state(forward.name)}" for forward in self.forwards)
 
     def _exporter_cell(self) -> str:
         """The EXPORTER column: the exporter, or one `role=exporter` line for each member."""
@@ -518,9 +800,17 @@ class Lease(BaseModel):
             parts.append(f"{minutes}m")
         return " ".join(parts)
 
-    def rich_add_rows(self, table, viewer: str | None = None, show_template: bool | None = None):
+    def rich_add_rows(
+        self,
+        table,
+        viewer: str | None = None,
+        show_template: bool | None = None,
+        show_forwards: bool | None = None,
+    ):
         if show_template is None:
             show_template = self.template is not None
+        if show_forwards is None:
+            show_forwards = bool(self.forwards)
         expires_at = self._compute_expires_at()
         expires_at_str = expires_at.strftime("%Y-%m-%d %H:%M:%S") if expires_at else ""
         remaining_str = self._format_remaining(expires_at)
@@ -543,6 +833,7 @@ class Lease(BaseModel):
             remaining_str,
             client_str,
             self._exporter_cell(),
+            *([self._forwards_cell()] if show_forwards else []),
             tags_str,
             shared_str,
         )
@@ -587,6 +878,7 @@ class ExporterList(BaseModel):
     include_leases: bool = Field(default=False, exclude=True)
     include_status: bool = Field(default=False, exclude=True)
     include_disabled: bool = Field(default=False, exclude=True)
+    include_ports: bool = Field(default=False, exclude=True)
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.ListExportersResponse) -> ExporterList:
@@ -607,6 +899,7 @@ class ExporterList(BaseModel):
             show_leases=self.include_leases,
             show_status=self.include_status,
             show_disabled=self.include_disabled,
+            show_ports=self.include_ports,
         )
 
     def rich_add_columns(self, table):
@@ -622,20 +915,26 @@ class ExporterList(BaseModel):
             exporter.rich_add_names(names)
 
     def _dump_exporter(self, exporter, exclude_fields, **kwargs) -> dict:
-        return exporter.model_dump(exclude=exclude_fields, **kwargs)
+        data = exporter.model_dump(exclude=exclude_fields, **kwargs)
+        if self.include_ports:
+            # With the ports asked for, an exporter without ports says so.
+            data.setdefault("ports", [])
+        return data
+
+    def _excluded_fields(self) -> set[str]:
+        hidden = {
+            "lease": not self.include_leases,
+            "online": not self.include_online,
+            "status": not self.include_status,
+            "enabled": not self.include_disabled,
+            "ports": not self.include_ports,
+        }
+        return {name for name, excluded in hidden.items() if excluded}
 
     def model_dump_json(self, **kwargs):
         json_kwargs = {k: v for k, v in kwargs.items() if k in {"indent", "separators", "sort_keys", "ensure_ascii"}}
 
-        exclude_fields = set()
-        if not self.include_leases:
-            exclude_fields.add("lease")
-        if not self.include_online:
-            exclude_fields.add("online")
-        if not self.include_status:
-            exclude_fields.add("status")
-        if not self.include_disabled:
-            exclude_fields.add("enabled")
+        exclude_fields = self._excluded_fields()
 
         data = {
             "exporters": [
@@ -646,15 +945,7 @@ class ExporterList(BaseModel):
         return json.dumps(data, **json_kwargs)
 
     def model_dump(self, **kwargs):
-        exclude_fields = set()
-        if not self.include_leases:
-            exclude_fields.add("lease")
-        if not self.include_online:
-            exclude_fields.add("online")
-        if not self.include_status:
-            exclude_fields.add("status")
-        if not self.include_disabled:
-            exclude_fields.add("enabled")
+        exclude_fields = self._excluded_fields()
 
         caller_exclude = kwargs.pop("exclude", None)
         if caller_exclude:
@@ -684,14 +975,22 @@ class LeaseList(BaseModel):
     def _show_template(self) -> bool:
         return any(lease.template is not None for lease in self.leases)
 
+    def _show_forwards(self) -> bool:
+        return any(lease.forwards for lease in self.leases)
+
     @_class_or_instance_method
     def rich_add_columns(self, table, **kwargs):
-        Lease._add_columns(table, show_template=isinstance(self, LeaseList) and self._show_template())
+        Lease._add_columns(
+            table,
+            show_template=isinstance(self, LeaseList) and self._show_template(),
+            show_forwards=isinstance(self, LeaseList) and self._show_forwards(),
+        )
 
     def rich_add_rows(self, table, viewer: str | None = None):
         show_template = self._show_template()
+        show_forwards = self._show_forwards()
         for lease in self.leases:
-            lease.rich_add_rows(table, viewer=viewer, show_template=show_template)
+            lease.rich_add_rows(table, viewer=viewer, show_template=show_template, show_forwards=show_forwards)
 
     def rich_add_names(self, names):
         for lease in self.leases:
@@ -748,8 +1047,23 @@ class LeaseTemplate(BaseModel):
     default_duration: timedelta | None = None
     default_shared_with: list[str] = Field(default_factory=list)
     generation: int = 0
+    # What connects the members of a lease from this template. A request cannot change them.
+    forwards: list[LeaseForward] = Field(default_factory=list)
 
-    model_config = ConfigDict(ser_json_timedelta="float")
+    model_config = ConfigDict(ser_json_timedelta="float", ignored_types=(_class_or_instance_method,))
+
+    @model_serializer(mode="wrap")
+    def _omit_forwards_of_template_without_forwards(self, handler):
+        data = handler(self)
+        if not self.forwards:
+            data.pop("forwards", None)
+        return data
+
+    def forward(self, name: str) -> LeaseForward | None:
+        for forward in self.forwards:
+            if forward.name == name:
+                return forward
+        return None
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.LeaseTemplate) -> LeaseTemplate:
@@ -769,6 +1083,7 @@ class LeaseTemplate(BaseModel):
             default_duration=data.default_duration.ToTimedelta() if data.HasField("default_duration") else None,
             default_shared_with=list(data.default_shared_with),
             generation=data.generation,
+            forwards=[LeaseForward.from_protobuf(forward) for forward in data.forwards],
         )
 
     def member(self, role: str) -> LeaseMember | None:
@@ -784,17 +1099,28 @@ class LeaseTemplate(BaseModel):
         """`n/m`: the members with at least one exporter that can be leased now, of all members."""
         return f"{sum(1 for entry in self.members if entry.available > 0)}/{len(self.members)}"
 
-    @classmethod
-    def rich_add_columns(cls, table, **kwargs):
+    @staticmethod
+    def _add_columns(table, show_forwards: bool):
         table.add_column("NAME", no_wrap=True)
         table.add_column("MEMBERS")
+        if show_forwards:
+            table.add_column("FORWARDS")
         table.add_column("AVAILABLE")
         table.add_column("DESCRIPTION", no_wrap=True, overflow="ellipsis", max_width=60)
 
-    def rich_add_rows(self, table, **kwargs):
+    # The FORWARDS column is shown only for a template with forwards, which the
+    # class alone cannot know: `LeaseTemplate.rich_add_columns(table)` still works.
+    @_class_or_instance_method
+    def rich_add_columns(self, table, **kwargs):
+        LeaseTemplate._add_columns(table, show_forwards=isinstance(self, LeaseTemplate) and bool(self.forwards))
+
+    def rich_add_rows(self, table, show_forwards: bool | None = None, **kwargs):
+        if show_forwards is None:
+            show_forwards = bool(self.forwards)
         table.add_row(
             self.name,
             ", ".join(f"{entry.member.name}{'*' if entry.member.optional else ''}" for entry in self.members),
+            *([", ".join(forward.name for forward in self.forwards)] if show_forwards else []),
             self.available_summary(),
             self.description.splitlines()[0] if self.description else "",
         )
@@ -807,6 +1133,8 @@ class LeaseTemplateList(BaseModel):
     lease_templates: list[LeaseTemplate]
     next_page_token: str | None = Field(exclude=True)
 
+    model_config = ConfigDict(ignored_types=(_class_or_instance_method,))
+
     @classmethod
     def from_protobuf(cls, data: client_pb2.ListLeaseTemplatesResponse) -> LeaseTemplateList:
         return cls(
@@ -814,13 +1142,19 @@ class LeaseTemplateList(BaseModel):
             next_page_token=data.next_page_token,
         )
 
-    @classmethod
-    def rich_add_columns(cls, table, **kwargs):
-        LeaseTemplate.rich_add_columns(table, **kwargs)
+    def _show_forwards(self) -> bool:
+        return any(template.forwards for template in self.lease_templates)
+
+    @_class_or_instance_method
+    def rich_add_columns(self, table, **kwargs):
+        LeaseTemplate._add_columns(
+            table, show_forwards=isinstance(self, LeaseTemplateList) and self._show_forwards()
+        )
 
     def rich_add_rows(self, table, **kwargs):
+        show_forwards = self._show_forwards()
         for template in self.lease_templates:
-            template.rich_add_rows(table)
+            template.rich_add_rows(table, show_forwards=show_forwards)
 
     def rich_add_names(self, names):
         for template in self.lease_templates:
@@ -972,13 +1306,18 @@ class ClientService:
         member_selectors: dict[str, str] | None = None,
         members: list[LeaseMember] | None = None,
         constraints: list[LeaseConstraint] | None = None,
+        forwards: list[LeaseForward] | None = None,
     ):
         """Create a lease in one of the three request forms.
 
         Scalar: `selector`, `exporter_name`, or both. Template: `template`, with
         optional `excluded_members` and `member_selectors`. Members: `members`,
-        with optional `constraints`. `duration` can be None only for a template
-        that has a default duration.
+        with optional `constraints` and `forwards`. `duration` can be None only
+        for a template that has a default duration.
+
+        Only the members form takes `forwards`: a template has its own. A
+        controller that predates forwards creates the lease without them. This
+        method then deletes that lease and raises `ControllerTooOldError`.
         """
         scalar = bool(selector or exporter_name)
         if sum((scalar, template is not None, bool(members))) > 1:
@@ -987,6 +1326,12 @@ class ClientService:
             raise ValueError("excluded_members and member_selectors need a template")
         if not members and constraints:
             raise ValueError("constraints need members")
+        if forwards:
+            if template is not None:
+                raise ValueError("forwards cannot be used with a template: the template has the forwards")
+            if not members:
+                raise ValueError("forwards need members: a forward connects the members of the request")
+            validate_forwards(forwards, [member.name for member in members])
         if duration is None and template is None:
             raise ValueError("duration is required")
         member_form = template is not None or bool(members)
@@ -1008,6 +1353,8 @@ class ClientService:
             lease_pb.members.append(member.to_protobuf())
         for constraint in constraints or []:
             lease_pb.constraints.append(constraint.to_protobuf())
+        for forward in forwards or []:
+            lease_pb.forwards.append(forward.to_protobuf())
 
         if tags:
             for k, v in tags.items():
@@ -1038,7 +1385,26 @@ class ClientService:
                 if not member_form:
                     raise
                 _raise_for_member_form_create(e)
-        return Lease.from_protobuf(lease)
+        created = Lease.from_protobuf(lease)
+        if forwards and not created.forwards:
+            # A controller without forwards ignores them. Only a members request
+            # sends forwards, so a template request never gets here.
+            await self._delete_lease_without_forwards(created.name)
+            raise ControllerTooOldError(_TOO_OLD_FORWARDS)
+        return created
+
+    async def _delete_lease_without_forwards(self, name: str) -> None:
+        """Remove the lease that a controller without forwards made from a request with forwards."""
+        try:
+            await self.DeleteLease(name=name, timeout=_DELETE_UNUSABLE_LEASE_TIMEOUT)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "Could not delete lease %s, which the controller created without its forwards: %s. "
+                "Delete it with 'jmp delete leases %s'",
+                name,
+                e,
+                name,
+            )
 
     async def UpdateLease(
         self,

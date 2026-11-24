@@ -82,11 +82,14 @@ async def get_exporter(
                 exporter = await api.get_exporter(name)
                 # The GROUP column appears only where an exclusion group is in use.
                 groups = bool(exporter.exclusion_group)
-                model_print(exporter, output, devices=devices, groups=groups, namespace=namespace)
+                # The PORTS column appears only where an exporter declares ports.
+                ports = exporter.has_ports()
+                model_print(exporter, output, devices=devices, groups=groups, ports=ports, namespace=namespace)
             else:
                 exporters = await api.list_exporters()
                 groups = exporters.has_exclusion_groups()
-                model_print(exporters, output, devices=devices, groups=groups, namespace=namespace)
+                ports = exporters.has_ports()
+                model_print(exporters, output, devices=devices, groups=groups, ports=ports, namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -108,10 +111,11 @@ async def get_lease(
         async with LeasesV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 lease = await api.get_lease(name)
-                model_print(lease, output, namespace=namespace)
+                # The FORWARDS column appears only where a lease has forwards.
+                model_print(lease, output, forwards=lease.has_forwards(), namespace=namespace)
             else:
                 leases = await api.list_leases()
-                model_print(leases, output, namespace=namespace)
+                model_print(leases, output, forwards=leases.has_forwards(), namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:
@@ -133,10 +137,10 @@ async def get_lease_template(
         async with LeaseTemplatesV1Alpha1Api(namespace, kubeconfig, context) as api:
             if name is not None:
                 template = await api.get_lease_template(name)
-                model_print(template, output, namespace=namespace)
+                model_print(template, output, forwards=template.has_forwards(), namespace=namespace)
             else:
                 templates = await api.list_lease_templates()
-                model_print(templates, output, namespace=namespace)
+                model_print(templates, output, forwards=templates.has_forwards(), namespace=namespace)
     except ApiException as e:
         handle_k8s_api_exception(e)
     except ConfigException as e:

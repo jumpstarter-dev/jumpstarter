@@ -35,6 +35,7 @@ from .exporterclaims import (
 )
 from .exporters import (
     ExportersV1Alpha1Api,
+    V1Alpha1DevicePort,
     V1Alpha1Exporter,
     V1Alpha1ExporterDevice,
     V1Alpha1ExporterList,
@@ -43,9 +44,12 @@ from .exporters import (
 )
 from .leases import (
     LeasesV1Alpha1Api,
+    V1Alpha1ForwardEndpoint,
     V1Alpha1LabelSelector,
     V1Alpha1Lease,
     V1Alpha1LeaseConstraint,
+    V1Alpha1LeaseForward,
+    V1Alpha1LeaseForwardStatus,
     V1Alpha1LeaseList,
     V1Alpha1LeaseMember,
     V1Alpha1LeaseMemberStatus,
@@ -80,6 +84,7 @@ __all__ = [
     "V1Alpha1ClientStatus",
     "V1Alpha1ClusterInfo",
     "V1Alpha1ClusterList",
+    "V1Alpha1DevicePort",
     "V1Alpha1Exporter",
     "V1Alpha1ExporterClaim",
     "V1Alpha1ExporterClaimList",
@@ -88,10 +93,13 @@ __all__ = [
     "V1Alpha1ExporterList",
     "V1Alpha1ExporterSpec",
     "V1Alpha1ExporterStatus",
+    "V1Alpha1ForwardEndpoint",
     "V1Alpha1JumpstarterInstance",
     "V1Alpha1LabelSelector",
     "V1Alpha1Lease",
     "V1Alpha1LeaseConstraint",
+    "V1Alpha1LeaseForward",
+    "V1Alpha1LeaseForwardStatus",
     "V1Alpha1LeaseList",
     "V1Alpha1LeaseMember",
     "V1Alpha1LeaseMemberStatus",

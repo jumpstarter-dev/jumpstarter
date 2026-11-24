@@ -51,6 +51,31 @@ class V1Alpha1LeaseConstraint(JsonBaseModel):
     same_label: str = Field(alias="sameLabel")
 
 
+class V1Alpha1ForwardEndpoint(JsonBaseModel):
+    """One end of a forward: a member of the lease and a port of its exporter."""
+
+    member: str
+    port: str
+
+
+class V1Alpha1LeaseForward(JsonBaseModel):
+    """A forward of a lease or of a lease template: it connects ports on different members."""
+
+    name: str
+    endpoints: list[V1Alpha1ForwardEndpoint]
+
+    def summary(self) -> str:
+        """``name(member.port,member.port)``"""
+        return f"{self.name}({','.join(f'{e.member}.{e.port}' for e in self.endpoints)})"
+
+
+class V1Alpha1LeaseForwardStatus(OmitNoneModel):
+    name: str
+    # Pending, Disabled, Listening, Connected or Failed
+    state: str
+    message: str | None = None
+
+
 class V1Alpha1LeaseTemplateReference(JsonBaseModel):
     name: str
     generation: int
@@ -68,7 +93,7 @@ class V1Alpha1LeaseMemberStatus(OmitNoneModel):
 
 class V1Alpha1LeaseStatus(OmitNoneModel):
     # A scalar lease prints as it did before member-form leases existed.
-    omit_none_fields = frozenset({"members", "exclusion_groups", "bind_attempt"})
+    omit_none_fields = frozenset({"members", "exclusion_groups", "bind_attempt", "forwards"})
 
     begin_time: str | None = Field(alias="beginTime")
     conditions: list[SerializeV1Condition]
@@ -78,6 +103,8 @@ class V1Alpha1LeaseStatus(OmitNoneModel):
     members: list[V1Alpha1LeaseMemberStatus] | None = None
     exclusion_groups: list[str] | None = Field(alias="exclusionGroups", default=None)
     bind_attempt: int | None = Field(alias="bindAttempt", default=None)
+    # The state of each forward of the lease, in the order of the spec.
+    forwards: list[V1Alpha1LeaseForwardStatus] | None = None
 
 
 class V1Alpha1LeaseSelector(JsonBaseModel):
@@ -85,7 +112,7 @@ class V1Alpha1LeaseSelector(JsonBaseModel):
 
 
 class V1Alpha1LeaseSpec(OmitNoneModel):
-    omit_none_fields = frozenset({"members", "constraints", "template_ref"})
+    omit_none_fields = frozenset({"members", "constraints", "template_ref", "forwards"})
 
     client: SerializeV1ObjectReference
     duration: str | None
@@ -93,6 +120,8 @@ class V1Alpha1LeaseSpec(OmitNoneModel):
     members: list[V1Alpha1LeaseMember] | None = None
     constraints: list[V1Alpha1LeaseConstraint] | None = None
     template_ref: V1Alpha1LeaseTemplateReference | None = Field(alias="templateRef", default=None)
+    # What connects the members of the lease. A scalar lease has none.
+    forwards: list[V1Alpha1LeaseForward] | None = None
 
 
 class V1Alpha1Lease(JsonBaseModel):
@@ -145,6 +174,9 @@ class V1Alpha1Lease(JsonBaseModel):
                 else None,
                 exclusionGroups=status.get("exclusionGroups"),
                 bindAttempt=status.get("bindAttempt"),
+                forwards=[V1Alpha1LeaseForwardStatus.model_validate(f) for f in status["forwards"]]
+                if "forwards" in status
+                else None,
             ),
             spec=V1Alpha1LeaseSpec(
                 client=V1ObjectReference(name=spec["clientRef"]["name"]) if "clientRef" in spec else None,
@@ -157,15 +189,21 @@ class V1Alpha1Lease(JsonBaseModel):
                 templateRef=V1Alpha1LeaseTemplateReference.model_validate(spec["templateRef"])
                 if "templateRef" in spec
                 else None,
+                forwards=[V1Alpha1LeaseForward.model_validate(f) for f in spec["forwards"]]
+                if "forwards" in spec
+                else None,
             ),
         )
 
     @classmethod
-    def rich_add_columns(cls, table):
+    def rich_add_columns(cls, table, forwards: bool = False):
         table.add_column("NAME", no_wrap=True)
         table.add_column("CLIENT")
         table.add_column("SELECTOR")
         table.add_column("EXPORTER")
+        # The FORWARDS column appears only where a lease has forwards.
+        if forwards:
+            table.add_column("FORWARDS")
         table.add_column("DURATION")
         table.add_column("STATUS")
         table.add_column("REASON")
@@ -214,7 +252,15 @@ class V1Alpha1Lease(JsonBaseModel):
                 parts.append(f"{member.name}={exporter}({state})")
         return " ".join(parts)
 
-    def rich_add_rows(self, table):
+    def has_forwards(self) -> bool:
+        return bool(self.spec.forwards)
+
+    def forwards_summary(self) -> str:
+        """The state of each forward. Pending for a forward that the controller did not report yet."""
+        states = {forward.name: forward.state for forward in self.status.forwards or []}
+        return " ".join(f"{forward.name}={states.get(forward.name, 'Pending')}" for forward in self.spec.forwards or [])
+
+    def rich_add_rows(self, table, forwards: bool = False):
         selectors = []
         for label in self.spec.selector.match_labels:
             selectors.append(f"{label}:{self.spec.selector.match_labels[label]!s}")
@@ -229,6 +275,7 @@ class V1Alpha1Lease(JsonBaseModel):
             self.spec.client.name if self.spec.client is not None else "",
             selector,
             exporter,
+            *([self.forwards_summary()] if forwards else []),
             self.spec.duration,
             "Ended" if self.status.ended else "InProgress",
             self.get_reason(),
@@ -248,13 +295,16 @@ class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
     def from_dict(data: dict):
         return V1Alpha1LeaseList(items=[V1Alpha1Lease.from_dict(c) for c in data["items"]])
 
-    @classmethod
-    def rich_add_columns(cls, table):
-        V1Alpha1Lease.rich_add_columns(table)
+    def has_forwards(self) -> bool:
+        return any(lease.has_forwards() for lease in self.items)
 
-    def rich_add_rows(self, table):
+    @classmethod
+    def rich_add_columns(cls, table, **kwargs):
+        V1Alpha1Lease.rich_add_columns(table, **kwargs)
+
+    def rich_add_rows(self, table, **kwargs):
         for lease in self.items:
-            lease.rich_add_rows(table)
+            lease.rich_add_rows(table, **kwargs)
 
     def rich_add_names(self, names):
         for lease in self.items:
@@ -264,7 +314,7 @@ class V1Alpha1LeaseList(V1Alpha1List[V1Alpha1Lease]):
 class LeasesV1Alpha1Api(AbstractAsyncCustomObjectApi):
     """Interact with the leases custom resource API"""
 
-    async def list_leases(self) -> V1Alpha1List[V1Alpha1Lease]:
+    async def list_leases(self) -> V1Alpha1LeaseList:
         """List the lease objects in the cluster async"""
         result = await self.api.list_namespaced_custom_object(
             namespace=self.namespace, group="jumpstarter.dev", plural="leases", version="v1alpha1"

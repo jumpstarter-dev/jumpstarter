@@ -19,9 +19,35 @@ CREATE_EXPORTER_DELAY = 1
 CREATE_EXPORTER_COUNT = 10
 
 
-class V1Alpha1ExporterDevice(JsonBaseModel):
+class V1Alpha1DevicePort(OmitNoneModel):
+    """A port that a driver instance of an exporter declares. It has no local address."""
+
+    name: str
+    # provides, requires or connects
+    direction: str
+    protocol: str | None = None
+    # socket, wired or wireless. No value means socket.
+    attachment: str | None = None
+    # stream, datagram or frame. No value means stream.
+    transport: str | None = None
+
+    def summary(self) -> str:
+        """``name:direction``, with the attachment and the transport that a forward cannot use."""
+        parts = [self.name, self.direction]
+        if self.attachment not in (None, "", "socket"):
+            parts.append(self.attachment)
+        if self.transport not in (None, "", "stream"):
+            parts.append(self.transport)
+        return ":".join(parts)
+
+
+class V1Alpha1ExporterDevice(OmitNoneModel):
+    # A device without ports prints as it did before ports existed.
+    omit_none_fields = frozenset({"ports"})
+
     labels: dict[str, str]
     uuid: str
+    ports: list[V1Alpha1DevicePort] | None = None
 
 
 class V1Alpha1ExporterStatus(JsonBaseModel):
@@ -78,7 +104,14 @@ class V1Alpha1Exporter(OmitNoneModel):
                 if "credential" in dict["status"]
                 else None,
                 endpoint=dict["status"].get("endpoint", ""),
-                devices=[V1Alpha1ExporterDevice(labels=d["labels"], uuid=d["uuid"]) for d in dict["status"]["devices"]]  # type: ignore[call-arg]
+                devices=[
+                    V1Alpha1ExporterDevice(
+                        labels=d["labels"],
+                        uuid=d["uuid"],
+                        ports=[V1Alpha1DevicePort.model_validate(p) for p in d["ports"]] if d.get("ports") else None,
+                    )
+                    for d in dict["status"]["devices"]
+                ]
                 if "devices" in dict["status"]
                 else [],
                 exporterStatus=dict["status"].get("exporterStatus"),
@@ -89,8 +122,17 @@ class V1Alpha1Exporter(OmitNoneModel):
             else None,
         )
 
+    def has_ports(self) -> bool:
+        return any(device.ports for device in (self.status.devices if self.status else []))
+
+    def ports_summary(self) -> str:
+        """The ports of all the devices of the exporter: a port name is unique in one exporter."""
+        return " ".join(
+            port.summary() for device in (self.status.devices if self.status else []) for port in device.ports or []
+        )
+
     @classmethod
-    def rich_add_columns(cls, table, devices: bool = False, groups: bool = False):
+    def rich_add_columns(cls, table, devices: bool = False, groups: bool = False, ports: bool = False):
         if devices:
             table.add_column("NAME", no_wrap=True)
             table.add_column("STATUS")
@@ -104,10 +146,14 @@ class V1Alpha1Exporter(OmitNoneModel):
             table.add_column("ENDPOINT")
             table.add_column("DEVICES")
             table.add_column("AGE")
+        # The PORTS column appears only where an exporter declares ports. With
+        # the devices, it has the ports of each device.
+        if ports:
+            table.add_column("PORTS")
         if groups:
             table.add_column("GROUP")
 
-    def rich_add_rows(self, table, devices: bool = False, groups: bool = False):
+    def rich_add_rows(self, table, devices: bool = False, groups: bool = False, ports: bool = False):
         status = self.status.exporter_status if self.status else "Unknown"
         group = [self.exclusion_group] if groups else []
         if devices:
@@ -122,6 +168,7 @@ class V1Alpha1Exporter(OmitNoneModel):
                     time_since(self.metadata.creation_timestamp),
                     "",
                     "",
+                    *([""] if ports else []),
                     *group,
                 )
                 return
@@ -137,6 +184,7 @@ class V1Alpha1Exporter(OmitNoneModel):
                     time_since(self.metadata.creation_timestamp),
                     ",".join(labels),
                     d.uuid,
+                    *([" ".join(port.summary() for port in d.ports or [])] if ports else []),
                     *group,
                 )
 
@@ -147,6 +195,7 @@ class V1Alpha1Exporter(OmitNoneModel):
                 self.status.endpoint if self.status else "",
                 str(len(self.status.devices) if self.status and self.status.devices else 0),
                 time_since(self.metadata.creation_timestamp),
+                *([self.ports_summary()] if ports else []),
                 *group,
             )
 
@@ -159,6 +208,9 @@ class V1Alpha1ExporterList(V1Alpha1List[V1Alpha1Exporter]):
 
     def has_exclusion_groups(self) -> bool:
         return any(exporter.exclusion_group for exporter in self.items)
+
+    def has_ports(self) -> bool:
+        return any(exporter.has_ports() for exporter in self.items)
 
     @staticmethod
     def from_dict(dict: dict):

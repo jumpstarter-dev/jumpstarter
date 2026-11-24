@@ -9,8 +9,9 @@ from anyio.from_thread import start_blocking_portal
 from pydantic import ValidationError
 
 from jumpstarter.client import client_from_path
-from jumpstarter.client.exceptions import LeaseMemberLostError
-from jumpstarter.client.lease import LeaseMembers, LostMember
+from jumpstarter.client.exceptions import LeaseError, LeaseMemberLostError
+from jumpstarter.client.grpc import ForwardEndpoint, LeaseForwardStatus
+from jumpstarter.client.lease import Forward, LeaseMembers, LostMember, _ForwardStatusSource
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import (
@@ -26,6 +27,13 @@ from jumpstarter.config.env import (
 )
 
 logger = logging.getLogger(__name__)
+
+# The forwards of the lease of a `jmp shell` on a lease with members, as JSON:
+# a list with the `name`, the `endpoints` (`member`, `port`, and the
+# `direction` when the exporter reports it), the `state` and the `message` of
+# each forward at the start of the shell. It is not set for a lease without
+# forwards.
+JMP_LEASE_FORWARDS = "JMP_LEASE_FORWARDS"
 
 
 @dataclass(frozen=True)
@@ -203,6 +211,83 @@ def member_lost_error(role: str, entry: dict | None) -> LeaseMemberLostError | N
     return LeaseMemberLostError(text, role=role, reason=reason)
 
 
+def lease_forwards_from_env() -> list[dict]:
+    """The forwards of the lease of the current shell, as `jmp shell` describes them in JMP_LEASE_FORWARDS.
+
+    Each forward has its `name`, its `endpoints` (`member`, `port` and, when
+    it is known, `direction`), and the `state` and the `message` that it had
+    when the shell started. The list is empty for a lease without forwards.
+    """
+    raw = os.environ.get(JMP_LEASE_FORWARDS)
+    if not raw:
+        return []
+    try:
+        forwards = json.loads(raw)
+    except ValueError as e:
+        raise EnvironmentVariableNotSetError(f"{JMP_LEASE_FORWARDS} is not valid JSON: {e}") from None
+    if not isinstance(forwards, list) or any(not isinstance(f, dict) or not f.get("name") for f in forwards):
+        raise EnvironmentVariableNotSetError(f"{JMP_LEASE_FORWARDS} is not a list of forwards")
+    return forwards
+
+
+def _current_client_config():
+    """The client config of this shell: from the JMP_* variables, or the current client of the user."""
+    from jumpstarter.config.client import ClientConfigV1Alpha1
+
+    try:
+        config = ClientConfigV1Alpha1()
+        if config.endpoint and config.token:
+            return config
+    except ValidationError:
+        pass
+    try:
+        from jumpstarter.config.user import UserConfigV1Alpha1
+
+        return UserConfigV1Alpha1.load().config.current_client
+    except (FileNotFoundError, ValueError, ValidationError):
+        return None
+
+
+def forwards_from_env(portal) -> dict[str, Forward]:
+    """A `Forward` for each forward of the lease of the current shell, by its name.
+
+    The state comes from the lease, through the client config of the user.
+    Without one, a forward keeps the state that it had when the shell started.
+    """
+    entries = lease_forwards_from_env()
+    lease = os.environ.get(JMP_LEASE) or None
+
+    async def read() -> list[LeaseForwardStatus]:
+        config = _current_client_config()
+        if config is None or lease is None:
+            raise LeaseError(
+                f"cannot read the forwards of lease {lease}: no client config is set. "
+                "The states are those at the start of the shell"
+            )
+        return list((await config.get_lease(name=lease)).forward_statuses)
+
+    source = _ForwardStatusSource(
+        lease,
+        read,
+        portal,
+        [
+            LeaseForwardStatus(name=entry["name"], state=entry.get("state") or "Pending", message=entry.get("message"))
+            for entry in entries
+        ],
+    )
+    return {
+        entry["name"]: Forward(
+            entry["name"],
+            [
+                ForwardEndpoint(member_name=endpoint.get("member", ""), port_name=endpoint.get("port", ""))
+                for endpoint in entry.get("endpoints") or []
+            ],
+            source=source,
+        )
+        for entry in entries
+    }
+
+
 @asynccontextmanager
 async def env_member_async(role: str, portal, stack):
     """Provide the client of one role of the lease of the current shell.
@@ -233,11 +318,14 @@ async def env_members_async(portal, stack, members: type[LeaseMembers] = LeaseMe
     Async version of env_members()
 
     A role that lost its exporter is a `LostMember`: every use of it raises
-    `LeaseMemberLostError`. The other roles are connected.
+    `LeaseMemberLostError`. The other roles are connected. `forwards` has
+    the forwards of the lease.
     """
     entries = lease_members_from_env()
     lease = os.environ.get(JMP_LEASE) or None
     members.check_members(_members_of(entries, members), "the lease of this shell")
+    forwards = forwards_from_env(portal)
+    members.check_forwards(list(forwards), "the lease of this shell")
     drivers = _resolve_drivers_config()
 
     async with AsyncExitStack() as clients_stack:
@@ -258,7 +346,7 @@ async def env_members_async(portal, stack, members: type[LeaseMembers] = LeaseMe
                 client_from_path(entry["socket"], portal, stack, allow=drivers.allow, unsafe=drivers.unsafe)
             )
         try:
-            yield members(clients, metadata)
+            yield members(clients, metadata, forwards)
         finally:
             for client in clients.values():
                 if client is not None and not isinstance(client, LostMember) and hasattr(client, "close"):
@@ -308,6 +396,12 @@ def env_members(members=LeaseMembers):
 
         with env_members(Projection) as members:
             members.headunit.power.on()
+
+    The forwards of the lease are in `members.forwards`, and in the
+    attributes of the class that have the annotation `Forward`::
+
+        with env_members() as members:
+            members.forwards["bt"].wait_listening(timeout=30)
     """
     with (
         start_blocking_portal() as portal,

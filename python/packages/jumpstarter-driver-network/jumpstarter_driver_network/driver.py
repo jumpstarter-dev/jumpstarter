@@ -17,7 +17,7 @@ from anyio.abc import SocketStream
 from anyio.streams.stapled import StapledObjectStream
 
 from .streams.websocket import WebsocketClientStream
-from jumpstarter.driver import Driver, export, exportstream
+from jumpstarter.driver import Driver, Port, export, exportstream
 
 
 def _is_ipv6_address(host: str) -> bool:
@@ -84,6 +84,21 @@ class NetworkInterface(metaclass=ABCMeta):
     @asynccontextmanager  # ty: ignore[no-matching-overload]
     async def connect(self): ...
 
+    @asynccontextmanager
+    async def connect_port(self, port: Port):
+        """Open the local side of a forwarded connection of a port of this driver (JEP-0016).
+
+        A port with a ``connect`` address connects there. A port without one
+        uses the connection of the driver itself, for example the ``host`` and
+        the ``port`` of a ``TcpNetwork``.
+        """
+        if port.connect is not None:
+            async with super().connect_port(port) as stream:  # ty: ignore[unresolved-attribute]
+                yield stream
+        else:
+            async with self.connect() as stream:
+                yield stream
+
 
 @dataclass(kw_only=True)
 class TcpNetwork(NetworkInterface, Driver):
@@ -101,11 +116,19 @@ class TcpNetwork(NetworkInterface, Driver):
     ...     with tcp.stream() as conn:
     ...         conn.send(b"hello")
     ...         assert conn.receive() == b"hello"
+
+    A ``ports`` list beside ``config`` declares ports for the forwards of a
+    lease (JEP-0016). The ``connect`` address of a ``provides`` port is the
+    ``host`` and the ``port`` of the driver if the port gives none.
     '''
 
     host: str
     port: int
     enable_address: bool = True
+
+    def port_address(self, port: Port) -> tuple[str, int] | None:
+        """The default ``connect`` address of a port is the ``host`` and the ``port`` of the driver."""
+        return (self.host, self.port)
 
     @exportstream
     @asynccontextmanager

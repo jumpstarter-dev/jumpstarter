@@ -33,8 +33,8 @@ class _ExportersCommand(click.Command):
 @opt_output_all
 @opt_comma_separated(
     "with",
-    {"leases", "online", "status"},
-    help_text="Include fields: leases, online, status (comma-separated or repeated)",
+    {"leases", "online", "status", "ports"},
+    help_text="Include fields: leases, online, status, ports (comma-separated or repeated)",
 )
 @click.option(
     "--allow-disabled",
@@ -61,11 +61,18 @@ def get_exporters(
 ):
     """
     Display one or many exporters
+
+    With '--with ports', each exporter shows the ports that its drivers
+    declare, with the direction of each port. A forward of a lease with
+    members connects a 'provides' port to 'requires' ports, or two
+    'connects' ports (see 'jmp create lease --forward').
     """
 
     include_leases = "leases" in with_options
     include_online = "online" in with_options
     include_status = "status" in with_options
+    # Passed only when it is asked for, so a request without it is the one of before ports.
+    ports = {"include_ports": True} if "ports" in with_options else {}
     exporters = config.list_exporters(
         filter=selector,
         include_leases=include_leases,
@@ -74,6 +81,7 @@ def get_exporters(
         include_disabled=allow_disabled,
         show_hidden_labels=show_hidden_labels,
         page_size=page_size,
+        **ports,
     )
 
     model_print(exporters, output)
@@ -121,7 +129,8 @@ def get_leases(
     Display one or many leases
 
     A lease with members shows the exporter of each role, and the lease
-    template that it was made from.
+    template that it was made from. A lease with forwards shows the state
+    of each forward.
     """
 
     if output == OUTPUT_MOBLY and not name:
@@ -161,7 +170,8 @@ def get_lease_templates(config, output: OutputType, page_size: int):
     A lease template names a set of exporters that belong together. Request
     one with 'jmp shell -t NAME' or 'jmp create lease -t NAME'. A * marks an
     optional member. AVAILABLE is the number of members that have at least one
-    exporter that you can lease now; it is only a guide.
+    exporter that you can lease now; it is only a guide. FORWARDS are the
+    forwards that connect the members of a lease from the template.
     """
 
     model_print(config.list_lease_templates(page_size=page_size), output)

@@ -26,6 +26,8 @@ from jumpstarter_protocol import (
 from .logging import LogFanOut, LogHandler
 from .rpcs_in_flight import RpcsInFlight
 from jumpstarter.common import ExporterStatus, LogSource, Metadata, TemporarySocket
+from jumpstarter.common.exceptions import ConfigurationError
+from jumpstarter.common.ports import Port, coerce_ports
 from jumpstarter.common.streams import ResourceStreamRequest, StreamRequestMetadata
 from jumpstarter.driver.context import session_env_var
 from jumpstarter.logging import set_log_context, unbind_log_context
@@ -77,6 +79,7 @@ class Session(
     root_device: "Driver"
     exporter_name: str = "unknown"
     mapping: dict[UUID, "Driver"]
+    ports: dict[str, tuple["Driver", Port]] = field(init=False, default_factory=dict)
     motd: str | None = None
     lease_context: "LeaseContext | None" = field(init=False, default=None)
 
@@ -139,6 +142,7 @@ class Session(
         self.exporter_name = exporter_name
         self.motd = motd
         self.mapping = {u: i for (u, _, _, i) in self.root_device.enumerate()}
+        self.ports = self._collect_ports()
 
         self._log_fanout = LogFanOut(maxlen=256)
         self._logging_handler = LogHandler(self._log_fanout, LogSource.SYSTEM)
@@ -147,6 +151,22 @@ class Session(
 
         # Map all driver logs to DRIVER source
         self._logging_handler.add_child_handler("driver.", LogSource.DRIVER)
+
+    def _collect_ports(self) -> dict[str, tuple["Driver", Port]]:
+        """Find each port by its name: one exporter and one port name give one port (JEP-0016).
+
+        The mapping has each driver one time, also a driver that a proxy refers to.
+        """
+        ports: dict[str, tuple[Driver, Port]] = {}
+        for driver in self.mapping.values():
+            for port in coerce_ports(getattr(driver, "ports", None)):
+                if port.name in ports:
+                    raise ConfigurationError(
+                        f"Port name '{port.name}' is declared more than once; "
+                        "a port name must be unique in one exporter"
+                    )
+                ports[port.name] = (driver, port)
+        return ports
 
     def _grpc_server(self, *, interceptors: list | None = None, options: list | None = None) -> grpc.aio.Server:
         return grpc.aio.server(interceptors=[self._rpcs_in_flight, *(interceptors or [])], options=options)

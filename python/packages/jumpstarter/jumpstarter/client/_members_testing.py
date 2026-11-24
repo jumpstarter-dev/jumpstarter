@@ -1,4 +1,4 @@
-"""Test-only builders of member-form lease protobufs (not part of the public API).
+"""Test-only builders of member-form lease protobufs, with forwards and ports (not part of the public API).
 
 The tests of jumpstarter and of jumpstarter-cli use them.
 """
@@ -8,8 +8,53 @@ from __future__ import annotations
 from google.protobuf import duration_pb2
 from jumpstarter_protocol import client_pb2
 
+_FORWARD_STATES = {
+    "Pending": client_pb2.LEASE_FORWARD_STATE_PENDING,
+    "Disabled": client_pb2.LEASE_FORWARD_STATE_DISABLED,
+    "Listening": client_pb2.LEASE_FORWARD_STATE_LISTENING,
+    "Connected": client_pb2.LEASE_FORWARD_STATE_CONNECTED,
+    "Failed": client_pb2.LEASE_FORWARD_STATE_FAILED,
+}
+_PORT_DIRECTIONS = {"provides": 1, "requires": 2, "connects": 3}
+_PORT_ATTACHMENTS = {"socket": 1, "wired": 2, "wireless": 3}
+_PORT_TRANSPORTS = {"stream": 1, "datagram": 2, "frame": 3}
 
-def members_lease_pb(name="lease-9m2qd", template=None, statuses=None, conditions=()):
+
+def forward_pb(name="bt", *endpoints):
+    """A forward. endpoints are `member.port` strings; the default connects headunit.rootcanal and phone.controller."""
+    forward = client_pb2.LeaseForward(name=name)
+    for endpoint in endpoints or ("headunit.rootcanal", "phone.controller"):
+        member, _, port = endpoint.partition(".")
+        forward.endpoints.append(client_pb2.ForwardEndpoint(member_name=member, port_name=port))
+    return forward
+
+
+def forward_status_pb(name="bt", state="Listening", message=None):
+    status = client_pb2.LeaseForwardStatus(name=name, state=_FORWARD_STATES[state])
+    if message is not None:
+        status.message = message
+    return status
+
+
+def exporter_pb(name="rack3-hu-2", ports=(), labels=None):
+    """An exporter. ports are (name, direction[, protocol[, attachment[, transport]]]) tuples."""
+    exporter = client_pb2.Exporter(name=f"namespaces/default/exporters/{name}", labels=labels or {}, online=True)
+    for name_, direction, *rest in ports:
+        port = exporter.ports.add()
+        port.name = name_
+        port.direction = _PORT_DIRECTIONS[direction]
+        if len(rest) > 0 and rest[0]:
+            port.protocol = rest[0]
+        if len(rest) > 1:
+            port.attachment = _PORT_ATTACHMENTS[rest[1]]
+        if len(rest) > 2:
+            port.transport = _PORT_TRANSPORTS[rest[2]]
+    return exporter
+
+
+def members_lease_pb(
+    name="lease-9m2qd", template=None, statuses=None, conditions=(), forwards=(), forward_statuses=()
+):
     lease = client_pb2.Lease(
         name=f"namespaces/default/leases/{name}",
         client="namespaces/default/clients/ci-runner",
@@ -41,11 +86,14 @@ def members_lease_pb(name="lease-9m2qd", template=None, statuses=None, condition
         ]
     ):
         lease.member_statuses.append(status)
+    lease.forwards.extend(forwards)
+    lease.forward_statuses.extend(forward_statuses)
     return lease
 
 
-def template_pb(name="ivi"):
+def template_pb(name="ivi", forwards=()):
     return client_pb2.LeaseTemplate(
+        forwards=list(forwards),
         name=f"namespaces/default/leasetemplates/{name}",
         description="AAOS head unit, phone, and body ECU on one CAN bus",
         docs=["https://wiki.example.com/labs/ivi"],

@@ -3,7 +3,11 @@ from pathlib import Path
 import pytest
 
 from .common import ObjectMeta
-from .exporter import ExporterConfigV1Alpha1, ExporterConfigV1Alpha1DriverInstance
+from .exporter import (
+    ExporterConfigV1Alpha1,
+    ExporterConfigV1Alpha1DriverInstance,
+    ExporterConfigV1Alpha1DriverInstanceBase,
+)
 from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.exceptions import ConfigurationError
 
@@ -354,3 +358,106 @@ def test_alias_path_traversal_rejected(bad_alias: str):
     """Aliases with path separators or dot-segments are rejected before any filesystem access."""
     with pytest.raises(ConfigurationError, match="Invalid exporter alias"):
         ExporterConfigV1Alpha1.validate_alias(bad_alias)
+
+
+# Ports (JEP-0016)
+
+PORTS_CONFIG = """apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: test
+endpoint: "jumpstarter.my-lab.com:1443"
+token: "token"
+export:
+  cuttlefish:
+    type: jumpstarter_driver_composite.driver.Composite
+    children:
+      rootcanal:
+        type: jumpstarter_driver_network.driver.TcpNetwork
+        config: { host: 127.0.0.1, port: 7300 }
+        ports:
+          - name: rootcanal
+            direction: provides
+            protocol: hci-h4
+  serial:
+    type: jumpstarter_driver_network.driver.TcpNetwork
+    config: { host: 127.0.0.1, port: 4001 }
+    ports:
+      - name: uart
+        direction: connects
+        listen: 127.0.0.1:4002
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+"""
+
+
+def _load_text(tmp_path: Path, text: str) -> ExporterConfigV1Alpha1:
+    path = tmp_path / "ports.yaml"
+    path.write_text(text)
+    return ExporterConfigV1Alpha1.load_path(path)
+
+
+def test_exporter_config_ports(tmp_path: Path):
+    from jumpstarter_protocol.jumpstarter.v1 import common_pb2
+
+    config = _load_text(tmp_path, PORTS_CONFIG)
+
+    cuttlefish = config.export["cuttlefish"].root
+    assert isinstance(cuttlefish, ExporterConfigV1Alpha1DriverInstanceBase)
+    rootcanal = cuttlefish.children["rootcanal"]
+    assert [p.name for p in config.export["cuttlefish"].configured_ports()] == ["rootcanal"]
+    assert config.export["power"].configured_ports() == []
+
+    driver = rootcanal.instantiate()
+    report = driver.report()
+    assert [(p.name, p.direction, p.protocol) for p in report.ports] == [
+        ("rootcanal", common_pb2.PORT_DIRECTION_PROVIDES, "hci-h4")
+    ]
+    # The default connect address of a TcpNetwork port is the host and the port of the driver.
+    assert driver.port_address(driver.ports[0]) == ("127.0.0.1", 7300)
+
+    serial = config.export["serial"].instantiate()
+    assert serial.ports[0].listen_address == ("127.0.0.1", 4002)
+    assert b"4002" not in serial.report().SerializeToString()
+
+    # A driver without ports is built without the argument.
+    assert config.export["power"].instantiate().ports == []
+
+
+def test_exporter_config_ports_survive_a_save(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    config = _load_text(tmp_path, PORTS_CONFIG)
+    saved = ExporterConfigV1Alpha1.save(config, str(tmp_path / "saved.yaml"))
+    assert ExporterConfigV1Alpha1.load_path(saved).export == config.export
+
+
+@pytest.mark.parametrize(
+    ("port", "message"),
+    [
+        ("{ name: Root_Canal, direction: provides }", "DNS label"),
+        ("{ name: rootcanal }", "direction"),
+        ("{ name: rootcanal, direction: both }", "direction"),
+        ("{ name: rootcanal, direction: requires }", "must have 'listen'"),
+        ("{ name: rootcanal, direction: provides, listen: '127.0.0.1:1' }", "not 'listen'"),
+        ("{ name: rootcanal, direction: provides, connect: nowhere }", "host:port"),
+        ("{ name: rootcanal, direction: provides, attachment: radio }", "attachment"),
+    ],
+)
+def test_exporter_config_rejects_an_invalid_port(tmp_path: Path, port: str, message: str):
+    text = PORTS_CONFIG.replace(
+        """          - name: rootcanal
+            direction: provides
+            protocol: hci-h4
+""",
+        f"          - {port}\n",
+    )
+    assert text != PORTS_CONFIG
+    with pytest.raises(ValueError, match=message):
+        _load_text(tmp_path, text)
+
+
+def test_exporter_config_rejects_a_duplicate_port_name(tmp_path: Path):
+    # The same name on two drivers: a member and a port name must give one port.
+    text = PORTS_CONFIG.replace("- name: uart", "- name: rootcanal")
+    with pytest.raises(ValueError, match="duplicate port name.*rootcanal"):
+        _load_text(tmp_path, text)

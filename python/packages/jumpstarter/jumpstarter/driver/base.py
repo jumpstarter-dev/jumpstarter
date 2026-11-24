@@ -19,7 +19,7 @@ from uuid import UUID, uuid4
 import aiohttp
 import grpc.aio
 import yarl
-from anyio import BrokenResourceError, to_thread
+from anyio import BrokenResourceError, connect_tcp, to_thread
 from grpc import StatusCode
 from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc, router_pb2_grpc
 from pydantic import TypeAdapter
@@ -33,6 +33,7 @@ from .decorators import (
 )
 from jumpstarter.common import LogSource, Metadata
 from jumpstarter.common.http import client_session
+from jumpstarter.common.ports import Port, coerce_ports, duplicate_port_names
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -115,12 +116,19 @@ class Driver(
     methods_description: dict[str, str] = field(default_factory=dict)
     """Map of method names to their help descriptions (configurable via server config)"""
 
+    ports: list[Port] = field(default_factory=list)
+    """Ports of this driver (JEP-0016): named points where a forward of a lease can connect
+    this driver to a port of a different exporter. Set by the ``ports`` key of the driver
+    instance in the exporter configuration; a driver class can give a default."""
+
     log_level: str | None = None
     logger: logging.Logger = field(init=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()  # ty: ignore[unresolved-attribute]
+
+        self._validate_ports()
 
         display_name = f"driver.{self.__class__.__name__}"
         # ponytail: accept 16-bit collisions at 5-10 active same-class drivers
@@ -200,6 +208,53 @@ class Driver(
 
     def extra_labels(self) -> dict[str, str]:
         return {}
+
+    def _validate_ports(self) -> None:
+        # A subclass with a stdlib dataclass __init__ gets plain mappings.
+        self.ports = coerce_ports(self.ports)
+        if duplicates := duplicate_port_names(self.ports):
+            raise ValueError(f"{type(self).__name__}: duplicate port name(s): {', '.join(duplicates)}")
+        for port in self.ports:
+            if not port.forwardable or port.listen is not None or port.connect is not None:
+                continue
+            # Only the default connect_port() needs an address; a driver that
+            # overrides it opens the local side itself.
+            if type(self).connect_port is Driver.connect_port and self.port_address(port) is None:
+                raise ValueError(
+                    f"{type(self).__name__}: port '{port.name}' ({port.direction}) must have "
+                    + ("'connect' or 'listen'" if port.direction == "connects" else "'connect'")
+                )
+
+    def port_address(self, port: Port) -> tuple[str, int] | None:
+        """Default local ``(host, port)`` of the service behind a port that has no ``connect`` key.
+
+        The exporter connects there for each forwarded connection. Return None
+        when the driver has no such default.
+        """
+        return None
+
+    @asynccontextmanager
+    async def connect_port(self, port: Port):
+        """Open the local side of one forwarded connection of a ``provides`` or ``connects`` port.
+
+        Yields a byte stream. The default connects to the ``connect`` address of
+        the port, or to port_address(). A driver whose service is not a TCP
+        socket overrides this.
+        """
+        address = port.connect_address or self.port_address(port)
+        if address is None:
+            raise ValueError(f"port '{port.name}' has no local address to connect to")
+        host, tcp_port = address
+        self.logger.debug("Connecting port %s to %s:%d", port.name, host, tcp_port)
+        async with await connect_tcp(remote_host=host, remote_port=tcp_port) as stream:
+            yield stream
+
+    async def forward_stream_closed(self, port: Port) -> None:
+        """Called by the exporter after a forwarded stream of ``port`` closed.
+
+        A driver whose protocol must start a server again or restore state
+        after a cut stream overrides this. The default does nothing.
+        """
 
     def _record_operation_metrics(
         self,
@@ -409,6 +464,7 @@ class Driver(
             | ({"jumpstarter.dev/name": name} if name else {}),
             description=self.description or None,
             methods_description=self.methods_description or {},
+            ports=[port.to_report() for port in coerce_ports(self.ports)],
         )
 
     def enumerate(self, *, root=None, parent=None, name=None):

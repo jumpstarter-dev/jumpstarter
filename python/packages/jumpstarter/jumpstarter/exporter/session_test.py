@@ -1297,3 +1297,82 @@ async def test_resource_upload_transport_failure_fails_driver_read(failure):
                         received.append(chunk)
 
             assert received == [b"partial"]
+
+
+# Ports (JEP-0016)
+
+
+def test_session_finds_each_port_by_its_name():
+    from jumpstarter.common.ports import Port
+
+    rootcanal = SimpleDriver(ports=[Port(name="rootcanal", direction="provides", connect="127.0.0.1:7300")])
+    bt_peer = SimpleDriver(ports=[Port(name="controller", direction="requires", listen="127.0.0.1:7301")])
+    root = CompositeDriver_(children={"rootcanal": rootcanal, "bt_peer": bt_peer, "other": SimpleDriver()})
+
+    with Session(root_device=root) as session:
+        assert set(session.ports) == {"rootcanal", "controller"}
+        driver, port = session.ports["controller"]
+        assert driver is bt_peer
+        assert port.listen == "127.0.0.1:7301"
+
+
+def test_session_without_ports_has_none():
+    with Session(root_device=CompositeDriver_(children={"a": SimpleDriver()})) as session:
+        assert session.ports == {}
+
+
+def test_session_rejects_a_port_name_on_two_drivers():
+    from jumpstarter.common.exceptions import ConfigurationError
+    from jumpstarter.common.ports import Port
+
+    root = CompositeDriver_(
+        children={
+            "a": SimpleDriver(ports=[Port(name="uart", direction="connects", connect="127.0.0.1:4001")]),
+            "b": SimpleDriver(ports=[Port(name="uart", direction="connects", connect="127.0.0.1:4002")]),
+        }
+    )
+    with pytest.raises(ConfigurationError, match="'uart' is declared more than once"):
+        Session(root_device=root)
+
+
+def test_session_counts_the_port_of_a_proxied_driver_one_time():
+    from jumpstarter_driver_composite.driver import Proxy
+
+    from jumpstarter.common.ports import Port
+
+    target = SimpleDriver(ports=[Port(name="rootcanal", direction="provides", connect="127.0.0.1:7300")])
+    root = CompositeDriver_(children={"target": target, "alias": Proxy(ref="target")})
+
+    with Session(root_device=root) as session:
+        assert session.ports["rootcanal"][0] is target
+
+
+@pytest.mark.anyio
+async def test_get_report_contains_the_ports_without_the_local_addresses():
+    from jumpstarter_protocol.jumpstarter.v1 import common_pb2
+
+    from jumpstarter.common.ports import Port
+
+    root = CompositeDriver_(
+        children={
+            "bt_peer": SimpleDriver(
+                ports=[Port(name="controller", direction="requires", listen="127.0.0.1:7300", protocol="hci-h4")]
+            ),
+            "plain": SimpleDriver(),
+        }
+    )
+    with Session(root_device=root) as session:
+        response = await session.GetReport(empty_pb2.Empty(), None)
+
+    by_name = {r.labels.get("jumpstarter.dev/name"): r for r in response.reports}
+    assert list(by_name["plain"].ports) == []
+    assert list(by_name["bt_peer"].ports) == [
+        common_pb2.PortReport(
+            name="controller",
+            direction=common_pb2.PORT_DIRECTION_REQUIRES,
+            protocol="hci-h4",
+            attachment=common_pb2.PORT_ATTACHMENT_SOCKET,
+            transport=common_pb2.PORT_TRANSPORT_STREAM,
+        )
+    ]
+    assert b"7300" not in response.SerializeToString()

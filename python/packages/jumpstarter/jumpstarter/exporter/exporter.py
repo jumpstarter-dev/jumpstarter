@@ -34,11 +34,12 @@ from jumpstarter_protocol import (
 
 from jumpstarter.common import ExporterStatus, Metadata, TemporarySocket
 from jumpstarter.common.exceptions import CertificateDiscoveryError
-from jumpstarter.common.streams import connect_router_stream
+from jumpstarter.common.streams import connect_router_stream, router_stream
 from jumpstarter.common.telemetry_token import TelemetryCredential
 from jumpstarter.config.env import JMP_GRPC_INSECURE, JUMPSTARTER_GRPC_INSECURE
 from jumpstarter.config.exporter import DEFAULT_STATUS_STREAM_RETRY_TIMEOUT
 from jumpstarter.config.tls import TLSConfigV1Alpha1
+from jumpstarter.exporter.forwards import ForwardManager
 from jumpstarter.exporter.hooks import HookExecutor
 from jumpstarter.exporter.lease_context import LeaseContext
 from jumpstarter.exporter.metrics_stream import MetricsStreamClient
@@ -1055,6 +1056,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             logger.debug("Marking afterLease hook as started")
             lease_context.after_lease_hook_started.set()
 
+            # The forwards of the lease close before its afterLease hook (JEP-0016).
+            await self._close_forwards(lease_context)
+
             if self.hook_executor and lease_context.has_client() and not lease_context.skip_after_lease_hook:
                 logger.debug("Calling run_after_lease_hook")
                 with CancelScope(shield=True):
@@ -1133,6 +1137,65 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.info("Session serving on main=%s, hook=%s", main_path, hook_path)
                 yield session, main_path, hook_path
         logger.info("Session closed")
+
+    def _forward_router_stream(self, endpoint: str, token: str):
+        """Open the router stream of one forwarded connection, on the channel settings of client streams."""
+        return router_stream(endpoint, token, self.tls, self.grpc_options)
+
+    async def _close_forwards(self, lease_scope: LeaseContext) -> None:
+        """Close the listeners and streams of the forwards of a lease (JEP-0016).
+
+        Runs before the afterLease hook, with or without a teardown instruction.
+        """
+        forwards = lease_scope.forwards
+        if forwards is None:
+            return
+        try:
+            with CancelScope(shield=True):
+                await forwards.aclose()
+        except Exception:
+            logger.exception("Error closing the forwards of lease %s", lease_scope.lease_name)
+
+    async def _handle_listen_response(
+        self,
+        lease_name: str,
+        lease_scope: LeaseContext,
+        request: jumpstarter_pb2.ListenResponse,
+        tg: TaskGroup,
+    ) -> None:
+        """Handle one Listen response: a client connection or one forward instruction."""
+        instruction = request.WhichOneof("forward")
+        if isinstance(instruction, str):
+            if request.router_endpoint or request.router_token:
+                # A response contains a client connection or one forward
+                # instruction, not the two together.
+                logger.warning(
+                    "Rejecting Listen response on lease %s with a client connection and %s together",
+                    lease_name,
+                    instruction,
+                )
+                return
+            if lease_scope.forwards is None:
+                logger.warning("Ignoring %s on lease %s: no forward manager", instruction, lease_name)
+                return
+            try:
+                await lease_scope.forwards.handle(request)
+            except Exception:
+                logger.exception("Failed to handle %s on lease %s", instruction, lease_name)
+            return
+        logger.info(
+            "Handling new connection request on lease %s (router=%s)",
+            lease_name,
+            request.router_endpoint,
+        )
+        tg.start_soon(
+            self._handle_client_conn,
+            lease_scope.socket_path,
+            request.router_endpoint,
+            request.router_token,
+            self.tls,
+            self.grpc_options,
+        )
 
     async def _cleanup_after_lease(self, lease_scope: LeaseContext) -> None:
         """Run afterLease hook cleanup when handle_lease exits.
@@ -1287,6 +1350,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     # and Session. The sync above handles the case where status was updated before
                     # session creation (e.g., BEFORE_LEASE_HOOK when hooks are configured).
 
+                    # The forward ends of this lease (JEP-0016). It starts no task and opens
+                    # no listener until the controller sends a forward instruction.
+                    lease_scope.forwards = ForwardManager(
+                        ports=session.ports,
+                        controller=self._controller_stub,
+                        router_connect=self._forward_router_stream,
+                        tg=tg,
+                        lease_name=lease_name,
+                    )
+
                     # Start task to handle EndSession requests (runs afterLease hook when client signals done)
                     tg.start_soon(self._handle_end_session, lease_scope)
 
@@ -1320,19 +1393,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                                 await lease_scope.before_lease_hook.wait()
                                 logger.debug("Starting to process connection requests from Listen stream")
                                 async for request in listen_rx:
-                                    logger.info(
-                                        "Handling new connection request on lease %s (router=%s)",
-                                        lease_name,
-                                        request.router_endpoint,
-                                    )
-                                    tg.start_soon(
-                                        self._handle_client_conn,
-                                        lease_scope.socket_path,
-                                        request.router_endpoint,
-                                        request.router_token,
-                                        self.tls,
-                                        self.grpc_options,
-                                    )
+                                    await self._handle_listen_response(lease_name, lease_scope, request, tg)
 
                             conn_tg.start_soon(wait_for_lease_end)
                             conn_tg.start_soon(process_connections)
@@ -1354,6 +1415,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                         # it here prematurely would race with that flag update.
                         if not self.hook_executor and not lease_scope.before_lease_hook.is_set():
                             lease_scope.before_lease_hook.set()
+                        # The lease ended: close its forwards before the afterLease hook.
+                        await self._close_forwards(lease_scope)
                         # Run afterLease hook before closing the session
                         # This ensures the socket is still available for driver calls within the hook
                         # Shield from cancellation so the hook can complete even during shutdown

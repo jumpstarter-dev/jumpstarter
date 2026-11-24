@@ -2286,3 +2286,169 @@ class TestContextPropagation:
 
         assert calls == [{"client": "ci-bot"}]
         clear_log_context()
+
+
+class TestForwardInstructions:
+    """Forward instructions on the Listen stream of a lease (JEP-0016)."""
+
+    def _exporter(self, lease_ctx):
+        exporter = make_exporter(lease_ctx)
+        exporter.tls = None
+        exporter.grpc_options = {}
+        exporter._handle_client_conn = AsyncMock()
+        return exporter
+
+    async def test_forward_instruction_goes_to_the_forward_manager(self):
+        from jumpstarter_protocol import jumpstarter_pb2
+
+        lease_ctx = make_lease_context()
+        lease_ctx.forwards = MagicMock()
+        lease_ctx.forwards.handle = AsyncMock(return_value=True)
+        exporter = self._exporter(lease_ctx)
+        request = jumpstarter_pb2.ListenResponse(
+            forward_setup=jumpstarter_pb2.ForwardSetup(lease_uid="uid", forward_name="bt")
+        )
+
+        async with create_task_group() as tg:
+            await exporter._handle_listen_response("test-lease", lease_ctx, request, tg)
+
+        lease_ctx.forwards.handle.assert_awaited_once_with(request)
+        exporter._handle_client_conn.assert_not_called()
+
+    async def test_client_connection_does_not_reach_the_forward_manager(self):
+        from jumpstarter_protocol import jumpstarter_pb2
+
+        lease_ctx = make_lease_context()
+        lease_ctx.forwards = MagicMock()
+        lease_ctx.forwards.handle = AsyncMock()
+        exporter = self._exporter(lease_ctx)
+        request = jumpstarter_pb2.ListenResponse(router_endpoint="router:443", router_token="token")
+
+        async with create_task_group() as tg:
+            await exporter._handle_listen_response("test-lease", lease_ctx, request, tg)
+
+        lease_ctx.forwards.handle.assert_not_called()
+        exporter._handle_client_conn.assert_awaited_once_with("/tmp/test_socket", "router:443", "token", None, {})
+
+    async def test_response_with_a_connection_and_an_instruction_is_rejected(self, caplog):
+        from jumpstarter_protocol import jumpstarter_pb2
+
+        lease_ctx = make_lease_context()
+        lease_ctx.forwards = MagicMock()
+        lease_ctx.forwards.handle = AsyncMock()
+        exporter = self._exporter(lease_ctx)
+        request = jumpstarter_pb2.ListenResponse(
+            router_endpoint="router:443",
+            router_token="token",
+            forward_connect=jumpstarter_pb2.ForwardConnect(lease_uid="uid", forward_name="bt"),
+        )
+
+        with caplog.at_level(logging.WARNING):
+            async with create_task_group() as tg:
+                await exporter._handle_listen_response("test-lease", lease_ctx, request, tg)
+
+        lease_ctx.forwards.handle.assert_not_called()
+        exporter._handle_client_conn.assert_not_called()
+        assert "Rejecting Listen response" in caplog.text
+
+    async def test_failing_instruction_does_not_stop_the_listen_loop(self):
+        from jumpstarter_protocol import jumpstarter_pb2
+
+        lease_ctx = make_lease_context()
+        lease_ctx.forwards = MagicMock()
+        lease_ctx.forwards.handle = AsyncMock(side_effect=RuntimeError("boom"))
+        exporter = self._exporter(lease_ctx)
+        request = jumpstarter_pb2.ListenResponse(
+            forward_teardown=jumpstarter_pb2.ForwardTeardown(lease_uid="uid", forward_name="bt")
+        )
+
+        async with create_task_group() as tg:
+            await exporter._handle_listen_response("test-lease", lease_ctx, request, tg)
+
+    async def test_lease_end_closes_the_forwards_before_the_after_lease_hook(self):
+        """handle_lease handles a setup from Listen, and closes the forwards before the afterLease cleanup."""
+        from contextlib import asynccontextmanager
+
+        from jumpstarter_protocol import jumpstarter_pb2
+
+        from jumpstarter.exporter.forwards import ForwardManager
+
+        lease_ctx = make_lease_context(lease_name="fwd-lease")
+        exporter = self._exporter(lease_ctx)
+        exporter._started = True
+        exporter._controller_stub = MagicMock()
+
+        mock_session = MagicMock()
+        mock_session.context_log_source.return_value = nullcontext()
+        mock_session.ports = {}
+
+        @asynccontextmanager
+        async def fake_session_for_lease():
+            yield (mock_session, "/tmp/main.sock", "/tmp/hook.sock")
+
+        exporter.session_for_lease = fake_session_for_lease
+        exporter._handle_end_session = AsyncMock()
+        exporter._listen_stream_factory = MagicMock(return_value=MagicMock())
+        exporter._skip_stale_lease = AsyncMock(return_value=False)
+
+        events = []
+        handled = Event()
+
+        async def fake_handle(self, response):
+            events.append(response.WhichOneof("forward"))
+            handled.set()
+            return True
+
+        async def fake_aclose(self):
+            events.append("aclose")
+
+        async def fake_retry_stream(name, factory, tx, **kwargs):
+            await tx.send(
+                jumpstarter_pb2.ListenResponse(
+                    forward_setup=jumpstarter_pb2.ForwardSetup(lease_uid="uid", forward_name="bt")
+                )
+            )
+            await anyio.sleep_forever()
+
+        exporter._retry_stream = fake_retry_stream
+        cleanup_done = Event()
+
+        async def fake_cleanup_after_lease(lease_scope):
+            events.append("after_lease")
+            cleanup_done.set()
+
+        exporter._cleanup_after_lease = fake_cleanup_after_lease
+
+        with patch.object(ForwardManager, "handle", fake_handle), patch.object(ForwardManager, "aclose", fake_aclose):
+            async with create_task_group() as tg:
+                tg.start_soon(exporter.handle_lease, "fwd-lease", tg, lease_ctx)
+                with fail_after(5):
+                    await handled.wait()
+                assert isinstance(lease_ctx.forwards, ForwardManager)
+                lease_ctx.lease_ended.set()
+                with fail_after(5):
+                    await cleanup_done.wait()
+                tg.cancel_scope.cancel()
+
+        assert events == ["forward_setup", "aclose", "after_lease"]
+
+    async def test_end_session_closes_the_forwards_before_the_after_lease_hook(self):
+        lease_ctx = make_lease_context()
+        events = []
+        lease_ctx.forwards = MagicMock()
+        lease_ctx.forwards.aclose = AsyncMock(side_effect=lambda: events.append("aclose"))
+        hook_executor = MagicMock()
+        hook_executor.run_after_lease_hook = AsyncMock(side_effect=lambda *a, **k: events.append("after_lease"))
+        exporter = make_exporter(lease_ctx, hook_executor)
+        exporter.stop = MagicMock()
+
+        lease_ctx.end_session_requested.set()
+        with fail_after(5):
+            await exporter._handle_end_session(lease_ctx)
+
+        assert events == ["aclose", "after_lease"]
+
+    async def test_close_forwards_without_a_manager_does_nothing(self):
+        lease_ctx = make_lease_context()
+        assert lease_ctx.forwards is None
+        await make_exporter(lease_ctx)._close_forwards(lease_ctx)

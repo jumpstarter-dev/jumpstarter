@@ -96,6 +96,7 @@ def create_lease(
     without: tuple[str, ...] = (),
     member_entries: tuple[str, ...] = (),
     same_label_entries: tuple[str, ...] = (),
+    forward_entries: tuple[str, ...] = (),
 ):
     """
     Create a lease
@@ -148,6 +149,15 @@ def create_lease(
         $ jmp create lease --member phone=device-type=phone --member headunit=device-type=headunit \\
             --same-label rf-domain=phone,headunit --duration 45m
 
+    Connect a port of one member to a port of a different member with a
+    forward. The exporters declare the ports
+    (see ``jmp get exporters --with ports``):
+
+    .. code-block:: bash
+
+        $ jmp create lease --member peer=device-type=bt-peer --member headunit=device-type=aaos-headunit \\
+            --forward bt=headunit.rootcanal,peer.controller --duration 45m
+
     """
 
     request = parse_member_request(
@@ -158,6 +168,7 @@ def create_lease(
         selector=selector,
         exporter_name=exporter_name,
         allow_disabled=allow_disabled,
+        forward_entries=forward_entries,
     )
 
     if request is None and not selector and not exporter_name:

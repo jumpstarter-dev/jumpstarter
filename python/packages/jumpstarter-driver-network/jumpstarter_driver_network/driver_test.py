@@ -471,3 +471,81 @@ async def test_vsock_connect_streams_over_the_connected_socket(monkeypatch):
             assert theirs.recv(4) == b"pong"
 
         assert theirs.recv(1) == b""
+
+
+# Ports (JEP-0016)
+
+
+def test_tcp_network_reports_its_ports():
+    from jumpstarter_protocol.jumpstarter.v1 import common_pb2
+
+    from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
+
+    driver = ExporterConfigV1Alpha1DriverInstance.from_str(
+        """
+type: jumpstarter_driver_network.driver.TcpNetwork
+config: { host: 127.0.0.1, port: 7300 }
+ports:
+  - name: rootcanal
+    direction: provides
+    protocol: hci-h4
+"""
+    ).instantiate()
+
+    report = driver.report()
+    assert [(p.name, p.direction, p.protocol) for p in report.ports] == [
+        ("rootcanal", common_pb2.PORT_DIRECTION_PROVIDES, "hci-h4")
+    ]
+    assert b"7300" not in report.SerializeToString()
+    assert TcpNetwork(host="127.0.0.1", port=1).report().ports == []
+
+
+@pytest.mark.anyio
+async def test_tcp_network_port_connects_to_the_host_and_port_of_the_driver(tcp_echo_server):
+    from jumpstarter.driver import Port
+
+    port = Port(name="echo", direction="provides")
+    driver = TcpNetwork(host=tcp_echo_server[0], port=tcp_echo_server[1], ports=[port])
+
+    assert driver.port_address(port) == (tcp_echo_server[0], tcp_echo_server[1])
+    async with driver.connect_port(port) as stream:
+        await stream.send(b"hello")
+        assert await stream.receive() == b"hello"
+
+
+@pytest.mark.anyio
+async def test_tcp_network_port_with_a_connect_address_uses_it(tcp_echo_server):
+    from jumpstarter.driver import Port
+
+    port = Port(name="uart", direction="connects", connect=f"{tcp_echo_server[0]}:{tcp_echo_server[1]}")
+    # The address of the driver itself has no service.
+    driver = TcpNetwork(host="127.0.0.1", port=1, ports=[port])
+
+    async with driver.connect_port(port) as stream:
+        await stream.send(b"hello")
+        assert await stream.receive() == b"hello"
+
+
+@pytest.mark.anyio
+async def test_network_driver_port_uses_the_connection_of_the_driver():
+    from jumpstarter_driver_network.driver import EchoNetwork
+
+    from jumpstarter.driver import Port
+
+    port = Port(name="echo", direction="provides")
+    driver = EchoNetwork(ports=[port])
+
+    async with driver.connect_port(port) as stream:
+        await stream.send(b"hello")
+        assert await stream.receive() == b"hello"
+
+
+def test_tcp_network_requires_port_keeps_its_listen_address():
+    from jumpstarter.driver import Port
+
+    driver = TcpNetwork(
+        host="127.0.0.1",
+        port=7300,
+        ports=[Port(name="controller", direction="requires", listen="127.0.0.1:7300")],
+    )
+    assert driver.ports[0].listen_address == ("127.0.0.1", 7300)

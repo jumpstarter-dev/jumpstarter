@@ -13,7 +13,7 @@ import grpc
 import yaml
 from anyio.from_thread import start_blocking_portal
 from anyio.to_thread import run_sync
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from .common import CONFIG_PATH, ObjectMeta, write_yaml_atomically
 from .grpc import call_credentials
@@ -21,6 +21,7 @@ from .tls import TLSConfigV1Alpha1
 from jumpstarter.common.exceptions import ConfigurationError, MissingDriverError
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 from jumpstarter.common.importlib import import_class
+from jumpstarter.common.ports import Port, duplicate_port_names
 
 if TYPE_CHECKING:
     from jumpstarter.driver import Driver
@@ -108,6 +109,13 @@ class ExporterConfigV1Alpha1DriverInstanceBase(BaseModel):
     methods_description: dict[str, str] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
     children: dict[str, ExporterConfigV1Alpha1DriverInstance] = Field(default_factory=dict)
+    ports: list[Port] = Field(
+        default_factory=list,
+        description=(
+            "Ports of this driver (JEP-0016): named points where a forward of a lease can connect "
+            "it to a port of a different exporter. The 'listen' and 'connect' addresses stay local."
+        ),
+    )
 
 
 class ExporterConfigV1Alpha1DriverInstance(RootModel):
@@ -116,6 +124,16 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
         | ExporterConfigV1Alpha1DriverInstanceComposite
         | ExporterConfigV1Alpha1DriverInstanceProxy
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _typed_instance_is_a_driver(cls, data: Any) -> Any:
+        # An entry with a `type` is a driver. Validate it as one, so that an
+        # error in it (an invalid port, for example) is an error, and the entry
+        # does not become a composite without a type.
+        if isinstance(data, dict) and "type" in data:
+            return ExporterConfigV1Alpha1DriverInstanceBase.model_validate(data)
+        return data
 
     def instantiate(self) -> Driver:
         match self.root:
@@ -129,10 +147,14 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
 
                 children = {name: child.instantiate() for name, child in self.root.children.items()}
 
+                # Passed only when set: a driver without ports is built as before.
+                ports = {"ports": list(self.root.ports)} if self.root.ports else {}
+
                 return driver_class(
                     description=self.root.description,
                     methods_description=self.root.methods_description,
                     children=children,
+                    **ports,
                     **self.root.config,
                 )
 
@@ -149,6 +171,19 @@ class ExporterConfigV1Alpha1DriverInstance(RootModel):
                 return Proxy(ref=self.root.ref)
             case _:
                 raise ValueError(f"Unknown driver instance type: {type(self.root)}")
+
+    def configured_ports(self) -> list[Port]:
+        """The ports that this driver instance and its children configure."""
+        match self.root:
+            case ExporterConfigV1Alpha1DriverInstanceProxy():
+                return []
+            case ExporterConfigV1Alpha1DriverInstanceBase():
+                ports = list(self.root.ports)
+            case _:
+                ports = []
+        for child in self.root.children.values():
+            ports.extend(child.configured_ports())
+        return ports
 
     @classmethod
     def from_path(cls, path: str) -> ExporterConfigV1Alpha1DriverInstance:
@@ -211,6 +246,14 @@ class ExporterConfigV1Alpha1(BaseModel):
     )
 
     path: Path | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def _unique_port_names(self) -> Self:
+        """A port name is unique in one exporter: a member and a port name give one port (JEP-0016)."""
+        ports = [port for instance in self.export.values() for port in instance.configured_ports()]
+        if duplicates := duplicate_port_names(ports):
+            raise ValueError(f"duplicate port name(s) in the exporter configuration: {', '.join(duplicates)}")
+        return self
 
     @classmethod
     def validate_alias(cls, alias: str) -> None:

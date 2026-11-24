@@ -35,7 +35,7 @@ from jumpstarter.common.exceptions import (
 from jumpstarter.common.grpc import aio_secure_channel, ssl_channel_credentials
 
 if TYPE_CHECKING:
-    from jumpstarter.client.grpc import LeaseConstraint, LeaseMember
+    from jumpstarter.client.grpc import LeaseConstraint, LeaseForward, LeaseMember
     from jumpstarter.client.lease import Lease, LeaseMembers, MembersLease
 
 
@@ -280,6 +280,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         include_disabled: bool = False,
         page_size: int = 100,
         show_hidden_labels: bool = False,
+        include_ports: bool = False,
     ):
         from jumpstarter.client.grpc import ExporterList
 
@@ -302,6 +303,7 @@ class ClientConfigV1Alpha1(BaseSettings):
         result.include_online = include_online
         result.include_status = include_status
         result.include_disabled = include_disabled
+        result.include_ports = include_ports
 
         if not include_leases:
             return result
@@ -344,7 +346,15 @@ class ClientConfigV1Alpha1(BaseSettings):
         member_selectors: dict[str, str] | None = None,
         members: list[LeaseMember] | None = None,  # ty: ignore[invalid-type-form]
         constraints: list[LeaseConstraint] | None = None,  # ty: ignore[invalid-type-form]
+        forwards: list[LeaseForward] | None = None,  # ty: ignore[invalid-type-form]
     ):
+        """Create a lease without waiting for it.
+
+        `forwards` connect the ports of ad-hoc `members`. A lease template
+        has its own forwards. A controller that predates forwards creates
+        the lease without them: the lease is then deleted, and this raises
+        `ControllerTooOldError`.
+        """
         svc = ClientService(channel=await self.channel(), namespace=self.metadata.namespace or "")
         member_form: dict[str, Any] = {
             key: value
@@ -354,6 +364,7 @@ class ClientConfigV1Alpha1(BaseSettings):
                 "member_selectors": member_selectors,
                 "members": members,
                 "constraints": constraints,
+                "forwards": forwards,
             }.items()
             if value is not None
         }
@@ -528,17 +539,24 @@ class ClientConfigV1Alpha1(BaseSettings):
         excluded_members: list[str] | None = None,  # ty: ignore[invalid-type-form]
         members: list[LeaseMember] | None = None,  # ty: ignore[invalid-type-form]
         constraints: list[LeaseConstraint] | None = None,  # ty: ignore[invalid-type-form]
+        forwards: list[LeaseForward] | None = None,  # ty: ignore[invalid-type-form]
         lease_name: str | None = None,
         duration: timedelta | None = None,
         acquisition_timeout: timedelta | None = None,
         retry_timeout: timedelta | None = None,
         dial_timeout: timedelta | None = None,
+        tolerate_failed_forwards: bool = False,
     ):
         """Request a lease with members, or attach to one with `lease_name`.
 
         The lease comes from a template (`template`, or the template of
-        `members_class`) or from ad-hoc `members` with `constraints`. Only the
-        CLI makes ad-hoc members; test code names a template.
+        `members_class`) or from ad-hoc `members` with `constraints` and
+        `forwards`. Only the CLI makes ad-hoc members; test code names a
+        template, which has its own forwards.
+
+        A request stops with `ForwardError` when a forward is `Failed`.
+        With `tolerate_failed_forwards`, it takes the lease as it is, as an
+        attach does: `jmp shell` uses it.
         """
         from jumpstarter.client.lease import LeaseMembers, MembersLease
 
@@ -555,6 +573,8 @@ class ClientConfigV1Alpha1(BaseSettings):
                 excluded_members=list(excluded_members or []),
                 requested_members=list(members or []),
                 constraints=list(constraints or []),
+                requested_forwards=list(forwards or []),
+                tolerate_failed_forwards=tolerate_failed_forwards,
                 members_class=members_class or LeaseMembers,
                 portal=portal,
                 allow=self.drivers.allow,

@@ -1,10 +1,11 @@
+import asyncio  # noqa: TID251
 import inspect
 import logging
 import os
 import sys
 import time
 import types
-from collections.abc import AsyncGenerator, Callable, Generator, Iterable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Iterable, Mapping
 from contextlib import (
     AsyncExitStack,
     ExitStack,
@@ -35,10 +36,11 @@ from tenacity import retry, retry_if_exception_type, wait_exponential_jitter
 from xdg_base_dirs import xdg_runtime_dir
 
 from .base import DriverClient
-from .exceptions import LeaseError, LeaseMemberLostError
+from .exceptions import ForwardError, LeaseError, LeaseMemberLostError
 from jumpstarter.client import client_from_path
-from jumpstarter.client.grpc import ClientService, LeaseMemberStatus
+from jumpstarter.client.grpc import ClientService, ForwardEndpoint, LeaseForwardStatus, LeaseMemberStatus, PortReport
 from jumpstarter.client.grpc import LeaseConstraint as LeaseConstraintModel
+from jumpstarter.client.grpc import LeaseForward as LeaseForwardModel
 from jumpstarter.client.grpc import LeaseMember as LeaseMemberModel
 from jumpstarter.common import TemporaryUnixListener
 from jumpstarter.common.condition import condition_false, condition_message, condition_present_and_equal, condition_true
@@ -592,7 +594,11 @@ def _reject_member_form(name: str | None, lease) -> None:
 
 
 _CLIENT_LABEL = "jumpstarter.dev/client"
-_RESERVED_ATTRIBUTES = ("by_role", "metadata")
+_RESERVED_ATTRIBUTES = ("by_role", "metadata", "forwards")
+# How long `Forward.state` takes the last read of the lease as current.
+_FORWARD_STATE_MAX_AGE = 1.0
+# The time between two reads of the lease in `Forward.wait_listening`.
+_FORWARD_POLL_SECONDS = 1.0
 # The duration of a lease from a template that has no default, as for a lease of one exporter.
 _DEFAULT_DURATION = timedelta(minutes=30)
 # Longest path that fits sockaddr_un on every platform we run on (104 bytes on macOS).
@@ -623,6 +629,224 @@ def member(*, role: str | None = None) -> Any:
             records: Recorder = member(role="metadata")
     """
     return _Member(role=role)
+
+
+@dataclass(frozen=True)
+class _ForwardMarker:
+    name: str | None = None
+
+
+def forward(*, name: str | None = None) -> Any:
+    """Name the forward of a `LeaseMembers` attribute when it is not the attribute name.
+
+    .. code-block:: python
+
+        class HeadunitPeer(LeaseMembers, template="headunit-peer"):
+            link: Forward = forward(name="bt")
+    """
+    return _ForwardMarker(name=name)
+
+
+def _in_event_loop() -> bool:
+    """Whether the caller runs in an event loop, where a blocking read of the lease is not possible."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
+class _ForwardStatusSource:
+    """Reads the state of the forwards of one lease. The `Forward` objects of the lease share it."""
+
+    def __init__(
+        self,
+        lease_name: str | None,
+        read: Callable[[], Awaitable[Iterable[LeaseForwardStatus]]] | None,
+        portal: BlockingPortal | None,
+        statuses: Iterable[LeaseForwardStatus] = (),
+        unreadable: str | None = None,
+    ):
+        self.lease_name = lease_name
+        self._read = read
+        self._portal = portal
+        self._unreadable = unreadable
+        self.statuses = {status.name: status for status in statuses}
+        self._read_at = time.monotonic()
+
+    @property
+    def fresh(self) -> bool:
+        return time.monotonic() - self._read_at < _FORWARD_STATE_MAX_AGE
+
+    def note(self, statuses: Iterable[LeaseForwardStatus]) -> None:
+        self.statuses = {status.name: status for status in statuses}
+        self._read_at = time.monotonic()
+
+    async def refresh_async(self) -> None:
+        if self._read is None:
+            raise LeaseError(
+                f"cannot read the forwards of lease {self.lease_name}: "
+                f"{self._unreadable or 'the lease has no connection to the controller'}"
+            )
+        self.note(await self._read())
+
+    def refresh(self) -> None:
+        if self._portal is None or self._read is None:
+            raise LeaseError(
+                f"cannot read the forwards of lease {self.lease_name}: "
+                f"{self._unreadable or 'the lease has no connection to the controller'}"
+            )
+        self._portal.call(self.refresh_async)
+
+
+class Forward:
+    """A forward of a lease: it connects a port on one member to a port on a different member.
+
+    The lease, or its template, has the endpoints. An attribute of a
+    `LeaseMembers` class with the annotation `Forward` is the forward with
+    the name of the attribute; `members.forwards` has every forward of the
+    lease by its name.
+
+    `state` is `Pending`, `Disabled`, `Listening`, `Connected` or `Failed`,
+    and `message` is the cause of a `Failed` or `Disabled` state. They are
+    read from the lease: `state` and `message` read it again when the last
+    read is older than a second. In async code they give the last read; use
+    `refresh_async()` there.
+    """
+
+    __slots__ = ("_endpoints", "_message", "_name", "_source", "_state")
+
+    def __init__(
+        self,
+        name: str,
+        endpoints: Iterable[ForwardEndpoint] = (),
+        *,
+        state: str = "Pending",
+        message: str | None = None,
+        source: _ForwardStatusSource | None = None,
+    ):
+        self._name = name
+        self._endpoints = tuple(endpoints)
+        self._state = state
+        self._message = message
+        self._source = source
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def endpoints(self) -> tuple[ForwardEndpoint, ...]:
+        """The endpoints of the forward: `member_name` and `port_name` of each."""
+        return self._endpoints
+
+    def _status(self) -> tuple[str, str | None]:
+        if self._source is not None:
+            status = self._source.statuses.get(self._name)
+            # A forward that the controller did not report yet is Pending.
+            return (status.state, status.message) if status is not None else ("Pending", None)
+        return self._state, self._message
+
+    def _refresh_if_stale(self) -> None:
+        if self._source is None or self._source.fresh or _in_event_loop():
+            return
+        try:
+            self._source.refresh()
+        except Exception:
+            logger.debug("Could not read the state of forward %s", self._name, exc_info=True)
+
+    @property
+    def state(self) -> str:
+        self._refresh_if_stale()
+        return self._status()[0]
+
+    @property
+    def message(self) -> str | None:
+        """The cause of a `Failed` or `Disabled` state, when the controller gave one."""
+        self._refresh_if_stale()
+        return self._status()[1]
+
+    def refresh(self) -> Self:
+        """Read the lease again.
+
+        :raises LeaseError: the lease cannot be read
+        """
+        if self._source is not None:
+            self._source.refresh()
+        return self
+
+    async def refresh_async(self) -> Self:
+        if self._source is not None:
+            await self._source.refresh_async()
+        return self
+
+    def _lease_text(self) -> str:
+        lease = self._source.lease_name if self._source is not None else None
+        return f" of lease {lease}" if lease else ""
+
+    def _settled(self, timeout: float, deadline: float, error: Exception | None) -> bool:
+        """Whether the wait is over. Raises for a state that cannot become Listening, and at the deadline."""
+        state, message = self._status()
+        if state in ("Listening", "Connected"):
+            return True
+        if state in ("Failed", "Disabled"):
+            text = f"forward '{self._name}'{self._lease_text()} {'is disabled' if state == 'Disabled' else 'failed'}"
+            if message:
+                text += f": {message}"
+            raise ForwardError(text, forward=self._name, state=state, cause=message)
+        if self._source is None or time.monotonic() >= deadline:
+            text = f"forward '{self._name}'{self._lease_text()} is still {state} after {timeout:g}s"
+            if error is not None:
+                text += f" (the last read of the lease failed: {error})"
+            raise TimeoutError(text)
+        return False
+
+    def wait_listening(self, timeout: float = 60.0) -> Self:
+        """Wait until the forward is `Listening` or `Connected`.
+
+        A test can call it after an interruption, before it uses the
+        connection again.
+
+        :raises ForwardError: the forward is `Failed` or `Disabled`, with the cause
+        :raises TimeoutError: the forward is still `Pending` after timeout seconds
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            error = None
+            if self._source is not None:
+                try:
+                    self._source.refresh()
+                except Exception as e:  # noqa: BLE001
+                    error = e
+                    logger.debug("Could not read the state of forward %s: %s", self._name, e)
+            if self._settled(timeout, deadline, error):
+                return self
+            time.sleep(max(0.0, min(_FORWARD_POLL_SECONDS, deadline - time.monotonic())))
+
+    async def wait_listening_async(self, timeout: float = 60.0) -> Self:
+        """Async version of wait_listening()."""
+        deadline = time.monotonic() + timeout
+        while True:
+            error = None
+            if self._source is not None:
+                try:
+                    await self._source.refresh_async()
+                except Exception as e:  # noqa: BLE001
+                    error = e
+                    logger.debug("Could not read the state of forward %s: %s", self._name, e)
+            if self._settled(timeout, deadline, error):
+                return self
+            await sleep(max(0.0, min(_FORWARD_POLL_SECONDS, deadline - time.monotonic())))
+
+    def __repr__(self) -> str:
+        endpoints = ", ".join(str(endpoint) for endpoint in self._endpoints)
+        return f"<Forward {self._name!r} ({endpoints}): {self._status()[0]}>"
+
+
+@dataclass(frozen=True)
+class _ForwardSpec:
+    name: str
+    attribute: str
 
 
 @dataclass(frozen=True)
@@ -707,6 +931,8 @@ def _collect_roles(cls: type, localns: Mapping[str, Any]) -> dict[str, _RoleSpec
         for attribute, annotation in _own_annotations(klass, localns).items():
             marker = klass.__dict__.get(attribute)
             client_class, optional = _split_optional(annotation)
+            if isinstance(marker, _ForwardMarker) and client_class is not Forward:
+                raise TypeError(f"{klass.__qualname__}.{attribute}: forward() needs `Forward` as the annotation")
             if _composite_base(client_class) is None:
                 if isinstance(marker, _Member):
                     raise TypeError(
@@ -734,6 +960,43 @@ def _collect_roles(cls: type, localns: Mapping[str, Any]) -> dict[str, _RoleSpec
                 drivers=_driver_specs(client_class, localns),
             )
     return roles
+
+
+def _collect_forwards(cls: type, localns: Mapping[str, Any], roles: Mapping[str, _RoleSpec]) -> dict[str, _ForwardSpec]:
+    """The forwards that a `LeaseMembers` class declares: its attributes with the annotation `Forward`."""
+    forwards: dict[str, _ForwardSpec] = {}
+    for klass in reversed(cls.__mro__):
+        if klass is LeaseMembers or not issubclass(klass, LeaseMembers):
+            continue
+        for attribute, annotation in _own_annotations(klass, localns).items():
+            annotated, optional = _split_optional(annotation)
+            if annotated is not Forward:
+                continue
+            if optional:
+                raise TypeError(
+                    f"{klass.__qualname__}.{attribute}: a forward attribute is always a Forward object, also "
+                    f"for a Disabled forward: remove `| None`"
+                )
+            if attribute in _RESERVED_ATTRIBUTES:
+                raise TypeError(
+                    f"{klass.__qualname__}.{attribute}: '{attribute}' is an attribute of LeaseMembers. "
+                    f"Use forward(name=...) on a different attribute for this forward"
+                )
+            marker = klass.__dict__.get(attribute)
+            name = marker.name if isinstance(marker, _ForwardMarker) and marker.name else attribute.replace("_", "-")
+            previous = forwards.get(name)
+            if previous is not None and previous.attribute != attribute:
+                raise TypeError(
+                    f"{klass.__qualname__}: the attributes '{previous.attribute}' and '{attribute}' are both "
+                    f"the forward '{name}'"
+                )
+            if name in roles:
+                raise TypeError(
+                    f"{klass.__qualname__}.{attribute}: '{name}' is a role: a forward and a role of one lease "
+                    f"cannot have the same name"
+                )
+            forwards[name] = _ForwardSpec(name=name, attribute=attribute)
+    return forwards
 
 
 def _class_path(cls: type) -> str:
@@ -832,10 +1095,26 @@ class LeaseMembers:
     The role name is the attribute name with `-` in the place of `_`;
     `member(role=...)` gives a different name. A class without `template=`
     can only attach to a lease that exists.
+
+    An attribute whose annotation is `Forward` is a forward of the template.
+    The forward name is the attribute name with `-` in the place of `_`;
+    `forward(name=...)` gives a different name. The template has the
+    endpoints:
+
+    .. code-block:: python
+
+        class HeadunitPeer(LeaseMembers, template="headunit-peer"):
+            peer: Peer
+            headunit: Headunit
+            bt: Forward
+
+        with config.lease(HeadunitPeer) as lease, lease.connect() as members:
+            members.bt.wait_listening(timeout=30)
     """
 
     __lease_template__: ClassVar[str | None] = None
     __lease_roles__: ClassVar[dict[str, _RoleSpec]] = {}
+    __lease_forwards__: ClassVar[dict[str, _ForwardSpec]] = {}
 
     #: Each role of the lease and its client. None for a role without an exporter.
     #: A `LostMember` for a role that lost its exporter: every use of it raises.
@@ -843,6 +1122,9 @@ class LeaseMembers:
     #: Each role of the lease and its exporter. None for a role without an exporter.
     #: A role that lost its exporter keeps the metadata of that exporter.
     metadata: "Mapping[str, ExporterMetadata | None]"
+    #: Each forward of the lease by its name, also the forwards that the class does not declare.
+    #: A `Disabled` or `Failed` forward is a `Forward` object with that state.
+    forwards: "Mapping[str, Forward]"
 
     def __init_subclass__(cls, template: str | None = None, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -850,21 +1132,28 @@ class LeaseMembers:
             cls.__lease_template__ = template
         # The class statement runs in the caller's frame: its locals resolve
         # string annotations that name classes of a function body.
-        cls.__lease_roles__ = _collect_roles(cls, sys._getframe(1).f_locals)
+        localns = sys._getframe(1).f_locals
+        cls.__lease_roles__ = _collect_roles(cls, localns)
+        cls.__lease_forwards__ = _collect_forwards(cls, localns, cls.__lease_roles__)
 
     def __init__(
         self,
         clients: "Mapping[str, DriverClient | LostMember | None]",
         metadata: "Mapping[str, ExporterMetadata | None]",
+        forwards: "Mapping[str, Forward] | None" = None,
     ) -> None:
         for role, client in clients.items():
             # A lost role has no exporter to compare with its member class.
             if client is not None and not isinstance(client, LostMember):
                 self.check_client(role, client)
+        self.check_forwards(forwards or {}, "the lease")
         self.by_role = types.MappingProxyType(dict(clients))
         self.metadata = types.MappingProxyType(dict(metadata))
+        self.forwards = types.MappingProxyType(dict(forwards or {}))
         for spec in self.__lease_roles__.values():
             setattr(self, spec.attribute, clients.get(spec.role))
+        for spec in self.__lease_forwards__.values():
+            setattr(self, spec.attribute, self.forwards[spec.name])
 
     @classmethod
     def check_members(cls, members: Iterable[LeaseMemberModel], source: str) -> list[str]:
@@ -900,6 +1189,22 @@ class LeaseMembers:
         if required:
             raise TypeError(f"{cls.__name__} does not declare the required role '{required[0]}' of {source}")
         return undeclared
+
+    @classmethod
+    def check_forwards(cls, forwards: "Iterable[LeaseForwardModel | str]", source: str) -> None:
+        """Compare the declared forwards with the forwards of a template or of a lease.
+
+        The class can leave out a forward of the template: `forwards` has it.
+
+        :raises TypeError: the class declares a forward that the template or the lease does not contain
+        """
+        names = [entry if isinstance(entry, str) else entry.name for entry in forwards]
+        for name, spec in cls.__lease_forwards__.items():
+            if name not in names:
+                raise TypeError(
+                    f"{cls.__name__}.{spec.attribute}: {cls.__name__} declares the forward '{name}', but {source} "
+                    f"has no such forward (forwards: {', '.join(names) or 'none'})"
+                )
 
     @classmethod
     def check_client(cls, role: str, client: DriverClient) -> None:
@@ -961,11 +1266,23 @@ class MembersLease[M: LeaseMembers](Lease):
     excluded_members: list[str] = field(default_factory=list)
     requested_members: list[LeaseMemberModel] = field(default_factory=list)
     constraints: list[LeaseConstraintModel] = field(default_factory=list)
+    # The forwards of a request with ad-hoc members. A template has its own.
+    requested_forwards: list[LeaseForwardModel] = field(default_factory=list)
+    # A lease with a Failed forward does not become Ready. A request then raises
+    # ForwardError. With this set, it takes the lease as it is, as an attach
+    # does: `jmp shell` sets it, to open the shell with the cause as a warning.
+    tolerate_failed_forwards: bool = False
     members_class: type[M] = LeaseMembers  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
     lease_members: list[LeaseMemberModel] = field(default_factory=list, init=False)  # Populated during acquisition
     member_statuses: dict[str, LeaseMemberStatus] = field(default_factory=dict, init=False)
     member_labels: dict[str, dict[str, str]] = field(default_factory=dict, init=False)
+    member_ports: dict[str, list[PortReport]] = field(default_factory=dict, init=False)
     lost: dict[str, str] = field(default_factory=dict, init=False)  # Role to the reason, once it is known
+    lease_forwards: list[LeaseForwardModel] = field(default_factory=list, init=False)  # Populated during acquisition
+    forward_statuses: dict[str, LeaseForwardStatus] = field(default_factory=dict, init=False)
+    # Each Failed forward and why, as of the last read of the lease.
+    failed_forwards: dict[str, str] = field(default_factory=dict, init=False)
+    _forward_source: _ForwardStatusSource | None = field(default=None, init=False, repr=False)
     # Whether this object attached to a lease that existed. Such a client takes a degraded lease as it is.
     attached: bool = field(default=False, init=False)
 
@@ -990,6 +1307,10 @@ class MembersLease[M: LeaseMembers](Lease):
                 f"{self.members_class.__name__} has no template: it can only attach to a lease that exists "
                 "(lease_name=...)"
             )
+        if template is not None and self.requested_forwards:
+            raise LeaseError(
+                f"forwards cannot be used with the lease template '{template}': the template has the forwards"
+            )
         duration = self.duration
         excluded = list(self.excluded_members)
         with translate_grpc_exceptions():
@@ -998,6 +1319,7 @@ class MembersLease[M: LeaseMembers](Lease):
                 undeclared = self.members_class.check_members(
                     [entry.member for entry in definition.members], f"the lease template '{template}'"
                 )
+                self.members_class.check_forwards(definition.forwards, f"the lease template '{template}'")
                 excluded.extend(role for role in undeclared if role not in excluded)
                 for role in self.member_selectors:
                     if definition.member(role) is None:
@@ -1021,6 +1343,8 @@ class MembersLease[M: LeaseMembers](Lease):
                 member_selectors=self.member_selectors or None,
                 members=self.requested_members or None,
                 constraints=self.constraints or None,
+                # A members request names its forwards. A template request has none: the controller copies them.
+                forwards=self.requested_forwards or None,
             )
             self.name = lease.name
         what = f"template {template}" if template is not None else "members " + ", ".join(
@@ -1031,12 +1355,14 @@ class MembersLease[M: LeaseMembers](Lease):
     async def request_async(self):
         """Request the lease, or attach to it when it has a name.
 
-        A request waits for Ready, and a lost member or a failed hook ends
-        it. An attach does not wait for Ready when the lease is degraded:
-        `connect()` then gives the bound roles, and a `LostMember` for each
-        lost role.
+        A request waits for Ready, and a lost member, a failed hook or a
+        failed forward ends it. An attach does not wait for Ready when the
+        lease is degraded: `connect()` then gives the bound roles, a
+        `LostMember` for each lost role, and a `Forward` with the state
+        `Failed` for each failed forward.
 
         :raises TypeError: the members class does not agree with the template
+        :raises ForwardError: for a request, a forward is `Failed`: it has the forward and the cause
         :raises LeaseError: the lease cannot be satisfied, or, for a request, a member is lost or a
             beforeLease hook failed
         """
@@ -1058,22 +1384,53 @@ class MembersLease[M: LeaseMembers](Lease):
         self.owner = lease.client
         self.lease_members = list(lease.members)
         self.member_statuses = {status.name: status for status in lease.member_statuses}
+        self.lease_forwards = list(lease.forwards)
         self._note_lost(lease)
+        self._note_forwards(lease)
 
     def _note_lost(self, lease) -> None:
         for status in lease.lost_members():
             self.lost[status.name] = status.describe_loss()
             self.member_statuses[status.name] = status
 
-    @staticmethod
-    def _degraded(result) -> bool:
-        return condition_true(result.conditions, "Degraded") or bool(result.lost_members())
+    def _note_forwards(self, lease) -> None:
+        self.forward_statuses = {status.name: status for status in lease.forward_statuses}
+        self.failed_forwards = {status.name: status.describe_failure() for status in lease.failed_forwards()}
+        if self._forward_source is not None:
+            self._forward_source.note(lease.forward_statuses)
 
-    def _raise_for_failure(self, result, *, degraded_attach: bool = False) -> None:
+    @staticmethod
+    def _failed_forwards(result) -> list[LeaseForwardStatus]:
+        failed = result.failed_forwards()
+        if not failed and condition_present_and_equal(result.conditions, "ForwardsReady", "False", "Failed"):
+            # The condition can be written before the status of the forward.
+            message = condition_message(result.conditions, "ForwardsReady", "Failed")
+            failed = [LeaseForwardStatus(name="", state="Failed", message=message or None)]
+        return failed
+
+    @classmethod
+    def _degraded(cls, result) -> bool:
+        return (
+            condition_true(result.conditions, "Degraded")
+            or bool(result.lost_members())
+            or bool(cls._failed_forwards(result))
+        )
+
+    @staticmethod
+    def _forwards_pending(result) -> bool:
+        return condition_present_and_equal(
+            result.conditions, "Ready", "False", "ForwardsPending"
+        ) or condition_present_and_equal(result.conditions, "ForwardsReady", "False", "ForwardsPending")
+
+    def _raise_for_failure(
+        self, result, *, degraded_attach: bool = False, tolerate_failed_forwards: bool = False
+    ) -> None:
         """Stop the wait for a state that cannot become Ready (DD-16).
 
         degraded_attach is an attach to a degraded lease: it is used as it
-        is, so only a lease that holds no exporters stops it.
+        is, so only a lease that holds no exporters stops it. A lease with
+        a Failed forward does not become Ready either (JEP-0016): a request
+        raises ForwardError unless tolerate_failed_forwards is set.
         """
         lost = result.lost_members()
         if lost and not degraded_attach:
@@ -1091,10 +1448,21 @@ class MembersLease[M: LeaseMembers](Lease):
         if condition_present_and_equal(result.conditions, "Ready", "False", "BeforeLeaseHookFailed"):
             message = condition_message(result.conditions, "Ready") or "a beforeLease hook failed"
             raise LeaseError(f"lease {self.name}: beforeLease hook failed (BeforeLeaseHookFailed): {message}")
+        failed = self._failed_forwards(result)
+        if failed:
+            if tolerate_failed_forwards:
+                return
+            raise ForwardError(
+                f"lease {self.name}: {'; '.join(status.describe_failure() for status in failed)}",
+                forward=failed[0].name,
+                state="Failed",
+                cause=failed[0].message,
+            )
         if (
             condition_false(result.conditions, "Ready")
             and not condition_true(result.conditions, "Pending")
             and not condition_present_and_equal(result.conditions, "Ready", "False", "BeforeLeaseHook")
+            and not self._forwards_pending(result)
         ):
             message = condition_message(result.conditions, "Ready") or "lease is no longer active"
             raise LeaseError(f"lease {self.name}: {message}")
@@ -1103,6 +1471,8 @@ class MembersLease[M: LeaseMembers](Lease):
         """Wait until the lease is Ready: each required member is bound and each beforeLease hook is complete.
 
         An attach does not wait for a degraded lease, which cannot become Ready (*Lease state*).
+        With forwards, Ready also needs each forward that is not Disabled to be Listening or
+        Connected. A Failed forward stops the wait.
         """
         try:
             with fail_after(self.acquisition_timeout):
@@ -1111,13 +1481,24 @@ class MembersLease[M: LeaseMembers](Lease):
                         logger.debug("Polling Lease %s", self.name)
                         result = await self._get_with_retry()
                         degraded = self.attached and self._degraded(result)
-                        self._raise_for_failure(result, degraded_attach=degraded)
-                        if degraded:
+                        # A request that takes a failed forward as it is. A lost member still ends it.
+                        failed_forward = (
+                            not degraded and self.tolerate_failed_forwards and bool(self._failed_forwards(result))
+                        )
+                        self._raise_for_failure(
+                            result, degraded_attach=degraded, tolerate_failed_forwards=failed_forward
+                        )
+                        if degraded or failed_forward:
                             self._record(result)
-                            reasons = "; ".join(self.lost.values()) or condition_message(result.conditions, "Degraded")
+                            reasons = "; ".join(
+                                [*self.lost.values(), *(s.describe_failure() for s in self._failed_forwards(result))]
+                            ) or condition_message(result.conditions, "Degraded")
                             spinner.update_status(f"Lease {self.name} is degraded", force=True)
                             logger.warning(
-                                "Lease %s is degraded: %s. The other members stay usable.", self.name, reasons
+                                "Lease %s is degraded: %s. %s",
+                                self.name,
+                                reasons,
+                                "The other members stay usable." if self.lost else "The members stay usable.",
                             )
                             await self._fetch_member_labels()
                             break
@@ -1131,6 +1512,14 @@ class MembersLease[M: LeaseMembers](Lease):
                         if condition_present_and_equal(result.conditions, "Ready", "False", "BeforeLeaseHook"):
                             message = condition_message(result.conditions, "Ready")
                             spinner.update_status(f"Waiting for beforeLease hooks: {message}")
+                        elif self._forwards_pending(result):
+                            pending = ", ".join(
+                                forward.name
+                                for forward in result.forwards
+                                if result.forward_state(forward.name) == "Pending"
+                            )
+                            message = condition_message(result.conditions, "ForwardsReady") or pending
+                            spinner.update_status(f"Waiting for forwards: {message}")
                         else:
                             self._update_spinner_status(spinner, result)
 
@@ -1153,6 +1542,8 @@ class MembersLease[M: LeaseMembers](Lease):
             try:
                 exporter = await self.svc.GetExporter(name=status.exporter)
                 self.member_labels[role] = exporter.labels
+                ports = getattr(exporter, "ports", None)
+                self.member_ports[role] = list(ports) if isinstance(ports, list) else []
             except Exception as e:  # noqa: BLE001
                 self.member_labels[role] = {}
                 logger.warning("Could not fetch labels for exporter %s: %s", status.exporter, e)
@@ -1181,6 +1572,26 @@ class MembersLease[M: LeaseMembers](Lease):
             return
         self._note_lost(lease)
         self.raise_if_lost(role)
+
+    def port_directions(self) -> dict[tuple[str, str], str]:
+        """The direction of each port that the exporters of the members declare, by (role, port)."""
+        return {(role, port.name): port.direction for role, ports in self.member_ports.items() for port in ports}
+
+    async def _read_forward_statuses(self) -> list[LeaseForwardStatus]:
+        lease = await self.get(timeout=_RELEASE_RPC_TIMEOUT_SECONDS)
+        self._note_forwards(lease)
+        return list(lease.forward_statuses)
+
+    def forward_objects(self) -> dict[str, Forward]:
+        """A `Forward` for each forward of the lease, by its name. They read their state from the lease."""
+        if self._forward_source is None:
+            self._forward_source = _ForwardStatusSource(
+                self.name, self._read_forward_statuses, self.portal, self.forward_statuses.values()
+            )
+        return {
+            forward.name: Forward(forward.name, forward.endpoints, source=self._forward_source)
+            for forward in self.lease_forwards
+        }
 
     async def _on_dial_failed_precondition(self, member_name: str | None) -> None:
         # Dial refuses a member that is not Bound. A Lost member stays lost,
@@ -1245,6 +1656,7 @@ class MembersLease[M: LeaseMembers](Lease):
     @asynccontextmanager
     async def connect_async(self, stack):
         self.members_class.check_members(self.lease_members, f"the lease '{self.name}'")
+        self.members_class.check_forwards(self.lease_forwards, f"the lease '{self.name}'")
         async with self.serve_unix_async() as paths, AsyncExitStack() as clients_stack:
             clients: dict[str, DriverClient | LostMember | None] = {}
             for role, path in paths.items():
@@ -1257,7 +1669,7 @@ class MembersLease[M: LeaseMembers](Lease):
                 )
                 _guard_client(client, _MemberStub(client.stub, role, self))
                 clients[role] = client
-            yield self.members_class(clients, self.member_metadata())
+            yield self.members_class(clients, self.member_metadata(), self.forward_objects())
 
     @contextmanager
     def connect(self) -> Generator[M]:

@@ -5,7 +5,7 @@ from pydantic import Field
 
 from .datetime import time_since
 from .json import JsonBaseModel, OmitNoneModel
-from .leases import V1Alpha1LeaseConstraint, V1Alpha1LeaseMember
+from .leases import V1Alpha1LeaseConstraint, V1Alpha1LeaseForward, V1Alpha1LeaseMember
 from .list import V1Alpha1List
 from .serialize import SerializeV1ObjectMeta
 from .util import AbstractAsyncCustomObjectApi
@@ -25,6 +25,8 @@ class V1Alpha1LeaseTemplateSpec(OmitNoneModel):
     instructions: str | None = None
     members: list[V1Alpha1LeaseMember]
     constraints: list[V1Alpha1LeaseConstraint] | None = None
+    # What connects the members of a lease from this template.
+    forwards: list[V1Alpha1LeaseForward] | None = None
     defaults: V1Alpha1LeaseTemplateDefaults | None = None
 
 
@@ -63,19 +65,30 @@ class V1Alpha1LeaseTemplate(JsonBaseModel):
             return description[: DESCRIPTION_WIDTH - 1] + "…"
         return description
 
+    def has_forwards(self) -> bool:
+        return bool(self.spec.forwards)
+
+    def forwards_summary(self) -> str:
+        """Each forward with its endpoints: ``name(member.port,member.port)``."""
+        return " ".join(forward.summary() for forward in self.spec.forwards or [])
+
     @classmethod
-    def rich_add_columns(cls, table):
+    def rich_add_columns(cls, table, forwards: bool = False):
         table.add_column("NAME", no_wrap=True)
         table.add_column("MEMBERS")
+        # The FORWARDS column appears only where a template has forwards.
+        if forwards:
+            table.add_column("FORWARDS")
         table.add_column("DURATION")
         table.add_column("DESCRIPTION")
         table.add_column("AGE")
 
-    def rich_add_rows(self, table):
+    def rich_add_rows(self, table, forwards: bool = False):
         defaults = self.spec.defaults
         table.add_row(
             self.metadata.name,
             self.members_summary(),
+            *([self.forwards_summary()] if forwards else []),
             (defaults.duration if defaults is not None else None) or "",
             self.description_summary(),
             time_since(self.metadata.creation_timestamp) if self.metadata.creation_timestamp else "",
@@ -92,13 +105,16 @@ class V1Alpha1LeaseTemplateList(V1Alpha1List[V1Alpha1LeaseTemplate]):
     def from_dict(data: dict):
         return V1Alpha1LeaseTemplateList(items=[V1Alpha1LeaseTemplate.from_dict(t) for t in data.get("items", [])])
 
-    @classmethod
-    def rich_add_columns(cls, table):
-        V1Alpha1LeaseTemplate.rich_add_columns(table)
+    def has_forwards(self) -> bool:
+        return any(template.has_forwards() for template in self.items)
 
-    def rich_add_rows(self, table):
+    @classmethod
+    def rich_add_columns(cls, table, **kwargs):
+        V1Alpha1LeaseTemplate.rich_add_columns(table, **kwargs)
+
+    def rich_add_rows(self, table, **kwargs):
         for template in self.items:
-            template.rich_add_rows(table)
+            template.rich_add_rows(table, **kwargs)
 
     def rich_add_names(self, names):
         for template in self.items:

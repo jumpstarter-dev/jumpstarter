@@ -1285,3 +1285,36 @@ async def test_a_queued_track_that_fails_to_start_stays_queued():
         assert player_of(peer).state is queued
         failed = [e for e in peer._events if e["type"] == "stream_resume_failed"]
         assert failed and "channel gone" in failed[0]["error"]
+
+
+# -- forwards (JEP-0016) -------------------------------------------------
+
+
+def test_bt_peer_is_a_requires_endpoint_through_exporter_configuration_only():
+    """The `controller` port is in the exporter configuration; the driver code has no port."""
+    from jumpstarter_protocol.jumpstarter.v1 import common_pb2
+
+    from jumpstarter.config.exporter import ExporterConfigV1Alpha1DriverInstance
+
+    peer = ExporterConfigV1Alpha1DriverInstance.from_str(
+        """
+type: jumpstarter_driver_bt_peer.driver.BtPeer
+config:
+  transport: "tcp-client:127.0.0.1:7300"
+ports:
+  - name: controller
+    direction: requires
+    listen: 127.0.0.1:7300
+    protocol: hci-h4
+"""
+    ).instantiate()
+
+    assert isinstance(peer, BtPeer)
+    assert peer.transport == "tcp-client:127.0.0.1:7300"
+    assert peer.ports[0].listen_address == ("127.0.0.1", 7300)
+    report = peer.report()
+    assert [(p.name, p.direction, p.protocol) for p in report.ports] == [
+        ("controller", common_pb2.PORT_DIRECTION_REQUIRES, "hci-h4")
+    ]
+    assert b"7300" not in report.SerializeToString()
+    assert list(BtPeer().report().ports) == []

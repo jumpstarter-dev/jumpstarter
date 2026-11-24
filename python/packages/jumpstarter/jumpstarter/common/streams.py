@@ -34,7 +34,12 @@ class StreamRequestMetadata(BaseModel):
 
 
 @asynccontextmanager
-async def connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
+async def router_stream(endpoint, token, tls_config, grpc_options):
+    """Open ``RouterService.Stream`` with a router token and yield the stream.
+
+    The router connects it to the peer that opens a stream with a token for
+    the same stream ID.
+    """
     credentials = grpc.composite_channel_credentials(
         await ssl_channel_credentials(endpoint, tls_config),
         grpc.access_token_call_credentials(token),
@@ -43,5 +48,11 @@ async def connect_router_stream(endpoint, token, stream, tls_config, grpc_option
     async with aio_secure_channel(endpoint, credentials, grpc_options) as channel:
         router = router_pb2_grpc.RouterServiceStub(channel)
         context = router.Stream(metadata=())
-        async with RouterStream(context=context) as s, forward_stream(s, stream):
-            yield
+        async with RouterStream(context=context) as s:
+            yield s
+
+
+@asynccontextmanager
+async def connect_router_stream(endpoint, token, stream, tls_config, grpc_options):
+    async with router_stream(endpoint, token, tls_config, grpc_options) as s, forward_stream(s, stream):
+        yield

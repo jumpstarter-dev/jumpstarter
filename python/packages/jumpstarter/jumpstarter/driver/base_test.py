@@ -6,6 +6,7 @@ import yarl
 from anyio import EndOfStream
 
 from .base import Driver
+from jumpstarter.common.ports import Port
 
 
 def test_make_url_preserves_percent_encoding():
@@ -204,3 +205,95 @@ async def test_presigned_get_uses_proxy_from_environment(http_proxy):
 
     assert received == b'{"proxied": true}'
     assert http_proxy.requests == [("GET", "package.invalid")]
+
+
+# Ports (JEP-0016)
+
+
+class _PortsDriver(Driver):
+    @classmethod
+    def client(cls) -> str:
+        return "jumpstarter.client.DriverClient"
+
+
+def test_driver_without_ports_reports_none():
+    report = _PortsDriver().report()
+    assert list(report.ports) == []
+
+
+def test_driver_reports_its_ports_without_the_local_addresses():
+    from jumpstarter_protocol.jumpstarter.v1 import common_pb2
+
+    driver = _PortsDriver(
+        # A plain mapping is validated as a port.
+        ports=[  # ty: ignore[invalid-argument-type]
+            {"name": "rootcanal", "direction": "provides", "connect": "127.0.0.1:7300", "protocol": "hci-h4"},
+            Port(name="controller", direction="requires", listen="127.0.0.1:7301"),
+        ]
+    )
+    report = driver.report(name="bt")
+
+    assert [(p.name, p.direction) for p in report.ports] == [
+        ("rootcanal", common_pb2.PORT_DIRECTION_PROVIDES),
+        ("controller", common_pb2.PORT_DIRECTION_REQUIRES),
+    ]
+    assert report.ports[0].protocol == "hci-h4"
+    assert b"730" not in report.SerializeToString()
+    # The driver keeps the addresses for the exporter.
+    assert driver.ports[0].connect_address == ("127.0.0.1", 7300)
+
+
+def test_driver_class_can_declare_default_ports():
+    from dataclasses import dataclass, field
+
+    @dataclass(kw_only=True)
+    class Rootcanal(_PortsDriver):
+        hci_port: int = 7300
+        ports: list[Port] = field(default_factory=lambda: [Port(name="rootcanal", direction="provides")])
+
+        def port_address(self, port):
+            return ("127.0.0.1", self.hci_port)
+
+    driver = Rootcanal()
+    assert [p.name for p in driver.report().ports] == ["rootcanal"]
+    # The exporter configuration replaces the default.
+    configured = Rootcanal(ports=[Port(name="hci", direction="provides")])
+    assert [p.name for p in configured.report().ports] == ["hci"]
+
+
+def test_driver_rejects_a_duplicate_port_name():
+    with pytest.raises(ValueError, match="duplicate port name"):
+        _PortsDriver(
+            ports=[
+                Port(name="uart", direction="connects", connect="127.0.0.1:4001"),
+                Port(name="uart", direction="connects", connect="127.0.0.1:4002"),
+            ]
+        )
+
+
+@pytest.mark.parametrize("direction", ["provides", "connects"])
+def test_driver_rejects_a_port_without_a_local_address(direction):
+    with pytest.raises(ValueError, match="must have"):
+        _PortsDriver(ports=[Port(name="svc", direction=direction)])
+
+
+def test_driver_accepts_a_reported_port_that_a_forward_cannot_use():
+    driver = _PortsDriver(ports=[Port(name="someip-sd", direction="connects", transport="datagram")])
+    assert len(driver.report().ports) == 1
+
+
+@pytest.mark.anyio
+async def test_connect_port_connects_to_the_connect_address():
+    from jumpstarter.common import TemporaryTcpListener
+
+    async def handler(stream):
+        async with stream:
+            await stream.send(b"service")
+
+    async with TemporaryTcpListener(handler) as address:
+        port = Port(name="svc", direction="provides", connect=f"{address[0]}:{address[1]}")
+        driver = _PortsDriver(ports=[port])
+        async with driver.connect_port(driver.ports[0]) as stream:
+            assert await stream.receive() == b"service"
+        # The optional method for a closed stream does nothing by default.
+        assert await driver.forward_stream_closed(port) is None

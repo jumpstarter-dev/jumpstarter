@@ -5,7 +5,17 @@ from dataclasses import dataclass, field
 
 import click
 
-from jumpstarter.client.grpc import LeaseConstraint, LeaseMember, LeaseTemplate
+from jumpstarter.client.grpc import (
+    MAX_FORWARD_ENDPOINTS,
+    MAX_FORWARDS,
+    ForwardEndpoint,
+    LeaseConstraint,
+    LeaseForward,
+    LeaseMember,
+    LeaseTemplate,
+    is_dns_label,
+    validate_forwards,
+)
 
 # A role name is a DNS label, as the Lease CRD requires.
 _ROLE_PATTERN = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
@@ -49,11 +59,21 @@ opt_same_label = click.option(
     help="With --member and no template: the exporters of the listed roles must have the same value "
     "of the label KEY. Can be specified multiple times.",
 )
+opt_forward = click.option(
+    "--forward",
+    "forward_entries",
+    multiple=True,
+    metavar="NAME=ROLE.PORT,ROLE.PORT",
+    help="With --member and no template: the forward NAME connects the port PORT of each listed role. "
+    "The exporters declare the ports and their directions (see 'jmp get exporters --with ports'). "
+    "More than two endpoints connect one 'provides' port to many 'requires' ports. "
+    "Can be specified multiple times.",
+)
 
 
 def opt_members(f):
     """Add the options for a lease with members to a command."""
-    for option in (opt_same_label, opt_member, opt_without, opt_lease_template):
+    for option in (opt_forward, opt_same_label, opt_member, opt_without, opt_lease_template):
         f = option(f)
     return f
 
@@ -67,6 +87,7 @@ class MemberRequest:
     member_selectors: dict[str, str] = field(default_factory=dict)
     members: list[LeaseMember] = field(default_factory=list)
     constraints: list[LeaseConstraint] = field(default_factory=list)
+    forwards: list[LeaseForward] = field(default_factory=list)
 
     def create_kwargs(self) -> dict:
         """The arguments of `create_lease` and `lease_members_async` that this request sets."""
@@ -80,6 +101,8 @@ class MemberRequest:
         kwargs = {"members": self.members}
         if self.constraints:
             kwargs["constraints"] = self.constraints
+        if self.forwards:
+            kwargs["forwards"] = self.forwards
         return kwargs
 
     def check_template(self, template: LeaseTemplate) -> None:
@@ -147,6 +170,54 @@ def _parse_same_label_entries(entries: tuple[str, ...], roles: dict[str, str]) -
     return constraints
 
 
+_FORWARD_FORMAT = "expected NAME=ROLE.PORT,ROLE.PORT, e.g. bt=headunit.rootcanal,peer.controller"
+
+
+def _parse_forward_endpoint(entry: str, text: str) -> ForwardEndpoint:
+    # A role name and a port name are DNS labels, so neither has a '.'.
+    role, sep, port = text.strip().partition(".")
+    if not sep or not role or not port:
+        raise click.UsageError(f"--forward {entry}: invalid endpoint {text.strip()!r} ({_FORWARD_FORMAT})")
+    if not is_dns_label(port):
+        raise click.UsageError(
+            f"--forward {entry}: invalid port name {port!r} (lowercase letters, digits and '-', at most "
+            f"{_MAX_ROLE_LENGTH} characters)"
+        )
+    return ForwardEndpoint(member_name=role, port_name=port)
+
+
+def _parse_forward_entries(entries: tuple[str, ...], roles: dict[str, str]) -> list[LeaseForward]:
+    forwards = []
+    for entry in entries:
+        name, sep, endpoints = entry.partition("=")
+        if not sep or not name or not endpoints.strip():
+            raise click.UsageError(f"Invalid --forward format: {entry!r} ({_FORWARD_FORMAT})")
+        if not is_dns_label(name):
+            raise click.UsageError(
+                f"--forward: invalid forward name {name!r} (lowercase letters, digits and '-', at most "
+                f"{_MAX_ROLE_LENGTH} characters)"
+            )
+        forward = LeaseForward(name=name, endpoints=[_parse_forward_endpoint(entry, e) for e in endpoints.split(",")])
+        for endpoint in forward.endpoints:
+            if endpoint.member_name not in roles:
+                raise click.UsageError(
+                    f"--forward {entry}: no --member defines the role '{endpoint.member_name}'"
+                )
+        if len(forward.endpoints) < 2:
+            raise click.UsageError(f"--forward {entry}: a forward connects two or more endpoints")
+        if len(forward.endpoints) > MAX_FORWARD_ENDPOINTS:
+            raise click.UsageError(f"--forward {entry}: too many endpoints (max {MAX_FORWARD_ENDPOINTS})")
+        forwards.append(forward)
+    if len(forwards) > MAX_FORWARDS:
+        raise click.UsageError(f"Too many --forward entries (max {MAX_FORWARDS})")
+    try:
+        # The rules that are left: one forward for each name, no name of a role, one endpoint for each role.
+        validate_forwards(forwards, roles)
+    except ValueError as e:
+        raise click.UsageError(f"--forward: {e}") from None
+    return forwards
+
+
 def _reject_scalar_options(form: str, selector: str | None, exporter_name: str | None, allow_disabled: bool) -> None:
     """The options that choose one exporter do not name a role (DD-12)."""
     if selector:
@@ -161,10 +232,16 @@ def _reject_scalar_options(form: str, selector: str | None, exporter_name: str |
 
 
 def _template_request(
-    lease_template: str, without: tuple[str, ...], selectors: dict[str, str], same_label_entries: tuple[str, ...]
+    lease_template: str,
+    without: tuple[str, ...],
+    selectors: dict[str, str],
+    same_label_entries: tuple[str, ...],
+    forward_entries: tuple[str, ...] = (),
 ) -> MemberRequest:
     if same_label_entries:
         raise click.UsageError("--same-label cannot be used with --lease-template/-t: the template has the constraints")
+    if forward_entries:
+        raise click.UsageError("--forward cannot be used with --lease-template/-t: the template has the forwards")
     for role in without:
         _check_role("--without", role)
         if role in selectors:
@@ -185,9 +262,15 @@ def parse_member_request(
     selector: str | None,
     exporter_name: str | None,
     allow_disabled: bool = False,
+    forward_entries: tuple[str, ...] = (),
 ) -> MemberRequest | None:
     """Validate the member options. Returns None when the command asks for one exporter."""
     if lease_template is None and not member_entries:
+        if forward_entries:
+            raise click.UsageError(
+                "--forward needs --member: a forward connects the members of the request. "
+                "A lease of one exporter has no forwards"
+            )
         if without:
             raise click.UsageError("--without needs --lease-template/-t: it leaves out an optional role of a template")
         if same_label_entries:
@@ -201,7 +284,7 @@ def parse_member_request(
     selectors = _parse_member_entries(member_entries)
 
     if lease_template is not None:
-        return _template_request(lease_template, without, selectors, same_label_entries)
+        return _template_request(lease_template, without, selectors, same_label_entries, forward_entries)
 
     if without:
         raise click.UsageError("--without needs --lease-template/-t: it leaves out an optional role of a template")
@@ -210,4 +293,5 @@ def parse_member_request(
     return MemberRequest(
         members=[LeaseMember(name=role, selector=role_selector) for role, role_selector in selectors.items()],
         constraints=_parse_same_label_entries(same_label_entries, selectors),
+        forwards=_parse_forward_entries(forward_entries, selectors),
     )

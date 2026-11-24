@@ -1,8 +1,9 @@
+import json
 import logging
 import os
 import sys
 import time
-from contextlib import AsyncExitStack, ExitStack
+from contextlib import AsyncExitStack, ExitStack, contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -39,6 +40,7 @@ from .members import MemberRequest, opt_members, parse_member_request
 from jumpstarter.client import DirectLease
 from jumpstarter.client.client import client_from_path, fetch_motd
 from jumpstarter.client.exceptions import LeaseError
+from jumpstarter.client.grpc import ForwardEndpoint, LeaseForward
 from jumpstarter.client.telemetry import attach_client_telemetry
 from jumpstarter.common import HOOK_WARNING_PREFIX, ExporterStatus
 from jumpstarter.common.exceptions import (
@@ -51,6 +53,7 @@ from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
+from jumpstarter.utils.env import JMP_LEASE_FORWARDS
 
 logger = logging.getLogger(__name__)
 
@@ -779,13 +782,35 @@ async def _shell_with_signal_handling(  # noqa: C901
     return exit_code
 
 
+def _report_failed_forwards(lease, fresh, reported: set[str]) -> None:
+    """Tell the user one time about each forward that fails while the shell is open."""
+    failed_forwards = getattr(fresh, "failed_forwards", None)
+    failed = {status.name: status for status in (failed_forwards() if callable(failed_forwards) else [])}
+    # A forward that recovers and fails again is reported again.
+    reported &= set(failed)
+    for name, status in failed.items():
+        if name in reported:
+            continue
+        reported.add(name)
+        click.echo(
+            click.style(
+                f"\nLease {lease.name}: {status.describe_failure()}. The members stay usable. "
+                "Run 'j-forward status' for the state of the forwards.",
+                fg="yellow",
+                bold=True,
+            )
+        )
+
+
 async def _monitor_lost_members(lease, cancel_scope) -> None:
-    """Tell the user when a member of the lease loses its exporter.
+    """Tell the user when a member of the lease loses its exporter, or a forward fails.
 
     The lease keeps its other members (DD-8), so the session goes on. A role
-    that was lost before the attach is in the list of roles at the start.
+    that was lost before the attach is in the list of roles at the start,
+    and so is a forward that failed before the shell started.
     """
     reported: set[str] = set(lease.lost)
+    reported_forwards: set[str] = set(getattr(lease, "failed_forwards", None) or {})
     while not cancel_scope.cancel_called:
         try:
             fresh = await lease.get()
@@ -806,7 +831,89 @@ async def _monitor_lost_members(lease, cancel_scope) -> None:
                         bold=True,
                     )
                 )
+        _report_failed_forwards(lease, fresh, reported_forwards)
         await anyio.sleep(_SHARED_ACCESS_POLL_SECONDS)
+
+
+def _forwards_environment(lease) -> list[dict]:
+    """What JMP_LEASE_FORWARDS says: the endpoints and the state of each forward when the shell starts.
+
+    An endpoint has the direction of its port when the exporter of the role
+    reports it. `j-forward status` and `env_members()` read the current
+    state from the lease; this is what they show when they cannot.
+    """
+    forwards = getattr(lease, "lease_forwards", None) or []
+    if not forwards:
+        return []
+    statuses = getattr(lease, "forward_statuses", None) or {}
+    directions = lease.port_directions()
+    described = []
+    for forward in forwards:
+        endpoints = []
+        for endpoint in forward.endpoints:
+            entry = {"member": endpoint.member_name, "port": endpoint.port_name}
+            direction = directions.get((endpoint.member_name, endpoint.port_name))
+            if direction:
+                entry["direction"] = direction
+            endpoints.append(entry)
+        status = statuses.get(forward.name)
+        described.append(
+            {
+                "name": forward.name,
+                "endpoints": endpoints,
+                "state": status.state if status is not None else "Pending",
+                "message": status.message if status is not None else None,
+            }
+        )
+    return described
+
+
+@contextmanager
+def _exported_forwards(forwards: list[dict]):
+    """Give JMP_LEASE_FORWARDS to the shell, which inherits the environment of this process.
+
+    A lease without forwards removes the variable, also when an outer shell set it.
+    """
+    previous = os.environ.get(JMP_LEASE_FORWARDS)
+    if forwards:
+        os.environ[JMP_LEASE_FORWARDS] = json.dumps(forwards)
+    else:
+        os.environ.pop(JMP_LEASE_FORWARDS, None)
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(JMP_LEASE_FORWARDS, None)
+        else:
+            os.environ[JMP_LEASE_FORWARDS] = previous
+
+
+def _forward_line(entry: dict) -> str:
+    forward = LeaseForward(
+        name=entry["name"],
+        endpoints=[ForwardEndpoint(member_name=e["member"], port_name=e["port"]) for e in entry["endpoints"]],
+    )
+    directions = {(e["member"], e["port"]): e["direction"] for e in entry["endpoints"] if e.get("direction")}
+    text = f"  forward {forward.name}: {forward.describe(directions)} ({entry['state']})"
+    if entry["state"] in ("Failed", "Disabled"):
+        if entry.get("message"):
+            text += f": {entry['message']}"
+        return click.style(text, fg="yellow")
+    return text
+
+
+def _warn_about_failed_forwards(forwards: list[dict]) -> None:
+    """A lease with a Failed forward is not Ready. The shell opens, and says why (JEP-0016)."""
+    for entry in forwards:
+        if entry["state"] != "Failed":
+            continue
+        cause = f": {entry['message']}" if entry.get("message") else ""
+        click.echo(
+            click.style("Warning: ", fg="yellow", bold=True)
+            + f"forward '{entry['name']}' failed{cause}. The members stay usable. "
+            "Run 'j-forward status' for the state of the forwards.",
+            err=True,
+        )
 
 
 def _members_environment(lease, paths: dict[str, str | None]) -> dict[str, dict | None]:
@@ -878,20 +985,25 @@ def _member_line(role: str, entry: dict | None) -> str:
 
 async def _launch_members_shell(lease, config, command, paths) -> int:
     members = _members_environment(lease, paths)
+    forwards = _forwards_environment(lease)
     if not command:
         for role, entry in members.items():
             click.echo(_member_line(role, entry), err=True)
-    return await anyio.to_thread.run_sync(
-        lambda: launch_members_shell(
-            members,
-            lease.name,
-            config.drivers.allow,
-            config.drivers.unsafe,
-            config.shell.use_profiles,
-            command=command,
-            lease=lease,
+        for forward in forwards:
+            click.echo(_forward_line(forward), err=True)
+    _warn_about_failed_forwards(forwards)
+    with _exported_forwards(forwards):
+        return await anyio.to_thread.run_sync(
+            lambda: launch_members_shell(
+                members,
+                lease.name,
+                config.drivers.allow,
+                config.drivers.unsafe,
+                config.shell.use_profiles,
+                command=command,
+                lease=lease,
+            )
         )
-    )
 
 
 async def _members_shell_with_signal_handling(
@@ -933,6 +1045,8 @@ async def _members_shell_with_signal_handling(
                 acquisition_timeout=acquisition_timeout,
                 retry_timeout=retry_timeout,
                 dial_timeout=dial_timeout,
+                # A failed forward does not stop the shell: the user can examine the members (DD-7).
+                tolerate_failed_forwards=True,
                 **(request.create_kwargs() if request is not None else {}),
             ) as lease:
                 tg.start_soon(_monitor_token_expiry, config, lease, tg.cancel_scope, token_state)
@@ -1166,6 +1280,7 @@ def shell(
     without=(),
     member_entries=(),
     same_label_entries=(),
+    forward_entries=(),
 ):
     """
     Spawns a shell (or custom command) connecting to a local or remote exporter
@@ -1186,6 +1301,16 @@ def shell(
 
         $ jmp shell -t ivi --without phone
         $$ j headunit power on
+
+    A forward connects a port on one member to a port on a different member.
+    A template has its own forwards; --forward adds one to a request with
+    --member. In the shell, ``j-forward status`` shows the forwards:
+
+    .. code-block:: bash
+
+        $ jmp shell --member peer=device-type=bt-peer --member headunit=device-type=aaos-headunit \\
+            --forward bt=headunit.rootcanal,peer.controller
+        $$ j-forward status
     """
 
     request = parse_member_request(
@@ -1196,6 +1321,7 @@ def shell(
         selector=selector,
         exporter_name=exporter_name,
         allow_disabled=allow_disabled,
+        forward_entries=forward_entries,
     )
     if request is not None and tls_grpc_address is not None:
         raise click.UsageError("--lease-template/-t and --member cannot be used with --tls-grpc")

@@ -13,6 +13,7 @@ from jumpstarter.common import ExporterStatus
 from jumpstarter.config.env import JMP_DRIVERS_ALLOW, JUMPSTARTER_HOST
 
 if TYPE_CHECKING:
+    from jumpstarter.exporter.forwards import ForwardManager
     from jumpstarter.exporter.session import Session
 
 
@@ -37,6 +38,7 @@ class LeaseContext:
         client_name: Name of the client currently holding the lease (empty if unleased)
         current_status: Current exporter status (stored here for access before session is created)
         status_message: Message describing the current status
+        forwards: The forward ends of this lease (JEP-0016), set in handle_lease
     """
 
     lease_name: str
@@ -52,6 +54,7 @@ class LeaseContext:
     current_status: ExporterStatus = field(default=ExporterStatus.AVAILABLE)
     status_message: str = field(default="")
     skip_after_lease_hook: bool = False
+    forwards: "ForwardManager | None" = None
 
     def __post_init__(self):
         """Validate that required resources are present."""

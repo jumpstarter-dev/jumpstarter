@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 import click
@@ -10,10 +11,12 @@ from jumpstarter_cli_common.print import model_print
 from pydantic import BaseModel, ConfigDict, Field
 
 from .login import relogin_client
-from jumpstarter.client.grpc import Lease, LeaseConstraint
+from jumpstarter.client.grpc import Lease, LeaseConstraint, LeaseForward
 from jumpstarter.client.introspect import describe_drivers
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.user import UserConfigV1Alpha1
+
+logger = logging.getLogger(__name__)
 
 opt_output = click.option(
     "-o",
@@ -128,6 +131,15 @@ def describe_exporter(config, name: str, output: OutputType):
             ("Enabled", exporter.enabled),
         ]
     )
+    if exporter.ports:
+        _print_table(
+            "Ports",
+            ["Name", "Direction", "Protocol", "Attachment", "Transport"],
+            [
+                [port.name, port.direction, _format_value(port.protocol), port.attachment, port.transport]
+                for port in exporter.ports
+            ],
+        )
     if exporter.lease:
         lease = exporter.lease
         click.echo("Lease:")
@@ -235,6 +247,8 @@ def describe_lease(config, name: str, show_drivers: bool, output: OutputType):
     if lease.members:
         _print_lease_members(lease)
         _print_constraints(lease.constraints)
+    if lease.forwards:
+        _print_lease_forwards(lease, forward_directions(config, lease))
     _print_mapping("Tags", lease.tags)
     _print_mapping("Context", lease.context)
     _print_conditions(lease.conditions)
@@ -258,6 +272,50 @@ def _print_lease_members(lease: Lease) -> None:
     _print_table("Members", ["Role", "Selector", "State", "Exporter", "Reason"], rows)
 
 
+def forward_directions(config, lease: Lease) -> dict[tuple[str, str], str]:
+    """The direction of each port of the forwards of a lease, by (role, port).
+
+    The lease has the names of the ports, and the exporter of each member
+    reports their directions. A port whose direction cannot be read is left
+    out: the forward is then shown without an arrow.
+    """
+    exporters = lease.member_exporters()
+    roles = {endpoint.member_name for forward in lease.forwards for endpoint in forward.endpoints}
+    directions: dict[tuple[str, str], str] = {}
+    for role in sorted(roles):
+        if not exporters.get(role):
+            continue
+        try:
+            ports = config.get_exporter(exporters[role]).ports
+        except Exception as e:  # noqa: BLE001
+            logger.debug("Could not read the ports of exporter %s: %s", exporters[role], e)
+            continue
+        if not isinstance(ports, list):
+            continue
+        for port in ports:
+            directions[(role, port.name)] = port.direction
+    return directions
+
+
+def _print_lease_forwards(lease: Lease, directions: dict[tuple[str, str], str]) -> None:
+    rows = []
+    for forward in lease.forwards:
+        status = lease.forward_status(forward.name)
+        rows.append(
+            [
+                forward.name,
+                forward.describe(directions),
+                lease.forward_state(forward.name),
+                _format_value(status.message if status else None),
+            ]
+        )
+    _print_table("Forwards", ["Name", "Endpoints", "State", "Message"], rows)
+
+
+def _print_template_forwards(forwards: list[LeaseForward]) -> None:
+    _print_table("Forwards", ["Name", "Endpoints"], [[forward.name, forward.describe()] for forward in forwards])
+
+
 def _print_constraints(constraints: list[LeaseConstraint]) -> None:
     _print_table(
         "Constraints",
@@ -276,7 +334,8 @@ def describe_lease_template(config, name: str, output: OutputType):
     Show details of a specific lease template
 
     A * marks an optional member. Available is the number of exporters that
-    you can lease now for a member.
+    you can lease now for a member. Forwards connect a port on one member to
+    a port on a different member: a lease from the template has them.
     """
 
     template = config.get_lease_template(name)
@@ -321,6 +380,8 @@ def describe_lease_template(config, name: str, output: OutputType):
         ],
     )
     _print_constraints(template.constraints)
+    if template.forwards:
+        _print_template_forwards(template.forwards)
 
 
 class ClientDescription(BaseModel):
