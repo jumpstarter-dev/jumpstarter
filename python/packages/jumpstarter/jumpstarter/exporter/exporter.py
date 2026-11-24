@@ -503,7 +503,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             with CancelScope(shield=True):
                 await channel.close()
 
-    async def _retry_stream(
+    async def _retry_stream(  # noqa: C901 - keep reconnect and outage handling in the same cancellation scope
         self,
         stream_name: str,
         stream_factory: Callable[[jumpstarter_pb2_grpc.ControllerServiceStub], AsyncGenerator],
@@ -520,6 +520,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 if outage_started is not None and outage_budget is not None else math.inf
             )
             scope = CancelScope(deadline=deadline)
+            stream_token = self.token
             try:
                 with scope:
                     if stream_name == "Status":
@@ -549,7 +550,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     raise
                 reason = str(e)
             else:
+                if scope.cancelled_caught and stream_name == "Status" and self.token != stream_token:
+                    logger.info("Reconnecting Status stream to acknowledge credential migration")
+                    continue
                 reason = "stream ended" if not scope.cancelled_caught else "outage deadline reached"
+            finally:
+                if stream_name == "Status":
+                    self._status_stream_scope = None
 
             now = anyio.current_time()
             if outage_started is None:
@@ -708,6 +715,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         Returns:
             The newly rotated token string.
         """
+        rotation_advised = self._token_rotation_advised
         async with self._controller_stub() as controller:
             response: jumpstarter_pb2.RotateTokenResponse = await controller.RotateToken(
                 jumpstarter_pb2.RotateTokenRequest(),
@@ -727,7 +735,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
 
         # Reauthenticate Status with the replacement so the controller can
         # acknowledge migration. This leaves the active lease and Listen alone.
-        if self._status_stream_scope is not None:
+        if rotation_advised and self._status_stream_scope is not None:
             self._status_stream_scope.cancel()
         return new_token
 

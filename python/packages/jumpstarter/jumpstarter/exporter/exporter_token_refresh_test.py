@@ -254,7 +254,7 @@ async def test_refresh_rechecks_wall_clock_after_capped_sleep():
 
 
 @pytest.mark.anyio
-async def test_controller_advisory_wakes_refresh_once_without_interrupting_lease():
+async def test_controller_advisory_wakes_refresh_once_without_interrupting_lease(caplog):
     now = time.time()
     token = _make_jwt({"iat": now, "exp": now + 100000})
     replacement = _make_jwt({"iat": now, "exp": now + 200000})
@@ -275,6 +275,7 @@ async def test_controller_advisory_wakes_refresh_once_without_interrupting_lease
 
     tx, rx = anyio.create_memory_object_stream(1)
     with (
+        caplog.at_level(logging.INFO),
         patch("jumpstarter.exporter.exporter.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=controller),
         patch.object(exporter._token_refresh_requested, "wait", side_effect=wait),
         patch.object(exporter, "_on_lease_update") as lease_update,
@@ -292,6 +293,7 @@ async def test_controller_advisory_wakes_refresh_once_without_interrupting_lease
             assert not acknowledged.token_rotation_advised
             assert exporter.token == replacement
             persisted.assert_awaited_once_with(replacement)
+            assert isinstance(exporter.channel_factory, AsyncMock)
             assert [call.args[0] for call in exporter.channel_factory.await_args_list] == [token, token, replacement]
             # Lease/status updates can repeat the advice before acknowledgement.
             await exporter._apply_status(advisory, tg)
@@ -301,6 +303,10 @@ async def test_controller_advisory_wakes_refresh_once_without_interrupting_lease
             assert not tg.cancel_scope.cancel_called
             await exporter._apply_status(acknowledged, tg)
             tg.cancel_scope.cancel()
+    assert "Reconnecting Status stream to acknowledge credential migration" in caplog.text
+    assert "outage deadline reached" not in caplog.text
+    assert "Status stream interrupted" not in caplog.text
+    assert exporter._status_stream_scope is None
 
 
 @pytest.mark.anyio
@@ -350,6 +356,7 @@ async def test_refresh_skips_external_and_non_expiring_credentials(token):
 @pytest.mark.anyio
 async def test_rotation_passes_current_token_to_factory_without_callback():
     exporter = _exporter_with_token("original-token")
+    exporter._status_stream_scope = MagicMock()
     controller = AsyncMock()
     controller.RotateToken.return_value = jumpstarter_pb2.RotateTokenResponse(token="new-token")
     with (
@@ -360,6 +367,7 @@ async def test_rotation_passes_current_token_to_factory_without_callback():
         async with exporter._controller_stub():
             pass
     assert [call.args[0] for call in channel_factory.await_args_list] == ["original-token", "new-token"]
+    exporter._status_stream_scope.cancel.assert_not_called()
 
 
 @pytest.mark.anyio
