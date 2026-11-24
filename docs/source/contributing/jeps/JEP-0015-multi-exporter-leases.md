@@ -209,8 +209,8 @@ ECU is a physical device and the head unit is a virtual device:
       selector: { matchLabels: { device: aaos-cuttlefish, virtual: "true" } }
 ```
 
-If the set has exporters but none is free, it creates one. The lease holds
-nothing while it waits (DD-15).
+If the set has no free exporter, it creates one. The lease holds nothing
+while it waits (DD-15).
 
 ### How to request a lease
 
@@ -1631,20 +1631,29 @@ up to `maxReplicas`. It does not remove an exporter while a counted member
 can use it. Thus the set keeps an exporter for a lease that waits for a
 different member.
 
-The lease controller has one change for these members. Usually, a lease
-with fewer candidates than members is `Unsatisfiable` with the reason
-`InsufficientExporters`. If those members select the labels of an
-`ExporterSet`, the lease stays `Pending` with the reason `NotAvailable`,
-because the set can create exporters. The lease controller reads the
-`ExporterSet` objects for this check.
+The lease controller has two changes for these members. The lease
+controller reads the `ExporterSet` objects for these checks.
+
+- Usually, a lease with fewer candidates than members is `Unsatisfiable`
+  with the reason `InsufficientExporters`. If those members select the
+  labels of an `ExporterSet`, the lease stays `Pending` with the reason
+  `NotAvailable`, because the set can create exporters.
+- Usually, a required member with no enabled exporter makes the lease
+  `Unsatisfiable`. The exception is a selector that agrees with the labels
+  of an `ExporterSet` that is not in deletion. The lease then stays
+  `Pending` with the reason `NotAvailable`. The set counts the member as demand and
+  creates an exporter. This also applies while a set replaces an exporter
+  after a lease, and to a scalar lease.
 
 A new exporter is a candidate when it is registered and online. The
 subsequent reconcile then binds all the members together. Until then, the
 lease holds no exporter.
 
-As for a scalar lease today, the selector must find a minimum of one
-exporter of the set. If the set has no exporter, the member has no
-candidate, and the lease is `Unsatisfiable`.
+An optional member does not make the lease wait for a set. It is `Omitted`
+with the reason `NotAvailable`. If no `ExporterSet` agrees with the
+selector, a member with no exporter makes the lease `Unsatisfiable`, as
+today. A set that cannot create exporters keeps the lease `Pending` until
+the client stops the wait.
 
 ### Failure modes
 
@@ -1672,7 +1681,7 @@ candidate, and the lease is `Unsatisfiable`.
 | A client in `defaults.sharedWith` does not exist | `CreateLease` returns the current error for that client. The administrator must correct the template. |
 | An `ExporterSet` is at `maxReplicas` and has no free exporter | The lease stays `Pending` with `NotAvailable`, as a scalar lease does. |
 | Two members select an `ExporterSet` that has one exporter | The lease stays `Pending` with `NotAvailable`. The set creates a second exporter. |
-| A member selects an `ExporterSet` that has no exporter | The lease is `Unsatisfiable`, as a scalar lease is today. |
+| A member selects an `ExporterSet` that has no exporter | The lease stays `Pending` with `NotAvailable`. The set creates an exporter. |
 | An administrator changes or deletes a template | No effect on the leases that exist. |
 
 ### Security
@@ -2061,6 +2070,8 @@ These items are not part of this JEP:
 
 - 2026-09-01: JEP proposed, with port forwards in the same document
   ([#1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069)).
+- 2026-11-24: After a test on a lab, a lease now waits for an
+  `ExporterSet` that has no exporter.
 - 2026-11-24: Changes from the review. The `status.claimRef` mark stops
   group changes. A client can attach to a degraded lease. The bind writes
   the shared-client list. A lease has no owner references to exporters.
