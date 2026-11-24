@@ -10,7 +10,8 @@ see [Production](production.md).
 ## Prerequisites
 
 - An Intel device, capable of running CentOS 10
-- At least 4GB RAM and 40GB disk space recommended
+- At least 4GB RAM and 40GB disk space recommended; the kickstart used in
+  Method 1 creates a 64 GiB root volume, so it needs a larger disk
 
 ## Install
 
@@ -79,7 +80,16 @@ This section covers working with and modifying the bootc image for development p
 
 ### Build the Bootc Image
 
-From the `controller/deploy/microshift-bootc/` directory:
+From the `controller/deploy/microshift-bootc/` directory, first generate the
+{term}`operator` installer that the image embeds,
+`controller/deploy/operator/dist/install.yaml`, which is not checked in. This
+needs Go; `IMG` selects the operator image to install:
+
+```console
+make -C ../operator build-installer IMG=<operator-image>
+```
+
+Then build the image:
 
 ```console
 make bootc-build
@@ -105,7 +115,8 @@ sets up LVM volume groups for TopoLVM, and waits for MicroShift to be ready.
 Access the services:
 - **Configuration Web UI**: `http://localhost:8880` (login: `root` / `jumpstarter`)
 - **MicroShift API**: `https://jumpstarter.<your-ip>.nip.io:6443`
-- **Pod Monitoring**: `http://localhost:8880/pods`
+- **Pod Monitoring**: the **MicroShift** section of the web UI,
+  `http://localhost:8880/#microshift`
 
 Check running pods:
 
@@ -215,8 +226,9 @@ Override the default image tag:
 BOOTC_IMG=quay.io/your-org/microshift-bootc:v1.0 make bootc-build
 ```
 
-Add Kubernetes manifests by editing the kustomization.yaml file in
-`controller/deploy/microshift-bootc/manifests/` - they will be deployed to
+Add Kubernetes manifests by listing them in
+`controller/deploy/microshift-bootc/kustomization.yaml` and copying them next
+to it in the `Containerfile` - they will be deployed from
 `/etc/microshift/manifests.d/002-jumpstarter/` in the image.
 
 ### Push to Registry

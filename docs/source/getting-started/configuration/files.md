@@ -7,6 +7,10 @@ Jumpstarter follows a specific hierarchy when loading configurations. See
 [Loading Order](loading-order.md) for details on how configurations from
 different sources are prioritized.
 
+Jumpstarter saves the user, client, and {term}`exporter` configuration files
+atomically and with mode `600`, since client and {term}`exporter` configs hold
+tokens.
+
 ## User Configuration
 
 **File**: `config.yaml`  
@@ -40,7 +44,7 @@ metadata:
   namespace: jumpstarter-lab # The namespace of the client in the cluster.
 tls:
   insecure: false # Enable insecure TLS for testing and development
-  ca: "" # A CA certificate to use
+  ca: "" # A base64-encoded PEM CA certificate bundle to trust
 endpoint: "jumpstarter.my-lab.com:1443" # The Jumpstarter service endpoint
 token: "******************" # An authentication token
 drivers:
@@ -55,20 +59,25 @@ leases:
 **Environment Variables**:
 
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification globally
-- `JMP_CLIENT_CONFIG` - Path to a client configuration file
-- `JMP_CLIENT` - Name of a registered client config
 - `JMP_NAMESPACE` - Namespace in the {term}`controller`
 - `JMP_NAME` - Client name
-- `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
-- `JMP_TOKEN` - Auth token (overrides config file)
+- `JMP_ENDPOINT` - {term}`gRPC` endpoint
+- `JMP_TOKEN` - Auth token
 - `JMP_DRIVERS_ALLOW` - Comma-separated list of allowed driver namespaces
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
 - `JMP_RETRY_TIMEOUT` - Retry timeout in seconds for unreachable exporters (overrides config, default: 300)
 - `JMP_DIAL_TIMEOUT` - Dial timeout in seconds for slow exporters (overrides config, default: 60)
 - `JMP_OIDC_CALLBACK_PORT` - Local port for the OIDC callback during `jmp login` (useful for SSH tunneling; default: OS-assigned)
+- `JMP_OIDC_DEVICE_FLOW` - Set to `1` to log in with the OAuth 2.0 Device Authorization Grant instead of a local callback, also when the CLI re-authenticates automatically (see [Authentication](authentication.md))
 - `JMP_GRPC_PASSPHRASE` - Shared passphrase for authenticating against passphrase-protected exporters
 - `NO_COLOR` - Set to any value (including empty) to disable ANSI color sequences in the `jmp shell` prompt (see [no-color.org](https://no-color.org/); does not affect status icons)
 - `NO_ICONS` - Set to any value (including empty) to force ASCII status icons and the `jmp shell` prompt (e.g. `jumpstarter ^<exporter> >`)
+
+`JMP_NAMESPACE`, `JMP_NAME`, `JMP_ENDPOINT`, `JMP_TOKEN` and `JMP_DRIVERS_ALLOW`
+only supply values that the loaded client config file leaves out. When neither
+`--client` nor `--client-config` is given and both `JMP_NAME` and
+`JMP_NAMESPACE` are set, the CLI builds the client config from these variables
+instead of loading the current client. See [Loading Order](loading-order.md).
 
 **Shell Session Variables** (automatically set by `jmp shell`):
 
@@ -78,11 +87,16 @@ leases:
 
 **CLI Commands**:
 ```{code-block}  console
-$ jmp config client create <alias>  # Create new empty client config
+$ jmp config client create <alias>  # Create a client config
 $ jmp config client use <alias>     # Switch to a different client config
 $ jmp config client list            # List available client configs
 $ jmp config client delete <alias>  # Remove a client config locally
 ```
+
+`jmp config client list -o json` and `-o yaml` leave out the tokens unless you
+add `--show-credentials`. `jmp config client create` and
+`jmp config exporter create` accept `--insecure-tls` (`-k`) to write
+`tls.insecure: true`.
 
 **Python API compatibility**: `ClientConfigV1Alpha1.save(config)` now uses
 `config.path` when it is set, preserving the location of a loaded configuration.
@@ -116,21 +130,21 @@ metadata:
   namespace: jumpstarter-lab # The namespace of the exporter in the cluster.
 tls:
   insecure: false # Enable insecure TLS for testing and development
-  ca: "" # A CA certificate to use
+  ca: "" # A base64-encoded PEM CA certificate bundle to trust
 endpoint: "jumpstarter.my-lab.com:1443" # The Jumpstarter service endpoint
 token: "******************" # An authentication token
 motd: | # Optional message of the day shown to clients when they enter a shell
   Welcome to myexporter!
   Flash the device with: j storage flash
 statusStreamRetryTimeout: 1800 # Retry time after Status fails or ends (default: 1800s)
+exitOnLeaseEnd: false # Exit after one lease instead of waiting for the next (default: false)
 export: # Configure drivers to expose to the clients
   power:
-    type: "jumpstarter_driver_power.driver.PduPower" # The driver Python class path and type
+    type: "jumpstarter_driver_energenie.driver.EnerGenie" # The driver Python class path and type
     config: # Dynamic configuration dict passed to the driver class
       host: "192.168.1.111"
-      port: 1234
-      username: "admin"
       password: "secret"
+      slot: 1
   serial:
     type: "jumpstarter_driver_pyserial.driver.PySerial"
     config:
@@ -166,16 +180,19 @@ to the Kubernetes API is restored.
 
 **Environment Variables**:
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
-- `JMP_ENDPOINT` - {term}`gRPC` endpoint (overrides config file)
-- `JMP_TOKEN` - Auth token (overrides config file)
-- `JMP_NAMESPACE` - Namespace in the {term}`controller`
-- `JMP_NAME` - {term}`Exporter` name
+- `JMP_NAMESPACE` - Namespace in the {term}`controller`, when `metadata` in the config file sets none
+- `JMP_NAME` - {term}`Exporter` name, when `metadata` in the config file sets none
 - `JMP_DISABLE_COMPRESSION` - Set to `1` to disable stream compression (gzip, xz, bz2, zstd) for driver data transfers
+
+The {term}`exporter` reads its endpoint and token only from the config file. It
+renews an internal token before it expires and writes the new value back to the
+`token` field of the file; see [Exporters](../../introduction/exporters.md).
 
 **CLI Commands**:
 ```{code-block}  console
-$ jmp config exporter create <alias>  # Create new empty exporter config
+$ jmp config exporter create <alias>  # Create an exporter config
 $ jmp config exporter list            # List available exporter configs
+$ jmp config exporter edit <alias>    # Open an exporter config in your editor
 $ jmp config exporter delete <alias>  # Remove a local exporter config
 ```
 
@@ -221,16 +238,19 @@ Exporters can be run manually from the command line for testing:
 
 ```{code-block} console
 # Run using the exporter config alias (the config file name)
-# The exporter process will exit when the lease is released
+# The exporter keeps serving leases until it is stopped
 $ jmp run --exporter my-exporter
 
 # Run using the path to a specific exporter config file
 $ jmp run --exporter-config /etc/jumpstarter/exporters/my-exporter.yaml
+
+# Exit after the current lease ends instead of waiting for a new one
+$ jmp run --exporter my-exporter --exit-on-lease-end
 ```
 
 ### Running as a Service
 
-For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the {term}`exporter` process alive and restart it after a {term}`lease` ends or something goes wrong.
+For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the {term}`exporter` process alive and restart it when it exits, for example after a {term}`lease` ends with `exitOnLeaseEnd` set or when something goes wrong.
 
 Containerized {term}`exporter`s can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
 
@@ -243,16 +263,23 @@ Description=My exporter
 
 [Container]
 ContainerName=my-exporter
-Exec=/jumpstarter/bin/jmp run --exporter my-exporter # Command to run inside the container
-Image=quay.io/jumpstarter-dev/jumpstarter:{{version}} # The container image to use
-Network=host # Use host networking
-PodmanArgs=--privileged # Enable privileged mode to allow hardware access
-Volume=/run/udev:/run/udev # Support devices within the container
-Volume=/dev:/dev # Support devices within the container
-Volume=/etc/jumpstarter:/etc/jumpstarter # Mount Jumpstarter configs directory
+# Command to run inside the container
+Exec=/jumpstarter/bin/jmp run --exporter my-exporter
+# The container image to use
+Image=quay.io/jumpstarter-dev/jumpstarter:{{version}}
+# Use host networking
+Network=host
+# Enable privileged mode to allow hardware access
+PodmanArgs=--privileged
+# Support devices within the container
+Volume=/run/udev:/run/udev
+Volume=/dev:/dev
+# Mount Jumpstarter configs directory
+Volume=/etc/jumpstarter:/etc/jumpstarter
 
 [Service]
-Restart=always # Always restart the container after exit
+# Always restart the container after exit
+Restart=always
 StartLimitBurst=0
 
 [Install]

@@ -18,7 +18,7 @@ To use OIDC with your Jumpstarter installation:
 
 ## Username Collisions
 
-When using OIDC auto provisioning, Jumpstarter derives resource names directly from
+For OIDC users, except Kubernetes service accounts, Jumpstarter derives resource names directly from
 the OIDC username by stripping the provider prefix (e.g., "dex:", "keycloak:")
 and sanitizing the result to meet Kubernetes naming requirements.
 
@@ -71,10 +71,14 @@ certificateAuthority when using a self-signed certificate. The username will be
 prefixed with "keycloak:" (e.g., keycloak:example-user).
 
 3. Create clients and {term}`exporter`s with the `jmp admin create` commands. Be sure to
-   prefix usernames with `keycloak:` as configured in the claim mappings:
+   prefix usernames with `keycloak:` as configured in the claim mappings. Name each
+   resource after the username without its prefix, as described in
+   [Username Collisions](#username-collisions): except for Kubernetes service
+   accounts, the {term}`controller` rejects requests from an OIDC user whose client
+   or {term}`exporter` name differs.
 
 ```console
-$ jmp admin create client test-client --insecure-tls --oidc-username keycloak:developer-1
+$ jmp admin create client developer-1 --insecure-tls --oidc-username keycloak:developer-1
 ```
 
 4. Instruct users to log in with:
@@ -354,7 +358,8 @@ for CLI-based OAuth flows that listen on random ports.
 #### 4. Configure Jumpstarter to trust Dex
 
 Add Dex as a JWT issuer on your `Jumpstarter` resource. Enable
-`autoProvisioning` so that users are created automatically on first login:
+`autoProvisioning` so that a client is created automatically for each user on
+their first request to the {term}`controller`:
 
 ```yaml
 spec:
@@ -394,11 +399,16 @@ For example:
 $ jmp login myuser@jumpstarter-login.apps.example.org:443
 ```
 
-This opens a browser for GitHub OAuth authorization. After approval, the user
-is authenticated as `github:<github-username>` in Jumpstarter.
+Use the GitHub username in lowercase as `<client-name>`: the {term}`controller`
+derives the client name from the username, see
+[Username Collisions](#username-collisions).
+
+This prints a URL to open in a browser for GitHub OAuth authorization. After
+approval, the user is authenticated as `github:<github-username>` in Jumpstarter.
 
 With `autoProvisioning` enabled, no prior `jmp admin create client` step is
-needed — the client resource is created automatically on first login.
+needed: the client resource is created automatically on the first request to the
+{term}`controller`.
 
 See the `jmp login` [man page](../../reference/man-pages/jmp.md) for the full
 list of options.
@@ -485,8 +495,8 @@ $ helm repo add dex https://charts.dexidp.io
 $ helm install --namespace dex --wait -f values.yaml dex dex/dex
 ```
 
-3. Configure Jumpstarter to trust Dex. Use this configuration for
-   `jumpstarter-controller.authenticationConfiguration` during installation:
+3. Configure Jumpstarter to trust Dex. Add this configuration to your
+   `Jumpstarter` resource:
 
 ```yaml
 spec:
@@ -539,6 +549,61 @@ $ jmp login --exporter <exporter alias> \
     --connector-id kubernetes \
     --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
 ```
+
+## Managing Tokens
+
+`jmp login` requests the `offline_access` scope by default and stores the
+refresh token in the client config when the provider returns one; pass
+`--no-offline-access` to skip it. When the config already holds a refresh token
+and none of `--token`, `--username` or `--password` is given, `jmp login` first
+renews the token with it and keeps requesting `offline_access`, so
+`--no-offline-access` and `--device-flow` only take effect when no refresh token
+is stored or that renewal fails. Inspect and renew the stored credentials with
+`jmp auth`:
+
+```console
+$ jmp auth status          # Expiry, subject and issuer of the client token
+$ jmp auth status -o json  # The same for scripts, also as -o yaml
+$ jmp auth refresh         # Get a new access token with the stored refresh token
+$ jmp auth rotate          # Replace an internal token with a freshly signed one
+```
+
+With `-o json` or `-o yaml`, `jmp auth status` reports a `status` of `valid`,
+`expiring-soon` (less than five minutes left), `expired`, `no-expiry`,
+`no-token` or `invalid-token`, together with `expiresAt`, `remainingSeconds`,
+`subject`, `issuer` and `refreshTokenStored`.
+
+When `jmp get`, `jmp describe`, `jmp create`, `jmp update`, `jmp delete`,
+`jmp share` or `jmp shell` fails because the token has expired, the CLI logs in
+again with the token's OIDC issuer and retries the command once. It uses the
+stored refresh token when it can, and otherwise starts a new login. These
+messages go to stderr, so JSON output on stdout stays parseable, and the new
+tokens are saved to the client config file that was loaded, including one
+passed with `--client-config`.
+
+The {term}`controller` records the expiry of a client's internal token in the
+`status.tokenExpiresAt` field of its `Client` resource, and sets the
+`TokenExpiring` condition to `True` once fewer than 30 days remain.
+
+### Headless and Container Environments
+
+By default, `jmp login` prints a URL to open in a browser and waits for the
+identity provider to redirect to a callback server on `localhost`. Where that
+redirect cannot reach the CLI, for example in a container or a cloud IDE, use
+the OAuth 2.0 Device Authorization Grant
+([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) instead:
+
+```console
+$ jmp login --device-flow <client-name>@<login-endpoint>
+```
+
+The CLI prints a verification URL, and a code to enter there unless the URL
+already contains it, then waits until you approve the login in any browser. Set
+`JMP_OIDC_DEVICE_FLOW=1` to use the device flow without the flag, including when
+the CLI logs in again after a token expires. The identity provider must list a
+`device_authorization_endpoint` in its OIDC discovery document, otherwise
+`jmp login` stops with an error. `--token`, and `--username` with `--password`,
+take precedence over the device flow.
 
 ## Reference
 

@@ -11,12 +11,14 @@ cluster using the Jumpstarter {term}`operator`.
 - A DNS domain for Jumpstarter {term}`service` endpoints (for example,
   `jumpstarter.example.com`)
 - An ingress controller on Kubernetes, or Routes on OpenShift
+- cert-manager installed in the cluster when `spec.certManager.enabled` is
+  `true`, as in the examples below
 
 ```{note}
 `spec.baseDomain` creates these {term}`service` hostnames with
 `jumpstarter.example.com`:
 - `grpc.jumpstarter.example.com`
-- `router.jumpstarter.example.com`
+- `router-0.jumpstarter.example.com`, one `router-<N>` name per router replica
 - `login.jumpstarter.example.com`
 - `telemetry.jumpstarter.example.com` (when telemetry is enabled and a Route or
   Ingress API is available)
@@ -29,7 +31,7 @@ cluster using the Jumpstarter {term}`operator`.
 Apply the {term}`operator` installer from a release asset:
 
 ```{code-block} console
-$ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.8.1/operator-installer.yaml
+$ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.9.0/operator-installer.yaml
 $ kubectl wait --namespace jumpstarter-operator-system \
     --for=condition=available deployment/jumpstarter-operator-controller-manager \
     --timeout=120s
@@ -86,7 +88,7 @@ spec:
   certManager:
     enabled: true
   controller:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -102,7 +104,7 @@ spec:
             enabled: true
             class: nginx
   routers:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -126,7 +128,7 @@ spec:
   certManager:
     enabled: true
   controller:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -140,7 +142,7 @@ spec:
           route:
             enabled: true
   routers:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -150,6 +152,10 @@ spec:
             enabled: true
 ```
 ````
+
+Use controller and router images from the same release as the {term}`operator`:
+it starts the routers with a `-config-file` option that router images from
+earlier releases do not accept.
 
 ```{code-block} console
 $ kubectl apply -f jumpstarter.yaml
@@ -201,7 +207,10 @@ returned by the controller's `GetServiceEndpoints` RPC. They do not tunnel
 telemetry through the controller or router, so its DNS name and port must be
 reachable from both clients and exporters, including those outside Kubernetes.
 
-Enable telemetry with `spec.telemetry.enabled: true`. With `spec.baseDomain` set
+Enable telemetry with `spec.telemetry.enabled: true`, and set
+`spec.telemetry.image` to the image and tag of `spec.controller.image`: the
+default telemetry image is not published, and the controller image contains the
+`/telemetry` binary. With `spec.baseDomain` set
 and a Route or Ingress API available, the operator generates `telemetry.<baseDomain>`
 and selects a Route on OpenShift or an Ingress on Kubernetes. Otherwise configure
 explicit reachable endpoints, for example NodePort or LoadBalancer; there is no
@@ -283,7 +292,8 @@ spec:
 ```
 
 Creates: `<name>-selfsigned-issuer`, `<name>-ca`, `<name>-ca-issuer`,
-`<name>-controller-tls`, `<name>-router-<replica>-tls`.
+`<name>-controller-tls`, `<name>-router-<replica>-tls`, and
+`<name>-telemetry-tls` when telemetry is enabled.
 ````
 
 ````{tab} External issuer
@@ -318,6 +328,10 @@ spec:
 Use the {term}`operator` installer and manage your `Jumpstarter` CR
 declaratively in GitOps flows.
 
+`jmp admin apply -f <file>` sends manifests of Jumpstarter resources, such as
+clients, exporters, and exporter sets, to the cluster with a server-side apply,
+so applying the same file again updates them in place.
+
 ### Operator Behavior
 
 - If `spec.baseDomain` is empty on OpenShift, the {term}`operator` auto-detects
@@ -332,6 +346,20 @@ declaratively in GitOps flows.
   Role bound to it, and get no Kubernetes API token: they read their settings
   from the `jumpstarter-controller` ConfigMap, mounted as a file. Attach any
   image pull secret the router image needs to this ServiceAccount.
+- `spec.controller.replicas` values above 1 are clamped to 1, with a
+  `ReplicasClamped` warning event: the {term}`controller` does not support
+  high availability yet.
+- `replicas: 0` on the {term}`controller`, the {term}`router`s, or telemetry
+  suspends that component: its Deployments scale to zero pods, and its Services
+  and certificates are kept. Suspended routers and telemetry are also removed
+  from the {term}`controller` configuration, so connections through the routers,
+  or exporter metric streams, fail until the component is resumed.
+- The {term}`controller`, {term}`router`, and telemetry Deployments are created
+  once their TLS Secret exists; until then the {term}`operator` emits a
+  `WaitingForTLSSecret` event.
+- A renewed TLS certificate triggers a rolling restart of the Deployments that
+  use it, and a change to the {term}`controller` configuration restarts the
+  {term}`controller`.
 
 For the full `Jumpstarter` CRD field reference, see the
 [CRDs](../../../reference/crds/index.md).

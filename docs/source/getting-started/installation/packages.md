@@ -46,11 +46,16 @@ If you have the repository cloned locally:
 
 ##### Built-in installer
 
-If you have the jumpstarter python packages installed and want to upgrade:
+If you installed Jumpstarter with the installer and want to upgrade:
 
 ```{code-block} console
 jmp self update
 ```
+
+`jmp self update` downloads the installer from the `main` branch and runs it on
+the installation directory of the `jmp` found on your `PATH`. It installs from
+the source that the previous run recorded in `install_source` in that
+directory; pass `--source` to switch, for example `jmp self update --source main`.
 
 ##### Installation Directory Structure
 
@@ -81,7 +86,7 @@ echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-s, --source SOURCE` | Installation source ({{stable_branch}}, latest, rc, main) | {{stable_branch_code}} |
+| `-s, --source SOURCE` | Installation source ({{stable_branch}}, latest, rc, main) | {{stable_branch_code}}, or the source of the previous installation in the directory |
 | `-d, --dir DIR` | Installation directory | `~/.local/jumpstarter` |
 | `-h, --help` | Show help message | - |
 
@@ -89,6 +94,7 @@ echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 
 - Python {{requires_python}} (see [.py-version](https://github.com/jumpstarter-dev/jumpstarter/blob/main/.py-version) for the recommended development version)
 - pip3
+- curl
 - bash shell
 
 
@@ -156,7 +162,7 @@ $ sudo mkdir /etc/jumpstarter
 $ uv venv
 
 # Install with uv
-$ uv add --extra-index-url {{index_url}} jumpstarter-all
+$ uv pip install --extra-index-url {{index_url}} jumpstarter-all
 
 # Create config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
@@ -174,6 +180,8 @@ indexes:
 | [releases](https://pkg.jumpstarter.dev/)               | Release, or release-candidate versions                                |
 | [main](https://pkg.jumpstarter.dev/main/)              | Index tracking the main branch, equivalent to installing from sources |
 | {{stable_branch_index}} | Index tracking a stable branch                                        |
+
+Final releases, but not release candidates, are also published to PyPI.
 
 #### Installing from Source
 
