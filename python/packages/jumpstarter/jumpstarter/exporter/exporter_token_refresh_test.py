@@ -2,6 +2,7 @@ import base64
 import errno
 import json
 import logging
+import os
 import stat
 import threading
 import time
@@ -17,6 +18,7 @@ from jumpstarter.config.common import ObjectMeta
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
 from jumpstarter.config.tls import TLSConfigV1Alpha1
 from jumpstarter.exporter import Exporter
+from jumpstarter.exporter.exporter import TokenPersistenceError
 
 
 def _make_jwt(payload: dict) -> str:
@@ -80,7 +82,7 @@ async def test_exporter_rotate_token_callback_failure():
     mock_ctrl = AsyncMock()
     mock_ctrl.RotateToken.return_value = jumpstarter_pb2.RotateTokenResponse(token="rotated-token-value")
 
-    on_rotated = AsyncMock(side_effect=RuntimeError("disk full or save failed"))
+    on_rotated = AsyncMock(side_effect=RuntimeError("supervisor disconnected"))
 
     exporter = _exporter_with_token("old-token", on_token_rotated=on_rotated)
 
@@ -118,6 +120,8 @@ class StopRefreshLoop(Exception):
 
 
 def _exporter_with_token(token: str, **kwargs) -> Exporter:
+    kwargs.setdefault("can_persist_token", lambda: True)
+    kwargs.setdefault("persist_token", AsyncMock(return_value=True))
     channel = MagicMock(spec=grpc.aio.Channel)
     channel.close = AsyncMock()
     return Exporter(
@@ -129,10 +133,87 @@ def _exporter_with_token(token: str, **kwargs) -> Exporter:
     )
 
 
+async def _rotate_to(exporter, token):
+    controller = AsyncMock()
+    controller.RotateToken.return_value = jumpstarter_pb2.RotateTokenResponse(token=token)
+    with (
+        patch("jumpstarter.config.exporter.ssl_channel_credentials", return_value=grpc.ssl_channel_credentials()),
+        patch("jumpstarter.exporter.exporter.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=controller),
+    ):
+        return await exporter.rotate_token()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("storage", ["writable", "no-path", "directory-denied", "save-fails"])
+async def test_required_persistence_precedes_adoption_and_notification(saved_rotation_config, storage):
+    config = saved_rotation_config
+    original_path = config.path
+    if storage == "no-path":
+        config.path = None
+    notify = MagicMock()
+    controller = AsyncMock()
+    controller.RotateToken.return_value = jumpstarter_pb2.RotateTokenResponse(token="replacement")
+    original_save = config._save_rotated_token
+
+    def save(token):
+        assert config.token == exporter.token == "initial-token"
+        notify.assert_not_called()
+        if storage == "save-fails":
+            raise OSError(errno.EROFS, "read-only config")
+        original_save(token)
+
+    def access(path, mode):
+        return not (storage == "directory-denied" and mode == (os.W_OK | os.X_OK))
+
+    with (
+        patch("jumpstarter.config.exporter.os.access", side_effect=access),
+        patch("jumpstarter.config.exporter.ssl_channel_credentials", return_value=grpc.ssl_channel_credentials()),
+        patch.object(ExporterConfigV1Alpha1, "_save_rotated_token", side_effect=save),
+        patch("jumpstarter.exporter.exporter.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=controller),
+    ):
+        async with config.create_exporter(on_token_rotated=notify) as exporter:
+            if storage == "writable":
+                assert await exporter.rotate_token() == "replacement"
+                assert config.token == exporter.token == "replacement"
+                assert ExporterConfigV1Alpha1.load_path(original_path).token == "replacement"
+                notify.assert_called_once_with("replacement")
+            else:
+                with pytest.raises(TokenPersistenceError):
+                    await exporter.rotate_token()
+                assert config.token == exporter.token == "initial-token"
+                notify.assert_not_called()
+                assert ExporterConfigV1Alpha1.load_path(original_path).token == "initial-token"
+                if storage != "save-fails":
+                    controller.RotateToken.assert_not_awaited()
+                # Any later reconnect still authenticates with the persisted token.
+                with patch.object(exporter, "channel_factory", new_callable=AsyncMock) as factory:
+                    async with exporter._controller_stub():
+                        pass
+                factory.assert_awaited_once_with("initial-token")
+
+
+@pytest.mark.anyio
+async def test_expiry_rotation_without_persistence_is_rejected(caplog):
+    now = time.time()
+    token = _make_jwt({"iat": now - 100, "exp": now + 10})
+    exporter = _exporter_with_token(token, persist_token=None)
+    with (
+        patch.object(exporter, "_controller_stub") as controller,
+        patch("jumpstarter.exporter.exporter.sleep", side_effect=StopRefreshLoop()),
+        caplog.at_level(logging.WARNING),
+        pytest.raises(StopRefreshLoop),
+    ):
+        await exporter._token_refresh_loop()
+    controller.assert_not_called()
+    assert exporter.token == token
+    assert "update the exporter credential manually" in caplog.text
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("error,retry_delay", [
     pytest.param(FakeRpcError(grpc.StatusCode.UNIMPLEMENTED), 0.5, id="controller-upgrade"),
     pytest.param(FakeRpcError(grpc.StatusCode.PERMISSION_DENIED), 0.5, id="denied"),
+    pytest.param(TokenPersistenceError("disk full"), 0.5, id="save-failed"),
     pytest.param(FakeRpcError(grpc.StatusCode.UNAVAILABLE), 1.0, id="unavailable"),
     pytest.param(FakeRpcError(grpc.StatusCode.ABORTED), 1.0, id="concurrent-rotation"),
     pytest.param(RuntimeError("unexpected"), 1.0, id="unexpected"),
@@ -296,7 +377,7 @@ async def test_config_on_token_rotated_saves_to_path(saved_rotation_config):
     with patch.object(ExporterConfigV1Alpha1, "_save_rotated_token", side_effect=save):
         async with loaded.create_exporter() as exporter:
             assert exporter.on_token_rotated is not None
-            await exporter.on_token_rotated("new-saved-token")
+            await _rotate_to(exporter, "new-saved-token")
     assert len(save_threads) == 1
     assert save_threads[0] != event_loop_thread
 
@@ -327,7 +408,7 @@ async def test_config_token_save_does_not_delay_cancellation(saved_rotation_conf
             with anyio.CancelScope() as scope:
                 scopes.append(scope)
                 try:
-                    await exporter.on_token_rotated("new-token")
+                    await _rotate_to(exporter, "new-token")
                 finally:
                     cancelled.set()
 
@@ -370,7 +451,7 @@ async def test_token_persistence_preserves_edits_and_symlink_but_restricts_mode(
 
     with caplog.at_level(logging.WARNING, logger="jumpstarter.config.exporter"):
         async with loaded.create_exporter() as exporter:
-            await exporter.on_token_rotated("new-token")
+            await _rotate_to(exporter, "new-token")
 
     assert link.is_symlink()
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
@@ -439,7 +520,7 @@ async def test_notification_failure_still_persists_token(saved_rotation_config, 
     notify = MagicMock(side_effect=error)
     with caplog.at_level(logging.ERROR, logger="jumpstarter.config.exporter"):
         async with saved_rotation_config.create_exporter(on_token_rotated=notify) as exporter:
-            await exporter.on_token_rotated("replacement-token")
+            await _rotate_to(exporter, "replacement-token")
     notify.assert_called_once_with("replacement-token")
     assert "Could not notify exporter supervisor" in caplog.text
     assert saved_rotation_config.token == "replacement-token"
@@ -457,7 +538,8 @@ async def test_token_persistence_failure_log_level(saved_rotation_config, caplog
         patch.object(ExporterConfigV1Alpha1, "_save_rotated_token", side_effect=error),
     ):
         async with saved_rotation_config.create_exporter() as exporter:
-            await exporter.on_token_rotated("replacement-token")
+            with pytest.raises(TokenPersistenceError):
+                await _rotate_to(exporter, "replacement-token")
     records = [record for record in caplog.records if "Could not save rotated token" in record.message]
     assert [record.levelno for record in records] == [level]
-    assert saved_rotation_config.token == "replacement-token"
+    assert saved_rotation_config.token == "initial-token"

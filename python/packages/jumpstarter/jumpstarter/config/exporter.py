@@ -321,15 +321,28 @@ class ExporterConfigV1Alpha1(BaseModel):
         data["token"] = token
         write_yaml_atomically(path, data)
 
-    async def _persist_rotated_token(self, token: str) -> None:
+    def _can_persist_rotated_token(self) -> bool:
         if self.path is None:
-            return
+            return False
+        try:
+            # Atomic saving creates a sibling file and renames it. File write
+            # permission alone is insufficient (notably with mounted configs).
+            path = self.path.resolve(strict=True)
+            return os.access(path, os.R_OK) and os.access(path.parent, os.W_OK | os.X_OK)
+        except OSError:
+            return False
+
+    async def _persist_rotated_token(self, token: str) -> bool:
+        if self.path is None:
+            return False
         try:
             await run_sync(self._save_rotated_token, token, abandon_on_cancel=True)
             logger.info("Saved rotated exporter token to %s", self.path)
+            return True
         except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
             log = logger.info if isinstance(exc, OSError) and exc.errno == errno.EROFS else logger.warning
             log("Could not save rotated token to %s: %s", self.path, exc)
+            return False
 
     @classmethod
     def delete(cls, alias: str) -> Path:
@@ -414,7 +427,6 @@ class ExporterConfigV1Alpha1(BaseModel):
                     on_token_rotated(new_token)
                 except Exception:
                     logger.exception("Could not notify exporter supervisor of rotated token")
-            await self._persist_rotated_token(new_token)
 
         exporter = None
         entered = False
@@ -435,6 +447,8 @@ class ExporterConfigV1Alpha1(BaseModel):
                 exit_on_lease_end=self.exit_on_lease_end,
                 status_stream_retry_timeout=self.status_stream_retry_timeout,
                 on_token_rotated=token_rotated,
+                can_persist_token=self._can_persist_rotated_token,
+                persist_token=self._persist_rotated_token,
             )
             # Initialize the exporter (registration, etc.)
             await exporter.__aenter__()

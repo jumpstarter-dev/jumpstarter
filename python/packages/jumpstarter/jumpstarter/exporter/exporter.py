@@ -194,6 +194,10 @@ def shutdown_runtime_sidecar(
     return True
 
 
+class TokenPersistenceError(RuntimeError):
+    """Rotation cannot safely adopt a token that will be lost on restart."""
+
+
 class LeaseState(Enum):
     IDLE = "idle"
     LEASED = "leased"
@@ -302,6 +306,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     """
 
     _token_rotation_unsupported: bool = field(init=False, default=False)
+    can_persist_token: Callable[[], bool] | None = field(default=None)
+    persist_token: Callable[[str], Awaitable[bool]] | None = field(default=None)
 
     # Internal State Fields
 
@@ -696,11 +702,16 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     async def rotate_token(self) -> str:
         """Request a newly signed authentication token from the controller.
 
-        Updates self.token and invokes the on_token_rotated callback if configured.
+        Require writable storage before requesting rotation. Save before adopting
+        the token and notifying the supervisor; a failed save leaves all
+        in-memory credentials unchanged.
 
         Returns:
             The newly rotated token string.
         """
+        if self.persist_token is None or self.can_persist_token is None or not self.can_persist_token():
+            raise TokenPersistenceError("Token cannot be saved; update the exporter credential manually")
+
         async with self._controller_stub() as controller:
             response: jumpstarter_pb2.RotateTokenResponse = await controller.RotateToken(
                 jumpstarter_pb2.RotateTokenRequest(),
@@ -708,6 +719,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             )
 
         new_token = response.token
+        try:
+            saved = await self.persist_token(new_token)
+        except Exception as e:
+            raise TokenPersistenceError(
+                "Token was not saved; keeping the current credential. Update it manually"
+            ) from e
+        if not saved:
+            raise TokenPersistenceError("Token was not saved; keeping the current credential. Update it manually")
         self.token = new_token
 
         if self.on_token_rotated is not None:
@@ -752,6 +771,11 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 await self.rotate_token()
                 self._token_rotation_unsupported = False
                 logger.info("Successfully refreshed exporter authentication token")
+                return True
+            except TokenPersistenceError as e:
+                delay = calculate_token_rotation_retry_sleep(self.token, _TOKEN_ROTATION_RETRY_INTERVAL)
+                logger.warning("Cannot rotate exporter token: %s; retrying in %.1fs", e, delay)
+                await sleep(delay)
                 return True
             except grpc.aio.AioRpcError as e:
                 code = e.code()

@@ -70,18 +70,18 @@ missed: in the final 10% of the lifetime, capped at 30 days. External OIDC
 credentials must be renewed through their identity provider; the controller
 does not exchange them for internal exporter tokens.
 
-After rotation, the exporter updates its in-memory credential and replaces only
-the token value in the current YAML configuration. Other configuration values
+Rotation requires a writable configuration file. The exporter checks storage
+before requesting a replacement and saves the new token before updating its
+in-memory credential or notifying its supervisor. Other configuration values
 and symlinks are preserved; comments and custom formatting are removed. The file
 is rewritten readable only by its owner (mode 600), and a warning is logged if it
 was readable by other users. Config-management tools should allow the exporter to manage the
-token value. The new token survives internal child-process restarts even when
-the file cannot be written. In that case, the exporter logs the persistence
-failure. If the config is read-only, update its saved credential before the
-original token expires. The whole `jmp run` process can exit automatically after
-a prolonged controller outage or a stream authentication failure. A service
-manager restart then loads the credential from the file, losing the in-memory
-replacement.
+token value. If storage is unavailable or saving fails, the exporter keeps its
+current credential, logs an actionable warning, and retries at most hourly
+(sooner near expiry). Read-only and memory-only configurations require a manual
+credential update before the current token expires. A replacement is never
+adopted only in memory, so child-process and service-manager restarts use the
+same saved credential.
 
 Rotation never extends a superseded token's original expiry. Only the current
 credential in the controller Secret can mint a replacement, and only when at

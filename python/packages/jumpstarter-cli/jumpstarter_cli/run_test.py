@@ -254,6 +254,7 @@ class _RestartExporter:
     def __init__(self, **kwargs):
         self.token = kwargs["token"]
         self.on_token_rotated = kwargs["on_token_rotated"]
+        self.persist_token = kwargs["persist_token"]
         self.exit_code = None
 
     async def __aenter__(self):
@@ -269,7 +270,8 @@ class _RestartExporter:
         first_run = not self.counter_path.exists()
         self.counter_path.touch()
         if first_run:
-            await self.on_token_rotated("rotated-token")
+            if await self.persist_token("rotated-token"):
+                await self.on_token_rotated("rotated-token")
             if self.fail_serve:
                 raise RuntimeError("restart after serving failed")
         else:
@@ -339,9 +341,9 @@ def test_rotated_token_survives_child_restart(tmp_path, monkeypatch, storage, fa
         exit_code = run_mod._serve_with_exc_handling(config)
 
     assert exit_code == 3
-    assert config.token == "rotated-token"
-    assert (tmp_path / "seen").read_text() == "rotated-token"
     expected = "rotated-token" if storage == "writable" else "startup-token"
+    assert config.token == expected
+    assert (tmp_path / "seen").read_text() == expected
     assert ExporterConfigV1Alpha1.load_path(config_file).token == expected
 
 
