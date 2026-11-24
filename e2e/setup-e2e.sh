@@ -269,9 +269,9 @@ deploy_controller() {
     log_info "Deploying jumpstarter controller..."
     
     cd "$REPO_ROOT"
-    
+
     log_info "Deploying controller with CA certificate using operator..."
-    OPERATOR_USE_DEX=true DEX_CA_FILE="$REPO_ROOT/ca.pem" make -C controller deploy
+    OPERATOR_USE_DEX=true OPERATOR_ENABLE_TELEMETRY=true DEX_CA_FILE="$REPO_ROOT/ca.pem" make -C controller deploy
     
     log_info "✓ Controller deployed"
 }
@@ -299,13 +299,14 @@ pin_basedomain_hosts_entries() {
         return 0
     fi
 
-    if grep -Fq "grpc.${basedomain}" /etc/hosts 2>/dev/null; then
+    if grep -Fq "grpc.${basedomain}" /etc/hosts 2>/dev/null && \
+       grep -Fq "telemetry.${basedomain}" /etc/hosts 2>/dev/null; then
         log_info "✓ ${basedomain} entries already in /etc/hosts"
         return 0
     fi
 
     log_warn "About to add ${basedomain} entries to /etc/hosts (requires sudo)"
-    echo "${ip} ${basedomain} grpc.${basedomain} router.${basedomain} login.${basedomain}" | sudo tee -a /etc/hosts
+    echo "${ip} ${basedomain} grpc.${basedomain} router.${basedomain} login.${basedomain} telemetry.${basedomain}" | sudo tee -a /etc/hosts
     log_info "✓ Pinned ${basedomain} to ${ip} in /etc/hosts"
 }
 

@@ -53,7 +53,18 @@
 		};
 		fdt-s32g3 {
 			description = "DTB NXP S32G-VNP-RDB3";
-			data = /incbin/("./s32g3.dtb");
+			data = /incbin/("./kernel-fedora/dtb/freescale/s32g399a-rdb3.dtb");
+			type = "flat_dt";
+			arch = "arm64";
+			compression = "none";
+			load = <0x88000000>;
+			hash {
+				algo = "sha256";
+			};
+		};
+		fdt-imx8mp-verdin-ivy {
+			description = "DTB Toradex Verdin iMX8MP Ivy Plus";
+			data = /incbin/("./kernel-fedora/dtb/freescale/imx8mp-verdin-nonwifi-ivy.dtb");
 			type = "flat_dt";
 			arch = "arm64";
 			compression = "none";
@@ -88,6 +99,15 @@
 			description = "Boot NXP S32G-VNP-RDB3";
 			kernel = "kernel";
 			fdt = "fdt-s32g3";
+			ramdisk = "initrd";
+			hash {
+				algo = "sha256";
+			};
+		};
+		imx8mp-verdin-ivy {
+			description = "Boot Toradex Verdin iMX8MP Ivy Plus";
+			kernel = "kernel";
+			fdt = "fdt-imx8mp-verdin-ivy";
 			ramdisk = "initrd";
 			hash {
 				algo = "sha256";

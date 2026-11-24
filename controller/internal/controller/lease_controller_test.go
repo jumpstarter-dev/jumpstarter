@@ -27,7 +27,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -962,8 +964,9 @@ func reconcileLease(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) re
 	}
 
 	leaseReconciler := &LeaseReconciler{
-		Client: k8sClient,
-		Scheme: k8sClient.Scheme(),
+		Client:    k8sClient,
+		APIReader: k8sClient,
+		Scheme:    k8sClient.Scheme(),
 	}
 
 	signer, err := oidc.NewSignerFromSeed([]byte{}, "https://example.com", "dummy")
@@ -1062,8 +1065,9 @@ var _ = Describe("Pending lease queue starvation", func() {
 			}
 
 			leaseReconciler := &LeaseReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:    k8sClient,
+				APIReader: k8sClient,
+				Scheme:    k8sClient.Scheme(),
 			}
 
 			// First reconcile sets the Pending condition with LastTransitionTime=now
@@ -1100,6 +1104,79 @@ var _ = Describe("Pending lease queue starvation", func() {
 					"lease %s backoff should not exceed the cap", name)
 			}
 		})
+	})
+})
+
+// laggingLeaseCache serves lease lists from a snapshot taken earlier, the way
+// the manager's cache can still miss a status write that has succeeded. The
+// snapshot holds the leases of one namespace.
+type laggingLeaseCache struct {
+	client.Client
+	snapshot jumpstarterdevv1alpha1.LeaseList
+}
+
+func (c *laggingLeaseCache) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	leases, ok := list.(*jumpstarterdevv1alpha1.LeaseList)
+	if !ok {
+		return c.Client.List(ctx, list, opts...)
+	}
+	listOpts := (&client.ListOptions{}).ApplyOptions(opts)
+	leases.Items = nil
+	for _, lease := range c.snapshot.Items {
+		if listOpts.LabelSelector.Matches(labels.Set(lease.Labels)) {
+			leases.Items = append(leases.Items, *lease.DeepCopy())
+		}
+	}
+	return nil
+}
+
+// Each lease here is reconciled after the previous one was assigned an
+// exporter, while the cache still shows none of them assigned.
+var _ = Describe("Lease assignment with a lagging cache", func() {
+	leaseNames := []string{lease1Name, lease2Name, lease3Name}
+
+	BeforeEach(func() {
+		ctx := context.Background()
+		createExporters(ctx, testExporter1DutA, testExporter2DutA)
+		setExporterOnlineConditions(ctx, testExporter1DutA.Name, metav1.ConditionTrue)
+		setExporterOnlineConditions(ctx, testExporter2DutA.Name, metav1.ConditionTrue)
+	})
+	AfterEach(func() {
+		ctx := context.Background()
+		deleteExporters(ctx, testExporter1DutA, testExporter2DutA)
+		deleteLeases(ctx, leaseNames...)
+	})
+
+	It("should not assign an exporter to two leases", func() {
+		ctx := context.Background()
+		for _, name := range leaseNames {
+			lease := leaseDutA2Sec.DeepCopy()
+			lease.Name = name
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+		}
+
+		cache := &laggingLeaseCache{Client: k8sClient}
+		Expect(k8sClient.List(ctx, &cache.snapshot, client.InNamespace("default"))).To(Succeed())
+		leaseReconciler := &LeaseReconciler{
+			Client:    cache,
+			APIReader: k8sClient,
+			Scheme:    k8sClient.Scheme(),
+		}
+		for _, name := range leaseNames {
+			_, err := leaseReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: name, Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		leasesByExporter := map[string][]string{}
+		for _, name := range leaseNames {
+			if ref := getLease(ctx, name).Status.ExporterRef; ref != nil {
+				leasesByExporter[ref.Name] = append(leasesByExporter[ref.Name], name)
+			}
+		}
+		Expect(leasesByExporter).To(HaveEach(HaveLen(1)), "an exporter is assigned to more than one lease")
+		Expect(leasesByExporter).To(HaveLen(2), "both exporters should be assigned")
 	})
 })
 

@@ -1,11 +1,12 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import anyio
 import pytest
 
 from jumpstarter_driver_ridesx.tac import TAC_ACK, send_tac_command
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_tac_command_waits_for_prompt():
     tac = MagicMock()
     stream = AsyncMock()
@@ -18,13 +19,26 @@ async def test_send_tac_command_waits_for_prompt():
     stream.send.assert_called_once_with(b"devicePower 0\r")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_send_tac_command_times_out():
     tac = MagicMock()
     stream = AsyncMock()
     stream.__aenter__ = AsyncMock(return_value=stream)
     stream.__aexit__ = AsyncMock(return_value=None)
     stream.receive = AsyncMock(return_value=b"waiting")
+    tac.connect.return_value = stream
+
+    with pytest.raises(TimeoutError, match="devicePower"):
+        await send_tac_command(tac, "devicePower 0", timeout=0.01)
+
+
+@pytest.mark.anyio
+async def test_send_tac_command_times_out_while_the_device_is_silent():
+    tac = MagicMock()
+    stream = AsyncMock()
+    stream.__aenter__ = AsyncMock(return_value=stream)
+    stream.__aexit__ = AsyncMock(return_value=None)
+    stream.receive = AsyncMock(side_effect=anyio.sleep_forever)
     tac.connect.return_value = stream
 
     with pytest.raises(TimeoutError, match="devicePower"):

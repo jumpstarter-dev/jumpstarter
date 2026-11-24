@@ -31,3 +31,8 @@ def demo_client(demo_driver_instance):
     """Create a client connected to demo driver via serve()."""
     with serve(demo_driver_instance) as client:
         yield client
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

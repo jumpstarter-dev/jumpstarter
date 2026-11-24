@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
 import json
 import logging
@@ -18,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
+from anyio import sleep, to_thread
 from pydantic import TypeAdapter
 
 from ..tac import send_tac_sequence
@@ -31,6 +31,7 @@ from .schema import (
 from .soc_profiles import SoCType, get_soc_profile
 from jumpstarter.client.flasher import FlashPhase, FlashStatus
 from jumpstarter.common.exceptions import ConfigurationError
+from jumpstarter.common.http import client_session
 from jumpstarter.common.resources import PresignedRequestResource, Resource
 from jumpstarter.driver import Driver, export
 from jumpstarter.driver.flasher import StreamingFlasherInterface
@@ -106,7 +107,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
     async def power_cycle(self) -> None:
         tac = self.children["tac"]
         await send_tac_sequence(tac, self.profile.power_off_commands, timeout=self.tac_command_timeout)
-        await asyncio.sleep(self.power_cycle_delay)
+        await sleep(self.power_cycle_delay)
         await send_tac_sequence(tac, self.profile.power_on_commands, timeout=self.tac_command_timeout)
 
     @staticmethod
@@ -222,7 +223,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         """Fetch ETag/Last-Modified/Content-Length via a HEAD request."""
         metadata: dict[str, str] = {}
         async with (
-            aiohttp.ClientSession() as session,
+            client_session() as session,
             session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=15)) as resp,
         ):
             if resp.status == 200:
@@ -508,7 +509,7 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
         """Write data to tar stdin; returns False on BrokenPipeError."""
         assert proc.stdin is not None, "tar process must be started with stdin=PIPE"
         try:
-            await asyncio.to_thread(proc.stdin.write, data)
+            await to_thread.run_sync(proc.stdin.write, data, abandon_on_cancel=True)
             return True
         except BrokenPipeError:
             return False
@@ -567,8 +568,12 @@ class QualcommFlasher(StreamingFlasherInterface, Driver):
 
         if tar_proc is None:
             raise RuntimeError("No data received from firmware source")
-        await asyncio.to_thread(
-            self._finish_tar, tar_proc, result.bytes_received // self._WRITE_THRESHOLD, result.bytes_received,
+        await to_thread.run_sync(
+            self._finish_tar,
+            tar_proc,
+            result.bytes_received // self._WRITE_THRESHOLD,
+            result.bytes_received,
+            abandon_on_cancel=True,
         )
 
     async def _download_and_extract(

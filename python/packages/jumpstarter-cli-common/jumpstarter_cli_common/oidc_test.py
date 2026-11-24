@@ -59,7 +59,7 @@ def _make_async_cm(response):
     return cm
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_authorization_code_prompt_uses_stderr(monkeypatch, capsys):
     config = Config(issuer="https://auth.example.com", client_id="test")
     discovery = {"authorization_endpoint": "https://auth.example.com/auth", "token_endpoint": "https://auth.example.com/token"}
@@ -86,7 +86,7 @@ async def test_authorization_code_prompt_uses_stderr(monkeypatch, capsys):
 
 
 class TestDeviceAuthorizationGrant:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_raises_when_no_device_endpoint_in_discovery(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
         with patch.object(config, "configuration", new_callable=AsyncMock) as mock_config:
@@ -97,7 +97,7 @@ class TestDeviceAuthorizationGrant:
             with pytest.raises(click.ClickException, match="does not support Device Authorization Grant"):
                 await config.device_authorization_grant()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_error_message_mentions_device_authorization_endpoint(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
         with patch.object(config, "configuration", new_callable=AsyncMock) as mock_config:
@@ -107,7 +107,7 @@ class TestDeviceAuthorizationGrant:
             with pytest.raises(click.ClickException, match="device_authorization_endpoint"):
                 await config.device_authorization_grant()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     @pytest.mark.parametrize("complete_uri", [True, False])
     async def test_successful_device_flow(self, capsys, complete_uri) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
@@ -181,7 +181,7 @@ class TestDeviceAuthorizationGrant:
         assert "ABCD-EFGH" in captured.err
         assert "Waiting for authentication..." in captured.err
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_handles_slow_down_response(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 
@@ -234,7 +234,7 @@ class TestDeviceAuthorizationGrant:
 
         assert result["access_token"] == "test-access-token"
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_raises_on_access_denied(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 
@@ -276,7 +276,7 @@ class TestDeviceAuthorizationGrant:
         ):
             await config.device_authorization_grant()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_raises_on_expired_token(self) -> None:
         config = Config(issuer="https://auth.example.com", client_id="test")
 

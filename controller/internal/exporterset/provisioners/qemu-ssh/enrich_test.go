@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset/qemudriver"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
@@ -181,6 +182,152 @@ func TestEnrich_rejectsOwnedChildAsTopLevel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cannot be a top-level driver") {
 		t.Errorf("error = %q, want message about top-level driver", err)
+	}
+}
+
+func TestEnrich_aliasesPresetRoots(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "vm",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		got := findDriver(result, alias.Root)
+		if got == nil {
+			t.Fatalf("missing root alias %q", alias.Root)
+		}
+		want := "vm." + alias.Child
+		if got.Ref != want {
+			t.Errorf("%s.ref = %q, want %q", alias.Root, got.Ref, want)
+		}
+		if got.Type != "" {
+			t.Errorf("%s.type = %q, want empty", alias.Root, got.Type)
+		}
+	}
+}
+
+func TestEnrich_keepsExistingPresetRoot(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{Name: "power", Ref: "custom.power"},
+	}
+
+	result, err := enrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	power := findDriver(result, "power")
+	if power == nil {
+		t.Fatal("power root missing")
+	}
+	if power.Ref != "custom.power" {
+		t.Errorf("power.ref = %q, want custom.power (user-provided)", power.Ref)
+	}
+
+	count := 0
+	for _, d := range result {
+		if d.Name == "power" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("power driver count = %d, want 1", count)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if alias.Root == "power" {
+			continue
+		}
+		got := findDriver(result, alias.Root)
+		if got == nil {
+			t.Fatalf("missing auto-aliased %q", alias.Root)
+		}
+		if got.Ref != "qemu."+alias.Child {
+			t.Errorf("%s.ref = %q, want qemu.%s", alias.Root, got.Ref, alias.Child)
+		}
+	}
+}
+
+func TestEnrich_skipsPresetRootsWhenMultipleQemu(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu-a",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+		{
+			Name:   "qemu-b",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q when multiple QEMU drivers present: %+v", alias.Root, *got)
+		}
+	}
+}
+
+func TestEnrich_skipsPresetRootsWhenDisabled(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "qemu",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, map[string]any{
+		qemudriver.ExposeRootDriversParam: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q when exposeRootDrivers=false: %+v", alias.Root, *got)
+		}
+	}
+}
+
+func TestEnrich_skipsPresetRootsWhenQemuNameHasDot(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{
+		{
+			Name:   "vm.prod",
+			Type:   qemuDriverType,
+			Config: mustJSON(map[string]any{"arch": "x86_64"}),
+		},
+	}
+
+	result, err := enrichExporterExport(drivers, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, alias := range qemudriver.PresetRootChildren {
+		if got := findDriver(result, alias.Root); got != nil {
+			t.Fatalf("unexpected root alias %q for dotted QEMU name: %+v", alias.Root, *got)
+		}
 	}
 }
 

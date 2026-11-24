@@ -41,7 +41,7 @@ name = "pin_jumpstarter"
 [dependency-groups]
 dev = [
     "pytest-cov>=6.0.0",
-    "pytest>=8.3.3",
+    "pytest>=8.4",
 ]
 
 [project.entry-points."jumpstarter.drivers"]

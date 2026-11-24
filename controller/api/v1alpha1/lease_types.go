@@ -64,7 +64,6 @@ type LeaseSpec struct {
 	// Only the lease owner can modify this list.
 	// +listType=set
 	// +kubebuilder:validation:MaxItems=10
-	// (keep MaxItems in sync with MaxSharedWithEntries)
 	SharedWith []string `json:"sharedWith,omitempty"`
 }
 
@@ -109,8 +108,7 @@ const (
 )
 
 // MaxSharedWithEntries is the maximum number of clients a lease may be shared
-// with. Keep in sync with the +kubebuilder:validation:MaxItems marker on
-// LeaseSpec.SharedWith (marker values cannot reference Go constants).
+// with.
 const MaxSharedWithEntries = 10
 
 // +kubebuilder:object:root=true

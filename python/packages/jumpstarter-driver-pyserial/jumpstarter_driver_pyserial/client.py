@@ -2,10 +2,10 @@ import logging
 import os
 import stat
 import sys
-from contextlib import contextmanager
+from contextlib import AsyncExitStack, contextmanager
 
 import click
-from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file
+from anyio import BrokenResourceError, EndOfStream, create_task_group, open_file, sleep
 from anyio.streams.file import FileReadStream
 from jumpstarter_driver_network.adapters import PexpectAdapter
 from jumpstarter_driver_power.client import PowerClient
@@ -13,7 +13,7 @@ from pexpect.fdpexpect import fdspawn
 
 from .console import Console, ConsoleStreamDrop
 from jumpstarter.client import DriverClient
-from jumpstarter.client.core import DriverMethodNotImplemented
+from jumpstarter.client.core import ConsoleInUse, DriverMethodNotImplemented
 from jumpstarter.client.decorators import driver_click_group
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,35 @@ class PySerialClient(DriverClient):
         with PexpectAdapter(client=self) as adapter:
             yield adapter
 
+    def release(self):
+        """Release the underlying tty so another exporter-side process
+        (typically a sibling flasher driver) can open it. Pairs with
+        :meth:`acquire`.
+
+        Attached console/pipe clients stay connected and see a pause;
+        input sent while released is discarded."""
+        self.call("release")
+
+    def acquire(self):
+        """Re-acquire the underlying tty previously released with
+        :meth:`release`."""
+        self.call("acquire")
+
+    @contextmanager
+    def released(self):
+        """Context manager that releases the tty on enter and re-acquires
+        it on exit — even if the body raises. Intended for runner code that
+        wraps a flash operation::
+
+            with client.console.released():
+                client.flasher.flash(artifact)
+        """
+        self.release()
+        try:
+            yield
+        finally:
+            self.acquire()
+
     async def _has_observe(self) -> bool:
         """Whether the exporter supports observe mode (console fanout).
 
@@ -95,6 +124,8 @@ class PySerialClient(DriverClient):
         append: bool = False,
         no_output: bool = False,
         observe: bool = False,
+        retry_count: int = 0,
+        retry_interval: float = 0.5,
     ):
         """
         Pipe serial port data to stdout or a file, optionally reading from stdin.
@@ -105,13 +136,17 @@ class PySerialClient(DriverClient):
             append: If True, append to file instead of overwriting.
             no_output: If True, do not read serial output; only forward stdin to serial.
             observe: If True, use observe mode (read-only).
+            retry_count: How many more times to try attaching while another
+                client holds the console. Other errors are not retried.
+            retry_interval: Seconds to wait between attempts.
         """
         # Only take the exclusive write token when this invocation will actually
         # write to the port. A plain logging/monitoring pipe (no stdin) must
         # attach read-only so it never locks out an interactive user — e.g. a CI
         # job tailing serial into a file while someone drives the console.
         method = await self._console_method(observe=observe, writes=input_enabled)
-        async with self.stream_async(method=method) as stream:
+        async with AsyncExitStack() as stack:
+            stream = await self._attach(stack, method, retry_count, retry_interval)
             # Fire-and-forget mode: only forward stdin and exit when stdin reaches EOF.
             if no_output:
                 if input_enabled:
@@ -130,6 +165,17 @@ class PySerialClient(DriverClient):
                 # Output runs inline - when the stream ends, we cancel and exit
                 await self._serial_to_output(stream, output_file, append)
                 tg.cancel_scope.cancel()
+
+    async def _attach(self, stack: AsyncExitStack, method: str, retry_count: int, retry_interval: float):
+        """Open the ``method`` stream on ``stack``, retrying while the console is in use."""
+        for attempt in range(retry_count + 1):
+            try:
+                return await stack.enter_async_context(self.stream_async(method=method))
+            except ConsoleInUse:
+                if attempt == retry_count:
+                    raise
+                logger.info("Console in use, retrying in %ss (%d/%d)", retry_interval, attempt + 1, retry_count)
+                await sleep(retry_interval)
 
     async def _serial_to_output(self, stream, output_file: str | None, append: bool):
         """Read from serial and write to file or stdout."""
@@ -155,7 +201,10 @@ class PySerialClient(DriverClient):
 
     async def _stdin_to_serial(self, stream) -> tuple[int, int]:
         """Read from stdin and write to serial. Returns (bytes_read, bytes_sent)."""
-        stdin = FileReadStream(sys.stdin.buffer)
+        # Read from the unbuffered raw stream when there is one: BufferedReader.read(n)
+        # blocks until n bytes or EOF, which stalls a live stdin (a terminal, a
+        # PTY such as twister's --device-serial-pty) until 1024 bytes pile up.
+        stdin = FileReadStream(getattr(sys.stdin.buffer, "raw", sys.stdin.buffer))
         bytes_read = 0
         bytes_sent = 0
         try:
@@ -216,6 +265,19 @@ class PySerialClient(DriverClient):
                 raise click.ClickException("serial connection closed") from None
 
         @base.command()
+        def release():
+            """Release the remote tty so another exporter-side process can
+            open it (e.g. a flasher driver). Pairs with `acquire`."""
+            self.release()
+            click.echo("Released.", err=True)
+
+        @base.command()
+        def acquire():
+            """Re-acquire the remote tty previously released."""
+            self.acquire()
+            click.echo("Acquired.", err=True)
+
+        @base.command()
         @click.option(
             "-o", "--output",
             type=click.Path(),
@@ -253,7 +315,21 @@ class PySerialClient(DriverClient):
             default=False,
             help="Watch-only mode (read-only). Use when another session has exclusive access.",
         )
-        def pipe(output, input_flag, no_input, append, no_output, observe):  # noqa: C901
+        @click.option(
+            "--retry-count",
+            type=click.IntRange(min=0),
+            default=0,
+            show_default=True,
+            help="Retry attaching this many times while another client holds the console.",
+        )
+        @click.option(
+            "--retry-interval",
+            type=click.FloatRange(min=0),
+            default=0.5,
+            show_default=True,
+            help="Seconds between attempts to attach.",
+        )
+        def pipe(output, input_flag, no_input, append, no_output, observe, retry_count, retry_interval):  # noqa: C901
             """Pipe serial port data to stdout or file.
 
             By default, reads from the serial port and writes to stdout.
@@ -266,6 +342,7 @@ class PySerialClient(DriverClient):
             Use -i/--input to force enable stdin to serial (auto-detected).
             Use --no-input to disable stdin even when piped.
             Use --no-output for fire-and-forget input (send stdin to serial and exit).
+            Use --retry-count to wait for a console another client is still holding.
 
             Exit with Ctrl+C.
 
@@ -337,7 +414,9 @@ class PySerialClient(DriverClient):
                 click.echo(msg, err=True)
 
             try:
-                self.portal.call(self._pipe_serial, output, input_enabled, append, no_output, observe)
+                self.portal.call(
+                    self._pipe_serial, output, input_enabled, append, no_output, observe, retry_count, retry_interval
+                )
             except KeyboardInterrupt:
                 click.echo("\nStopped.", err=True)
 

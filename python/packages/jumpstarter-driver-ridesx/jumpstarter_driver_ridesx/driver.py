@@ -1,9 +1,9 @@
-import asyncio
 import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from anyio import sleep
 from jumpstarter_driver_opendal.driver import Opendal
 
 from . import fastboot as fb
@@ -342,7 +342,7 @@ class RideSXPowerDriver(Driver):
         """Power cycle the device"""
         self.logger.info(f"Power cycling device with {delay}s delay")
         await self.off()
-        await asyncio.sleep(delay)
+        await sleep(delay)
         await self.on()
 
     @export

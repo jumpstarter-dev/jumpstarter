@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 from pydantic.functional_validators import BeforeValidator
 
 from .client import ClientConfigV1Alpha1
-from .common import CONFIG_PATH
+from .common import CONFIG_PATH, write_yaml_atomically
 
 
 def _serialize_current_client(v: ClientConfigV1Alpha1 | None) -> str | None:
@@ -84,10 +84,9 @@ class UserConfigV1Alpha1(BaseModel):
     @classmethod
     def save(cls, config: Self, path: str | None = None) -> Path:
         """Save a user config as YAML."""
-
-        with open(path or cls.USER_CONFIG_PATH, "w") as f:
-            yaml.safe_dump(config.model_dump(mode="json", by_alias=True), f, sort_keys=False)
-        return Path(path) if path is not None else cls.USER_CONFIG_PATH
+        target = Path(path or cls.USER_CONFIG_PATH)
+        write_yaml_atomically(target, config.model_dump(mode="json", by_alias=True))
+        return target
 
     def use_client(self, name: str | None) -> Path | None:
         """Updates the current client and saves the user config."""

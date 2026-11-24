@@ -13,6 +13,13 @@ source "${SCRIPT_DIR}/deploy_vars"
 
 set_kubectl_context
 
+# Telemetry is opt-in. When enabled it must run the image built from this
+# tree: with no local image, the pod would pull an unrelated published one.
+if [ "${OPERATOR_ENABLE_TELEMETRY:-}" = "true" ] && ! container_image_exists "${TELEMETRY_IMG}"; then
+  echo -e "${RED}OPERATOR_ENABLE_TELEMETRY is set but ${TELEMETRY_IMG} is not built${NC}"
+  exit 1
+fi
+
 # Install nginx ingress if in ingress mode
 if [ "${NETWORKING_MODE}" = "ingress" ]; then
     install_nginx_ingress
@@ -127,6 +134,13 @@ END
             class: "nginx"
 END
 )
+  TELEMETRY_ENDPOINT_CONFIG=$(cat <<-END
+        - address: ${TELEMETRY_ENDPOINT}
+          ingress:
+            enabled: true
+            class: "nginx"
+END
+)
 else
   # For kind, NodePorts are mapped to host ports via extraPortMappings (30010->8082, etc.)
   # For k3s, NodePorts are directly accessible on the host
@@ -151,6 +165,13 @@ END
           nodeport:
             enabled: true
             port: 30014
+END
+)
+  TELEMETRY_ENDPOINT_CONFIG=$(cat <<-END
+        - address: ${TELEMETRY_ENDPOINT}
+          nodeport:
+            enabled: true
+            port: 30015
 END
 )
 fi
@@ -206,6 +227,17 @@ AUTH_CONFIG="  authentication:
     autoProvisioning:
       enabled: true${JWT_AUTH_CONFIG}"
 
+TELEMETRY_CONFIG=""
+if [ "${OPERATOR_ENABLE_TELEMETRY:-}" = "true" ]; then
+  TELEMETRY_CONFIG="  telemetry:
+    enabled: true
+    image: ${TELEMETRY_IMG}
+    imagePullPolicy: IfNotPresent
+    grpc:
+      endpoints:
+${TELEMETRY_ENDPOINT_CONFIG}"
+fi
+
 cat <<EOF > "${TMPFILE}"
 apiVersion: operator.jumpstarter.dev/v1alpha1
 kind: Jumpstarter
@@ -245,6 +277,9 @@ ${ROUTER_ENDPOINT_CONFIG}
     provisioners:
       - name: qemu.jumpstarter.dev
         enabled: true
+      - name: qemu-ssh.jumpstarter.dev
+        enabled: true
+${TELEMETRY_CONFIG}
 EOF
 
 echo -e "${GREEN}Generated Jumpstarter CR (saved to ${TMPFILE}):${NC}"
@@ -259,9 +294,22 @@ kubectl config set-context --current --namespace=jumpstarter-lab
 # Wait for Jumpstarter resources to be ready
 wait_for_jumpstarter_resources
 
+if [ "${OPERATOR_ENABLE_TELEMETRY:-}" = "true" ]; then
+  echo -e "${GREEN}Waiting for the telemetry deployment ...${NC}"
+  timeout=60
+  while ! kubectl get deployment jumpstarter-telemetry -n jumpstarter-lab > /dev/null 2>&1; do
+    sleep 2
+    timeout=$((timeout - 2))
+    if [ ${timeout} -le 0 ]; then
+      echo -e "${RED}Telemetry deployment not created after 60s${NC}"
+      exit 1
+    fi
+  done
+  kubectl -n jumpstarter-lab rollout status deployment/jumpstarter-telemetry --timeout=180s
+fi
+
 # Check gRPC endpoints are ready
 check_grpc_endpoints
 
 # Print success banner
 print_deployment_success
-

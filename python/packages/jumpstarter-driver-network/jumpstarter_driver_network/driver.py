@@ -1,7 +1,6 @@
 import ctypes
 import socket
 from abc import ABCMeta, abstractmethod
-from asyncio import get_running_loop
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from os import getenv, getuid
@@ -14,7 +13,7 @@ from anyio import (
     create_connected_udp_socket,
     create_memory_object_stream,
 )
-from anyio._backends._asyncio import SocketStream, StreamProtocol
+from anyio.abc import SocketStream
 from anyio.streams.stapled import StapledObjectStream
 
 from .streams.websocket import WebsocketClientStream
@@ -209,12 +208,8 @@ class VsockNetwork(NetworkInterface, Driver):
             if libc.connect(sock.fileno(), ctypes.byref(addr), ctypes.sizeof(addr)) < 0:
                 raise OSError(ctypes.get_errno(), "vsock connect() failed")
 
-            transport, protocol = await get_running_loop().create_connection(
-                StreamProtocol,
-                sock=sock,
-            )
-
-            yield SocketStream(transport, protocol)
+            async with await SocketStream.from_socket(sock) as stream:
+                yield stream
 
 
 @dataclass(kw_only=True)

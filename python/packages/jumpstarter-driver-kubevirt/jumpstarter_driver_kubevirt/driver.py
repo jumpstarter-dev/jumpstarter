@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import logging
 import ssl
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import ClassVar
 from urllib.parse import urlparse
 
 import websockets
+from anyio import Lock, create_task_group, sleep
 from jumpstarter_driver_composite.driver import CompositeInterface
 from jumpstarter_driver_network.driver import NetworkInterface
 from jumpstarter_driver_network.streams.websocket import WebsocketClientStream
@@ -17,36 +18,14 @@ from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from lightkube import AsyncClient
 from lightkube.config.kubeconfig import KubeConfig
 from lightkube.core.exceptions import ApiError
-from lightkube.generic_resource import create_namespaced_resource
-from lightkube.models.meta_v1 import ObjectMeta
-from lightkube.types import PatchType
 from websockets import Subprotocol
 from websockets.exceptions import InvalidStatus
 
+from .storage import Disk, Flash
+from .vm import VirtualMachine, VirtualMachineInstance, VMControl
 from jumpstarter.driver import Driver, export, exportstream
 
 logger = logging.getLogger(__name__)
-
-VirtualMachine = create_namespaced_resource(
-    group="kubevirt.io",
-    version="v1",
-    kind="VirtualMachine",
-    plural="virtualmachines",
-)
-
-VirtualMachineInstance = create_namespaced_resource(
-    group="kubevirt.io",
-    version="v1",
-    kind="VirtualMachineInstance",
-    plural="virtualmachineinstances",
-)
-
-DataVolume = create_namespaced_resource(
-    group="cdi.kubevirt.io",
-    version="v1beta1",
-    kind="DataVolume",
-    plural="datavolumes",
-)
 
 
 def _build_client(kubeconfig_path: str | None) -> AsyncClient:
@@ -68,6 +47,9 @@ class _KubevirtBase:
             self._client = _build_client(self.kubeconfig)
         return self._client
 
+    def _control(self) -> VMControl:
+        return VMControl(self._get_client(), self.namespace, self._resolve_vm_name())
+
     def _resolve_vm_name(self) -> str:
         if self.vm_name:
             return self.vm_name
@@ -82,41 +64,23 @@ class KubevirtPower(_KubevirtBase, PowerInterface, Driver):
 
     @export
     async def on(self) -> None:
-        client = self._get_client()
-        name = self._resolve_vm_name()
-
-        patch = {"spec": {"runStrategy": "Always"}}
-        await client.patch(
-            VirtualMachine,
-            name=name,
-            namespace=self.namespace,
-            obj=patch,
-            patch_type=PatchType.MERGE,
-        )
-        logger.info("started VM %s/%s", self.namespace, name)
+        control = self._control()
+        # Wait out an activation that is between halting and swapping the disks. A flash
+        # that is still uploading does not block power; only the swap itself must not race.
+        async with control.lock:
+            await control.power("Always")
+        logger.info("started VM %s/%s", self.namespace, self.vm_name)
 
     @export
     async def off(self, destroy: bool = False) -> None:
-        client = self._get_client()
-        name = self._resolve_vm_name()
-
-        if destroy:
-            await client.delete(
-                VirtualMachine,
-                name=name,
-                namespace=self.namespace,
-            )
-            logger.info("destroyed VM %s/%s", self.namespace, name)
-        else:
-            patch = {"spec": {"runStrategy": "Halted"}}
-            await client.patch(
-                VirtualMachine,
-                name=name,
-                namespace=self.namespace,
-                obj=patch,
-                patch_type=PatchType.MERGE,
-            )
-            logger.info("stopped VM %s/%s", self.namespace, name)
+        control = self._control()
+        async with control.lock:
+            if destroy:
+                # Deleting the VM takes its VMI with it; halting first only adds a race.
+                await control.client.delete(VirtualMachine, name=control.name, namespace=control.namespace)
+            else:
+                await control.power("Halted")
+        logger.info("%s VM %s/%s", "destroyed" if destroy else "stopped", self.namespace, self.vm_name)
 
     @export
     async def read(self) -> AsyncGenerator[PowerReading, None]:
@@ -256,7 +220,7 @@ class KubevirtConsole(_KubevirtBase, NetworkInterface, Driver):
                         attempt + 1,
                         self.console_max_retries,
                     )
-                    await asyncio.sleep(self.console_retry_interval)
+                    await sleep(self.console_retry_interval)
                 else:
                     raise
 
@@ -265,75 +229,86 @@ class KubevirtConsole(_KubevirtBase, NetworkInterface, Driver):
 
 @dataclass(kw_only=True)
 class KubevirtStorage(_KubevirtBase, Driver):
-    disk_size: str = "20Gi"
-    access_modes: list[str] = field(default_factory=lambda: ["ReadWriteOnce"])
-    delete_timeout: float = 60.0
-    delete_poll_interval: float = 0.5
+    driver_type: ClassVar[str] = "storage"
+    disks: dict[str, Disk] = field(default_factory=lambda: {"root": Disk()})
+    upload_proxy_url: str = ""
+    upload_ca: str = ""
+    flash_timeout: float = 1800
+    shutdown_timeout: float = 120
+    ready_timeout: float = 30
+    provision_timeout: float = 300
+    fatal_grace: float = 60
+    poll_interval: float = 1
+    _lock: Lock = field(init=False, default_factory=Lock, repr=False)
+    _flasher: Flash | None = field(init=False, default=None, repr=False)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.disks = {
+            name: Disk(**config) if isinstance(config, dict) else config for name, config in self.disks.items()
+        }
 
     @classmethod
     def client(cls) -> str:
         return "jumpstarter_driver_kubevirt.client.KubevirtStorageClient"
 
+    def _flash(self):
+        # Built once: every RPC of a session shares the same control and timeouts.
+        if self._flasher is None:
+            self._flasher = Flash(
+                vm=self._control(),
+                disks=self.disks,
+                upload_proxy_url=self.upload_proxy_url,
+                upload_ca=self.upload_ca,
+                timeout=self.flash_timeout,
+                shutdown_timeout=self.shutdown_timeout,
+                ready_timeout=self.ready_timeout,
+                provision_timeout=self.provision_timeout,
+                fatal_grace=self.fatal_grace,
+                poll_interval=self.poll_interval,
+            )
+        return self._flasher
+
+    @asynccontextmanager
+    async def serving(self):
+        """Reclaim a flash abandoned by an earlier lease, without blocking session start.
+
+        A lease that ends mid-upload leaves its operation `staging` and its staged
+        volumes allocated. The reclaim takes the same lock as the flash RPCs, so it
+        cannot interleave with one; the next begin would also reclaim, but only
+        when a flash actually runs. A reclaim still running when the session ends
+        is cancelled, which leaves the operation `aborting` for the next session's
+        reclaim to finish.
+        """
+        async with super().serving(), create_task_group() as reclaim:
+            reclaim.start_soon(self._reclaim_abandoned)
+            yield
+
+    async def _reclaim_abandoned(self):
+        async with self._lock:
+            await self._flash().reclaim()
+
     @export
-    async def flash(
-        self,
-        image_url: str,
-        disk_size: str | None = None,
-        access_modes: list[str] | None = None,
-    ) -> None:
-        client = self._get_client()
-        name = self._resolve_vm_name()
-        dv_name = f"{name}-root"
+    async def begin_flash(self, operation_id: str, targets: list[str]) -> None:
+        async with self._lock:
+            await self._flash().begin(operation_id, targets)
 
-        if disk_size is None:
-            disk_size = self.disk_size
-        if access_modes is None:
-            access_modes = self.access_modes
+    @export
+    async def stage_flash(self, operation_id: str, target: str, handle) -> None:
+        async with self._lock:
+            await self._flash().stage(
+                operation_id, target, lambda: self.resource(handle, timeout=int(self.flash_timeout))
+            )
 
-        deleted = False
-        try:
-            await client.delete(DataVolume, name=dv_name, namespace=self.namespace)
-            deleted = True
-            logger.info("deleted existing DataVolume %s/%s for re-flash", self.namespace, dv_name)
-        except ApiError as e:
-            if e.status.code != 404:
-                raise
+    @export
+    async def commit_flash(self, operation_id: str) -> None:
+        async with self._lock:
+            await self._flash().commit(operation_id)
 
-        if deleted:
-            async with asyncio.timeout(self.delete_timeout):
-                while True:
-                    try:
-                        await client.get(DataVolume, name=dv_name, namespace=self.namespace)
-                    except ApiError as e:
-                        if e.status.code == 404:
-                            break
-                        raise
-                    await asyncio.sleep(self.delete_poll_interval)
-
-        dv = DataVolume(
-            metadata=ObjectMeta(
-                name=dv_name,
-                namespace=self.namespace,
-            ),
-            spec={
-                "source": {
-                    "http": {
-                        "url": image_url,
-                    },
-                },
-                "storage": {
-                    "accessModes": access_modes,
-                    "resources": {
-                        "requests": {
-                            "storage": disk_size,
-                        },
-                    },
-                },
-            },
-        )
-
-        await client.create(dv)
-        logger.info("created DataVolume %s/%s from %s (size=%s)", self.namespace, dv_name, image_url, disk_size)
+    @export
+    async def recover_flash(self, operation_id: str) -> bool:
+        async with self._lock:
+            return await self._flash().recover(operation_id)
 
 
 @dataclass(kw_only=True)

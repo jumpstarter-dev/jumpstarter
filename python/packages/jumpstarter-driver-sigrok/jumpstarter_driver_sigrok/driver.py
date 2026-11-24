@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import subprocess
 from base64 import b64encode
 from collections.abc import AsyncIterator
@@ -11,6 +10,7 @@ from tempfile import TemporaryDirectory
 from typing import Any
 
 from .common import CaptureConfig, DecoderConfig, OutputFormat
+from jumpstarter.common.process import open_streaming_process
 from jumpstarter.driver import Driver, export
 
 
@@ -107,28 +107,9 @@ class Sigrok(Driver):
         cmd = self._build_stream_command(cfg)
 
         self.logger.debug("streaming sigrok-cli: %s", " ".join(cmd))
-        process = await asyncio.create_subprocess_exec(
-            cmd[0], *cmd[1:],
-            stdout=subprocess.PIPE,
-            stderr=None,
-        )
-
-        try:
-            if process.stdout is None:
-                raise RuntimeError("sigrok-cli stdout not available")
-
-            # Stream data in chunks
-            while True:
-                chunk = await process.stdout.read(4096)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            process.terminate()
-            try:
-                await asyncio.wait_for(process.wait(), timeout=5)
-            except TimeoutError:  # pragma: no cover
-                process.kill()
+        async with open_streaming_process(cmd, stderr="inherit") as process:
+            async for chunk in process:
+                yield chunk.data
 
     # --- Command builders -----------------------------------------------
 

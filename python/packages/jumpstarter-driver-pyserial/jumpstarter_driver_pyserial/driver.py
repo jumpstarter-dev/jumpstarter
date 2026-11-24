@@ -4,13 +4,18 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from anyio import (
+    BrokenResourceError,
+    Event,
     create_memory_object_stream,
+    move_on_after,
     sleep,
 )
-from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper
+
+# pyserial-asyncio returns asyncio streams, and anyio adapts those only in its private backend.
+from anyio._backends._asyncio import StreamReaderWrapper, StreamWriterWrapper  # noqa: TID251
 from anyio.abc import ObjectSendStream, ObjectStream
 from anyio.streams.stapled import StapledObjectStream
-from serial import serial_for_url
+from serial import SerialException, serial_for_url
 from serial_asyncio import open_serial_connection
 
 from jumpstarter.driver import Driver, export
@@ -22,6 +27,8 @@ except ImportError:  # pragma: no cover - non-POSIX platforms
     termios = None  # type: ignore[assignment]
 
 LOOP = "loop://"
+# How long release() waits for the serial fd to close before giving up.
+_CLOSE_TIMEOUT = 5.0
 
 
 @dataclass(kw_only=True)
@@ -78,7 +85,10 @@ class AsyncSerial(ObjectStream):
             self.writer = ThrottledStream(stream=self.writer, cps=self.cps)  # ty: ignore[invalid-argument-type]
 
     async def send(self, item: bytes):
-        await self.writer.send(item)
+        try:
+            await self.writer.send(item)
+        except (SerialException, ConnectionError) as exc:
+            raise BrokenResourceError from exc
 
     async def receive(self):
         return await self.reader.receive()
@@ -105,6 +115,14 @@ class PySerial(FanOutStreamMixin, Driver):
     disable_hupcl: bool = field(default=False)
     always_on: bool = field(default=False)
     _transport: Any = field(default=None, init=False, repr=False)
+    # release()/acquire() let an exporter-side process (typically a flasher
+    # driver) take exclusive access to the tty while clients stay attached.
+    _released: bool = field(default=False, init=False, repr=False)
+    _acquire_waiters: list[Event] = field(default_factory=list, init=False, repr=False)
+    # Async callable closing the currently-open source, if any; returns once
+    # the underlying fd is really closed (transport for a real port, memory
+    # streams for loop://).
+    _source_closer: Any = field(default=None, init=False, repr=False)
 
     def _get_fanout_always_on(self) -> bool:
         return self.always_on
@@ -137,22 +155,59 @@ class PySerial(FanOutStreamMixin, Driver):
         except (AttributeError, OSError, TypeError):
             self.logger.warning("Failed to disable HUPCL on %s", self.url)
 
+    async def _wait_acquired(self):
+        """Park until acquire() is called if the port is currently released."""
+        while self._released:
+            evt = Event()
+            self._acquire_waiters.append(evt)
+            try:
+                await evt.wait()
+            finally:
+                # Drop the event if cancelled while parked (session teardown)
+                # so waiters don't accumulate across release cycles.
+                if evt in self._acquire_waiters:
+                    self._acquire_waiters.remove(evt)
+
     @asynccontextmanager
     async def _open_source(self):
+        # The fan-out reader loop reopens the source after release() closes it;
+        # hold it here so the tty stays free until acquire().
+        await self._wait_acquired()
+
         cps_info = f", cps: {self.cps}" if self.cps is not None else ""
         self.logger.info("Connecting to %s, baudrate: %d%s", self.url, self.baudrate, cps_info)
 
         if self.url == LOOP:
             tx, rx = create_memory_object_stream[bytes](32)  # type: ignore[call-overload]
             stapled_stream = StapledObjectStream(tx, rx)
-            async with ThrottledStream(stream=stapled_stream, cps=self.cps) as stream:
-                yield stream
+
+            async def close_loop():
+                tx.close()
+                rx.close()
+
+            self._source_closer = close_loop
+            try:
+                async with ThrottledStream(stream=stapled_stream, cps=self.cps) as stream:
+                    yield stream
+            finally:
+                self._source_closer = None
             return
 
-        reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate)
+        while True:
+            reader, writer = await open_serial_connection(url=self.url, baudrate=self.baudrate)
+            if not self._released:
+                break
+            # release() ran while the port was opening: hand it back right away.
+            await self._close_writer(writer)
+            await self._wait_acquired()
         writer.transport.set_write_buffer_limits(high=4096, low=0)
         self._maybe_disable_hupcl(getattr(writer.transport, "serial", None))
         self._transport = writer.transport
+
+        async def close_serial():
+            await self._close_writer(writer)
+
+        self._source_closer = close_serial
 
         try:
             async with AsyncSerial(
@@ -163,7 +218,57 @@ class PySerial(FanOutStreamMixin, Driver):
                 yield stream
         finally:
             self._transport = None
+            self._source_closer = None
         self.logger.info("Disconnected from %s", self.url)
+
+    async def _close_writer(self, writer):
+        """Close a serial connection and wait until its fd is really closed.
+
+        transport.close() only schedules the close: pyserial-asyncio closes the
+        fd in a later loop callback, right after connection_lost(), which is
+        what wait_closed() waits for. Returning earlier lets another process
+        (e.g. esptool) open the tty while we still read from it.
+        """
+        writer.close()
+        with move_on_after(_CLOSE_TIMEOUT) as scope:
+            try:
+                await writer.wait_closed()
+            except Exception:
+                # The close itself failed (e.g. device unplugged): the fd is gone.
+                self.logger.debug("wait_closed failed for %s", self.url, exc_info=True)
+        if scope.cancelled_caught:
+            self.logger.warning("Timed out waiting for %s to close", self.url)
+
+    @export
+    async def release(self):
+        """Close the underlying tty so another process on the exporter
+        (typically a flasher driver) can open it.
+
+        Attached clients (connect/observe) stay attached: the fan-out reader
+        loop sees the source drop and parks until acquire() is called, so
+        clients see a pause rather than EOF. Input sent meanwhile is discarded.
+        """
+        if self._released:
+            return
+        self._released = True
+        self.logger.info("Releasing %s", self.url)
+        closer = self._source_closer
+        if closer is not None:
+            try:
+                await closer()
+            except Exception:
+                self.logger.warning("release: closing source failed", exc_info=True)
+
+    @export
+    async def acquire(self):
+        """Reopen the tty previously released with release()."""
+        if not self._released:
+            return
+        self._released = False
+        self.logger.info("Acquiring %s", self.url)
+        waiters, self._acquire_waiters = self._acquire_waiters, []
+        for w in waiters:
+            w.set()
 
     @export
     def close(self):
@@ -183,12 +288,12 @@ class PySerial(FanOutStreamMixin, Driver):
     def shutdown(self):
         """Session-end teardown: drop the serial link and stop the reader.
 
-        Runs on the exporter's event-loop thread from Session teardown. Close
-        the transport explicitly first rather than relying on the reader's
-        cleanup, which shutdown_sync() cancels but cannot await from this
-        synchronous path. pyserial-asyncio still releases the handle on a later
-        loop iteration (after flushing any buffered writes), not before this
-        returns.
+        Runs on the exporter's event-loop thread from Session teardown. In a
+        session the reader has already closed the transport when the session
+        stopped serving; outside one, shutdown_sync() can only cancel the reader,
+        not await it, so close the transport explicitly first. pyserial-asyncio
+        still releases the handle on a later loop iteration (after flushing any
+        buffered writes), not before this returns.
         """
         transport = self._transport
         if transport is None:

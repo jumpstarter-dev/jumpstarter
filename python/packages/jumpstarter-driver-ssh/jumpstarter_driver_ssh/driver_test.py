@@ -628,13 +628,9 @@ def test_ssh_identity_temp_file_creation_error():
         with patch('tempfile.NamedTemporaryFile') as mock_temp_file:
             mock_temp_file.side_effect = OSError("Permission denied")
 
-            # Test SSH command with identity should raise an error
-            # The exception will be wrapped in an ExceptionGroup due to the context manager
-            with pytest.raises(ExceptionGroup) as exc_info:
+            # The OSError from inside the port-forward context reaches the caller as itself
+            with pytest.raises(OSError, match="Permission denied"):
                 client.run(SSHCommandRunOptions(direct=False), ["hostname"])
-
-            # Check that the original OSError is in the exception group
-            assert any(isinstance(e, OSError) and "Permission denied" in str(e) for e in exc_info.value.exceptions)
 
 
 def test_ssh_identity_temp_file_cleanup_error():

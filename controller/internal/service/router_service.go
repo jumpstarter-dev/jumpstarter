@@ -106,7 +106,9 @@ func (s *RouterService) Stream(stream pb.RouterService_StreamServer) error {
 		s.pending.CompareAndDelete(streamName, first)
 		defer first.cancel()
 		logger.Info("forwarding", "stream", streamName)
-		return Forward(ctx, stream, first.stream)
+		err = Forward(stream, first.stream)
+		logger.Info("forwarding ended", "stream", streamName, "error", err)
+		return err
 	} else {
 		// First peer - wait for second peer before cleaning up
 		defer s.pending.CompareAndDelete(streamName, sctx)

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'",
@@ -36,6 +36,7 @@ members = [
     "jumpstarter-cli-driver",
     "jumpstarter-driver-adb",
     "jumpstarter-driver-androidemulator",
+    "jumpstarter-driver-appium",
     "jumpstarter-driver-ble",
     "jumpstarter-driver-bt-peer",
     "jumpstarter-driver-can",
@@ -51,8 +52,11 @@ members = [
     "jumpstarter-driver-esp32",
     "jumpstarter-driver-flashers",
     "jumpstarter-driver-gpiod",
+    "jumpstarter-driver-gptp",
     "jumpstarter-driver-http",
     "jumpstarter-driver-http-power",
+    "jumpstarter-driver-iosdevice",
+    "jumpstarter-driver-iossimulator",
     "jumpstarter-driver-iscsi",
     "jumpstarter-driver-kubevirt",
     "jumpstarter-driver-mitmproxy",
@@ -90,7 +94,10 @@ members = [
     "jumpstarter-driver-vnc",
     "jumpstarter-driver-xcp",
     "jumpstarter-driver-yepkit",
+    "jumpstarter-driver-zephyr",
     "jumpstarter-example-android-emulator",
+    "jumpstarter-example-appium-android-emulator",
+    "jumpstarter-example-appium-ios-simulator",
     "jumpstarter-example-automotive",
     "jumpstarter-example-soc-pytest",
     "jumpstarter-example-xcp-ecu",
@@ -338,6 +345,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f1/b4/636b3b65173d3ce9a38ef5f0522789614e590dab6a8d505340a4efe4c567/anyio-4.10.0.tar.gz", hash = "sha256:3f3fae35c96039744587aa5b8371e7e8e603c0702999535961dd336026973ba6", size = 213252, upload-time = "2025-08-04T08:54:26.451Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/6f/12/e5e0282d673bb9746bacfb6e2dba8719989d3660cdb2ea79aee9a9651afb/anyio-4.10.0-py3-none-any.whl", hash = "sha256:60e474ac86736bbfd6f210f7a61218939c318f43f9972497381f1c5e930ed3d1", size = 107213, upload-time = "2025-08-04T08:54:24.882Z" },
+]
+
+[[package]]
+name = "appium-python-client"
+version = "6.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "selenium" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4f/5d/2748f6aa5115b9e1a2cb9a2ffb5a91ff026bfb29234fd95343ce0d98381d/appium_python_client-6.1.4.tar.gz", hash = "sha256:27154754d2735c74c8dbe9b71cdb6c7f70277f1d9de0a99e305c33049a123fe9", size = 252505, upload-time = "2026-11-02T06:34:41.56Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/27/db61bd7a24105bb64839e26d8602c2b7c9f2118cbc9d4b6ffc1b9813e27c/appium_python_client-6.1.4-py3-none-any.whl", hash = "sha256:36d4e01ae5a77553ede84e552320d52ad4f688252750f0da94b86046c62f924f", size = 344530, upload-time = "2026-11-02T06:34:39.873Z" },
 ]
 
 [[package]]
@@ -643,9 +663,9 @@ version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dbus-fast", marker = "sys_platform == 'linux'" },
-    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
-    { name = "pyobjc-framework-corebluetooth", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
-    { name = "pyobjc-framework-libdispatch", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-framework-corebluetooth", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-framework-libdispatch", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
     { name = "typing-extensions" },
     { name = "winrt-runtime", marker = "sys_platform == 'win32'" },
     { name = "winrt-windows-devices-bluetooth", marker = "sys_platform == 'win32'" },
@@ -763,11 +783,11 @@ wheels = [
 
 [[package]]
 name = "certifi"
-version = "2025.6.15"
+version = "2026.10.23"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/73/f7/f14b46d4bcd21092d7d3ccef689615220d8a08fb25e564b65d20738e672e/certifi-2025.6.15.tar.gz", hash = "sha256:d747aa5a8b9bbbb1bb8c22bb13e22bd1f18e9796defa16bab421f7f7a317323b", size = 158753, upload-time = "2025-06-15T02:45:51.329Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fd/11/b524cbd9bbdaca58608e4cf4053fd463417549e1959fa8d3aa18319f9555/certifi-2026.10.23.tar.gz", hash = "sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd", size = 136225, upload-time = "2026-10-23T11:36:16.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/ae/320161bd181fc06471eed047ecce67b693fd7515b16d495d8932db763426/certifi-2025.6.15-py3-none-any.whl", hash = "sha256:2e0c7ce7cb5d8f8634ca55d2ba7e6ec2689a2fd6537d8dec1296a477a4910057", size = 157650, upload-time = "2025-06-15T02:45:49.977Z" },
+    { url = "https://files.pythonhosted.org/packages/32/d1/a3652fe2c19134d0d15922177821d863cbd7e842d53a21bbe7e8e3a1b5ac/certifi-2026.10.23-py3-none-any.whl", hash = "sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1", size = 135082, upload-time = "2026-10-23T11:36:14.763Z" },
 ]
 
 [[package]]
@@ -1486,7 +1506,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.5" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.1.1" },
 ]
 
@@ -1528,8 +1548,8 @@ name = "httpcore2"
 version = "2.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11" },
-    { name = "truststore" },
+    { name = "h11", marker = "sys_platform != 'emscripten'" },
+    { name = "truststore", marker = "sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/be/ad/f4f0e57345f1870f3e8cb624e058d7eca6e5a27d33bcc3311d9b618734cd/httpcore2-2.12.0.tar.gz", hash = "sha256:9293522bba0aa7c4c8e9e3f040c16575bd8868e155a77fa30c7a9085a5eae648", size = 67548, upload-time = "2026-08-18T13:22:08.211Z" }
 wheels = [
@@ -1744,8 +1764,6 @@ dev = [
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "types-protobuf" },
 ]
@@ -1753,7 +1771,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.10.5" },
-    { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "backports-zstd", marker = "python_full_version < '3.14'", specifier = ">=1.1.0" },
     { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter-protocol", editable = "packages/jumpstarter-protocol" },
@@ -1774,9 +1792,7 @@ dev = [
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "types-protobuf", specifier = ">=5.29.1" },
 ]
@@ -1792,6 +1808,7 @@ dependencies = [
     { name = "jumpstarter-cli-driver" },
     { name = "jumpstarter-driver-adb" },
     { name = "jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-ble" },
     { name = "jumpstarter-driver-bt-peer" },
     { name = "jumpstarter-driver-can" },
@@ -1807,8 +1824,11 @@ dependencies = [
     { name = "jumpstarter-driver-esp32" },
     { name = "jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod" },
+    { name = "jumpstarter-driver-gptp" },
     { name = "jumpstarter-driver-http" },
     { name = "jumpstarter-driver-http-power" },
+    { name = "jumpstarter-driver-iosdevice" },
+    { name = "jumpstarter-driver-iossimulator" },
     { name = "jumpstarter-driver-iscsi" },
     { name = "jumpstarter-driver-mitmproxy" },
     { name = "jumpstarter-driver-nanokvm-usb" },
@@ -1845,6 +1865,7 @@ dependencies = [
     { name = "jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-xcp" },
     { name = "jumpstarter-driver-yepkit" },
+    { name = "jumpstarter-driver-zephyr" },
     { name = "jumpstarter-imagehash" },
     { name = "jumpstarter-kubernetes" },
     { name = "jumpstarter-mcp" },
@@ -1861,6 +1882,7 @@ requires-dist = [
     { name = "jumpstarter-cli-driver", editable = "packages/jumpstarter-cli-driver" },
     { name = "jumpstarter-driver-adb", editable = "packages/jumpstarter-driver-adb" },
     { name = "jumpstarter-driver-androidemulator", editable = "packages/jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-ble", editable = "packages/jumpstarter-driver-ble" },
     { name = "jumpstarter-driver-bt-peer", editable = "packages/jumpstarter-driver-bt-peer" },
     { name = "jumpstarter-driver-can", editable = "packages/jumpstarter-driver-can" },
@@ -1876,8 +1898,11 @@ requires-dist = [
     { name = "jumpstarter-driver-esp32", editable = "packages/jumpstarter-driver-esp32" },
     { name = "jumpstarter-driver-flashers", editable = "packages/jumpstarter-driver-flashers" },
     { name = "jumpstarter-driver-gpiod", editable = "packages/jumpstarter-driver-gpiod" },
+    { name = "jumpstarter-driver-gptp", editable = "packages/jumpstarter-driver-gptp" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
     { name = "jumpstarter-driver-http-power", editable = "packages/jumpstarter-driver-http-power" },
+    { name = "jumpstarter-driver-iosdevice", editable = "packages/jumpstarter-driver-iosdevice" },
+    { name = "jumpstarter-driver-iossimulator", editable = "packages/jumpstarter-driver-iossimulator" },
     { name = "jumpstarter-driver-iscsi", editable = "packages/jumpstarter-driver-iscsi" },
     { name = "jumpstarter-driver-mitmproxy", editable = "packages/jumpstarter-driver-mitmproxy" },
     { name = "jumpstarter-driver-nanokvm-usb", editable = "packages/jumpstarter-driver-nanokvm-usb" },
@@ -1914,6 +1939,7 @@ requires-dist = [
     { name = "jumpstarter-driver-vnc", editable = "packages/jumpstarter-driver-vnc" },
     { name = "jumpstarter-driver-xcp", editable = "packages/jumpstarter-driver-xcp" },
     { name = "jumpstarter-driver-yepkit", editable = "packages/jumpstarter-driver-yepkit" },
+    { name = "jumpstarter-driver-zephyr", editable = "packages/jumpstarter-driver-zephyr" },
     { name = "jumpstarter-imagehash", editable = "packages/jumpstarter-imagehash" },
     { name = "jumpstarter-kubernetes", editable = "packages/jumpstarter-kubernetes" },
     { name = "jumpstarter-mcp", editable = "packages/jumpstarter-mcp" },
@@ -1934,8 +1960,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -1949,9 +1973,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -1967,8 +1989,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -1981,9 +2001,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2006,8 +2024,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2027,9 +2043,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2044,8 +2058,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2057,9 +2069,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2069,6 +2079,7 @@ source = { editable = "packages/jumpstarter-driver-adb" }
 dependencies = [
     { name = "click" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-network" },
 ]
 
@@ -2088,13 +2099,14 @@ requires-dist = [
     { name = "adbutils", marker = "extra == 'python-api'", specifier = ">=2.8.7" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
 ]
 provides-extras = ["python-api"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2104,6 +2116,7 @@ source = { editable = "packages/jumpstarter-driver-androidemulator" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-adb" },
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-power" },
 ]
@@ -2124,10 +2137,45 @@ requires-dist = [
     { name = "adbutils", marker = "extra == 'python-api'", specifier = ">=2.8.7" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-adb", editable = "packages/jumpstarter-driver-adb" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
 ]
 provides-extras = ["python-api"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-appium"
+source = { editable = "packages/jumpstarter-driver-appium" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "cryptography" },
+    { name = "h11" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-network" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "cryptography", specifier = ">=43.0.3" },
+    { name = "h11", specifier = ">=0.16.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2150,7 +2198,6 @@ dependencies = [
 dev = [
     { name = "jumpstarter-testing" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
     { name = "pytest-cov" },
 ]
 
@@ -2166,8 +2213,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2183,7 +2229,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
     { name = "pytest-cov" },
 ]
 
@@ -2196,8 +2241,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2225,7 +2269,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2253,7 +2297,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2288,7 +2332,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2308,10 +2352,8 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
-    { name = "trio" },
 ]
 
 [package.metadata]
@@ -2327,11 +2369,9 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-asyncio", specifier = ">=0.25.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests-mock" },
-    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]
@@ -2350,7 +2390,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
 ]
@@ -2368,8 +2407,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "requests-mock", specifier = ">=1.12.0" },
 ]
@@ -2398,7 +2436,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2424,7 +2462,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2439,7 +2477,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2451,8 +2488,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.26.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2492,7 +2528,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2523,7 +2559,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-httpserver", specifier = ">=1.0.0" },
 ]
@@ -2558,7 +2594,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2568,6 +2604,7 @@ source = { editable = "packages/jumpstarter-driver-flashers" }
 dependencies = [
     { name = "anyio" },
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-http" },
     { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
@@ -2588,6 +2625,7 @@ dev = [
 requires-dist = [
     { name = "anyio", specifier = ">=4.10.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-http", editable = "packages/jumpstarter-driver-http" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
@@ -2600,7 +2638,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2631,8 +2669,36 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-gptp"
+source = { editable = "packages/jumpstarter-driver-gptp" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
 [[package]]
@@ -2649,7 +2715,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2664,8 +2729,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2695,6 +2759,70 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-iosdevice"
+source = { editable = "packages/jumpstarter-driver-iosdevice" }
+dependencies = [
+    { name = "click" },
+    { name = "cryptography" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-network" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "cryptography", specifier = ">=43.0.3" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-iossimulator"
+source = { editable = "packages/jumpstarter-driver-iossimulator" }
+dependencies = [
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-iosdevice" },
+    { name = "jumpstarter-driver-power" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-iosdevice", editable = "packages/jumpstarter-driver-iosdevice" },
+    { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
+]
+
+[package.metadata.requires-dev]
+dev = [
     { name = "pytest", specifier = ">=8.3.3" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
@@ -2715,7 +2843,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2732,8 +2859,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2741,9 +2867,11 @@ dev = [
 name = "jumpstarter-driver-kubevirt"
 source = { editable = "packages/jumpstarter-driver-kubevirt" }
 dependencies = [
+    { name = "aiohttp" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
     { name = "lightkube" },
     { name = "websockets" },
@@ -2752,15 +2880,16 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.11" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
+    { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "lightkube", specifier = ">=0.15" },
     { name = "websockets", specifier = ">=13.0" },
@@ -2768,8 +2897,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -2777,6 +2905,7 @@ dev = [
 name = "jumpstarter-driver-mitmproxy"
 source = { editable = "packages/jumpstarter-driver-mitmproxy" }
 dependencies = [
+    { name = "anyio" },
     { name = "jumpstarter" },
 ]
 
@@ -2789,12 +2918,15 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "mitmproxy", specifier = ">=12.0" },
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "requests", specifier = ">=2.28.0" },
 ]
@@ -2818,7 +2950,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -2838,8 +2969,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2855,7 +2985,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "requests-mock" },
 ]
@@ -2869,8 +2998,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "requests-mock", specifier = ">=1.12.0" },
 ]
@@ -2879,6 +3007,7 @@ dev = [
 name = "jumpstarter-driver-network"
 source = { editable = "packages/jumpstarter-driver-network" }
 dependencies = [
+    { name = "anyio" },
     { name = "click" },
     { name = "fabric" },
     { name = "jumpstarter" },
@@ -2890,7 +3019,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "types-paramiko" },
     { name = "types-pexpect" },
@@ -2899,6 +3027,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
     { name = "click", specifier = ">=8.1.8" },
     { name = "fabric", specifier = ">=3.2.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
@@ -2909,8 +3038,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-asyncio", specifier = ">=0.26.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "types-paramiko", specifier = ">=3.5.0.20240928" },
     { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
@@ -2944,7 +3072,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-mock", specifier = ">=3.14.0" },
 ]
@@ -2971,7 +3099,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -2999,7 +3127,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3031,7 +3159,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3048,7 +3176,6 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "trio" },
 ]
 
 [package.metadata]
@@ -3060,9 +3187,8 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
-    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]
@@ -3091,7 +3217,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3129,7 +3255,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "types-pexpect", specifier = ">=4.9.0.20241208" },
     { name = "types-pyserial", specifier = ">=3.5.0.20250130" },
@@ -3168,7 +3294,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
 ]
@@ -3188,7 +3314,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
     { name = "pytest-cov" },
 ]
 
@@ -3204,8 +3329,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3226,7 +3350,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3244,8 +3367,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3275,7 +3397,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3303,7 +3425,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3317,7 +3439,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3326,8 +3447,7 @@ requires-dist = [{ name = "jumpstarter", editable = "packages/jumpstarter" }]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
-    { name = "pytest-asyncio", specifier = ">=0.24.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3346,8 +3466,6 @@ dependencies = [
 dev = [
     { name = "jumpstarter-testing" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3363,9 +3481,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3386,12 +3502,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "opensomeip", specifier = ">=0.1.5,<0.2.0" },
+    { name = "opensomeip", specifier = ">=0.2.1,<0.3.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3423,7 +3539,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3441,7 +3557,6 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
-    { name = "trio" },
 ]
 
 [package.metadata]
@@ -3454,9 +3569,8 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "trio", specifier = ">=0.28.0" },
 ]
 
 [[package]]
@@ -3487,7 +3601,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3517,7 +3631,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3548,7 +3662,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
     { name = "pytest-mqtt", specifier = ">=0.5.0" },
 ]
@@ -3567,8 +3681,6 @@ dependencies = [
 dev = [
     { name = "jumpstarter-testing" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -3583,9 +3695,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3615,7 +3725,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3648,7 +3758,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-driver-qemu", editable = "packages/jumpstarter-driver-qemu" },
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rpmfile", specifier = ">=2.1.0" },
@@ -3677,7 +3787,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3711,7 +3821,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3741,7 +3851,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3769,7 +3879,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3801,7 +3911,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3833,7 +3943,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3859,7 +3969,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3889,7 +3999,39 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-zephyr"
+source = { editable = "packages/jumpstarter-driver-zephyr" }
+dependencies = [
+    { name = "anyio" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "click", specifier = ">=8.1.7.2" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "jumpstarter-driver-pyserial", editable = "packages/jumpstarter-driver-pyserial" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]
 
@@ -3907,6 +4049,52 @@ dependencies = [
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-androidemulator", extras = ["python-api"], editable = "packages/jumpstarter-driver-androidemulator" },
+    { name = "pytest", specifier = ">=8.3.2" },
+]
+
+[[package]]
+name = "jumpstarter-example-appium-android-emulator"
+version = "0.1.0"
+source = { virtual = "examples/appium-android-emulator" }
+dependencies = [
+    { name = "appium-python-client" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "jumpstarter-testing" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "appium-python-client", specifier = ">=5.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-androidemulator", editable = "packages/jumpstarter-driver-androidemulator" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
+    { name = "pytest", specifier = ">=8.3.2" },
+]
+
+[[package]]
+name = "jumpstarter-example-appium-ios-simulator"
+version = "0.1.0"
+source = { virtual = "examples/appium-ios-simulator" }
+dependencies = [
+    { name = "appium-python-client" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-iossimulator" },
+    { name = "jumpstarter-testing" },
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "appium-python-client", specifier = ">=5.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-iossimulator", editable = "packages/jumpstarter-driver-iossimulator" },
+    { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
     { name = "pytest", specifier = ">=8.3.2" },
 ]
 
@@ -3989,7 +4177,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -3998,6 +4186,7 @@ name = "jumpstarter-kubernetes"
 source = { editable = "packages/jumpstarter-kubernetes" }
 dependencies = [
     { name = "aiohttp" },
+    { name = "anyio" },
     { name = "jumpstarter" },
     { name = "kubernetes" },
     { name = "kubernetes-asyncio" },
@@ -4009,14 +4198,13 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.18" },
+    { name = "anyio", specifier = ">=4.4.0,!=4.6.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "kubernetes", specifier = ">=31.0.0" },
     { name = "kubernetes-asyncio", specifier = ">=31.1.0" },
@@ -4027,9 +4215,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4047,8 +4233,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -4063,9 +4247,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4081,8 +4263,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -4095,9 +4275,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4107,8 +4285,6 @@ source = { editable = "packages/jumpstarter-testing" }
 dependencies = [
     { name = "jumpstarter" },
     { name = "pytest" },
-    { name = "pytest-anyio" },
-    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
 
@@ -4120,9 +4296,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
-    { name = "pytest", specifier = ">=8.3.2" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.0.0" },
+    { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
 ]
 
@@ -4194,7 +4368,7 @@ name = "libusb-package"
 version = "1.0.26.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "importlib-resources" },
+    { name = "importlib-resources", marker = "sys_platform != 'android' and sys_platform != 'emscripten'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/01/34/fd042950325366cb8f01e1873cd87f8aa99e773586377a8e670d6127dc8e/libusb_package-1.0.26.4-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:ce3711a82a2b4b9936a6268c9cbad794c34ae3b1b2c5cc9aeced8340db678668", size = 63859, upload-time = "2026-06-19T11:04:23.822Z" },
@@ -4512,7 +4686,7 @@ version = "0.12.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mitmproxy-linux", marker = "sys_platform == 'linux'" },
-    { name = "mitmproxy-macos", marker = "(python_full_version < '3.14' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "mitmproxy-macos", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
     { name = "mitmproxy-windows", marker = "(python_full_version < '3.14' and os_name == 'nt') or (os_name == 'nt' and sys_platform != 'linux')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5d/5c/16a61303da76cd34aa6ddbd7ef6ac66d9ef8514c4d3a5b71831169d63236/mitmproxy_rs-0.12.9.tar.gz", hash = "sha256:c6ffc35c002c675cac534442d92d1cdebd66fafd63754ad33b92ae968ea6e449", size = 1334424, upload-time = "2026-01-30T14:54:15.043Z" }
@@ -4844,25 +5018,25 @@ wheels = [
 
 [[package]]
 name = "opensomeip"
-version = "0.1.5"
+version = "0.2.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/d4/dd/f0ff59ae25bdcf28796c811d1559216e54f7a60c25851d3b7c44991ecdf1/opensomeip-0.1.5.tar.gz", hash = "sha256:d1cab1174b1c97b1d4fa8d9dd3d3f72a564535a44ef335ff0407102a2fa18937", size = 801258, upload-time = "2026-05-25T03:24:02.96Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/0b/cb1e4970872dbfa1cd17f46ff0a4a3454e3a113157592f5c860fc36ff090/opensomeip-0.2.1.tar.gz", hash = "sha256:24796fc0334c145481c7cd0d62d21ce0a49878bd71d2a7cce369c3b42357276d", size = 12288375, upload-time = "2026-11-15T16:21:41.442Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/aa/03c5f3971854388cca981615c39ca253514d0998a85536646af6da20ff5e/opensomeip-0.1.5-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:f27cbe3136a22ad3fcb511bcc23a83190a38c921ea359712c3bc781d72b81782", size = 788534, upload-time = "2026-05-25T03:23:39.609Z" },
-    { url = "https://files.pythonhosted.org/packages/e5/ee/606909e273a4dc6935036ce54e37e0c665fcd40cc7331baecafe5498cb16/opensomeip-0.1.5-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:faa4986b7aa9b48c569648bd51bae1a0a86cc43ab17f38d0cdcb3721542d3e0e", size = 722913, upload-time = "2026-05-25T03:23:40.928Z" },
-    { url = "https://files.pythonhosted.org/packages/db/c0/ad9e7e3d1dd8815d502b5834327e8a88e23e6a7824bd7aa11ff95c88fb2d/opensomeip-0.1.5-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cf346ef44ced5f3dd2ef41194462970cff257b6e2b88562a854f3c70d081e2c0", size = 852075, upload-time = "2026-05-25T03:23:42.582Z" },
-    { url = "https://files.pythonhosted.org/packages/e0/fc/c572cdc67971cc5a827f43d4909f10125ebd2757a3e5b92e71720142f390/opensomeip-0.1.5-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:8e8d7ce15263a9bd7ab6ded815bbd4d034f6191147ee41e9787b44d77b362473", size = 906998, upload-time = "2026-05-25T03:23:44.325Z" },
-    { url = "https://files.pythonhosted.org/packages/35/90/378336bfab0d03ef2ca148e4278aa49fb73beeaef577cea7aa207dd1e07a/opensomeip-0.1.5-cp312-cp312-win_amd64.whl", hash = "sha256:3c75c6fb7537d476e2848791dafe76af989961cc60e58b8d89f8e83472883496", size = 1098836, upload-time = "2026-05-25T03:23:45.666Z" },
-    { url = "https://files.pythonhosted.org/packages/f3/bf/093a47e59ae3ef9b1a9766b2221bbee7bbb509a6dcf7b8b737ace614d483/opensomeip-0.1.5-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:50ad6d81a92bd608e2c7eb327aecdc045d0e6d8d72d46c78a82537eef8c8ba10", size = 788618, upload-time = "2026-05-25T03:23:47.379Z" },
-    { url = "https://files.pythonhosted.org/packages/55/76/1296227cebd9f8b0ba36795513ff664507e523c1cf6165c58ec5d18f9755/opensomeip-0.1.5-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:abae461e9246791c04fd12e5df1fbb87609e08afe6a2849ceb28a46b5f2d6303", size = 723007, upload-time = "2026-05-25T03:23:48.757Z" },
-    { url = "https://files.pythonhosted.org/packages/d6/40/9deeb5d502f6e704914acfd22e7906e7aa945085716ef6100fb102e7db5c/opensomeip-0.1.5-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:ab22ccfdada28bb56f7cf0df8c90505d895789c7b3fa6c77e3770da3ebfe94af", size = 852095, upload-time = "2026-05-25T03:23:50.327Z" },
-    { url = "https://files.pythonhosted.org/packages/a8/09/856ac1e7d7bb3c8541292f45925bf6e8c9d54c627f47deb4804239d0681f/opensomeip-0.1.5-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:9d653e1bb1f6afda056a94a4e68e7500c00da2e0ca9bac60bb2f56035982b664", size = 907331, upload-time = "2026-05-25T03:23:52.105Z" },
-    { url = "https://files.pythonhosted.org/packages/2a/8b/adb5db537d8147070950fe1dc4e90c9c4dc347fc6cae2e82d7de57dcfc5f/opensomeip-0.1.5-cp313-cp313-win_amd64.whl", hash = "sha256:c2a74e7cfb38806267635b3b77fcfeb6b54b45b6e049ad55f1dce4ea70ef34d4", size = 1098803, upload-time = "2026-05-25T03:23:53.586Z" },
-    { url = "https://files.pythonhosted.org/packages/f1/8b/7756b8d103366adf7efe28ff23835abf43485e6c8675f156ebfaee45d7b0/opensomeip-0.1.5-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:da70246ffd63b0ef29f06fced010821f0526435a5d70b59480f0fec7a34b0d2c", size = 788874, upload-time = "2026-05-25T03:23:55.161Z" },
-    { url = "https://files.pythonhosted.org/packages/63/ab/1d614f34c79a49374cc5d06fb4b39336ac8a25e32eff71dd828595a7ad1c/opensomeip-0.1.5-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:c29186d2c77f5e79eb6cd4c1dd4436e43a3fe0e8dc460f1600926d5bcec3bfe2", size = 724379, upload-time = "2026-05-25T03:23:56.777Z" },
-    { url = "https://files.pythonhosted.org/packages/7f/7c/f800d99a3b5d31cb04c461fcd1a00b28eed329cd39d23b5db249729b01d0/opensomeip-0.1.5-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:dd156d826aeffc05c9c88f800bd3481fdfa5c0b071694c7a0ea8c7772fbfccd2", size = 854541, upload-time = "2026-05-25T03:23:58.407Z" },
-    { url = "https://files.pythonhosted.org/packages/c0/10/755d1d528e571b56baad1be0189228375d83fc0ec4695657b6d516b89242/opensomeip-0.1.5-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3a697cae295abd00932da399eca9cee641232e6f3ddba79021fef172148536af", size = 907205, upload-time = "2026-05-25T03:23:59.727Z" },
-    { url = "https://files.pythonhosted.org/packages/42/31/7bdca6d70743fa1a33f3c4b6916ee9a2ba1bdd48616d314a74aeaef087b7/opensomeip-0.1.5-cp314-cp314-win_amd64.whl", hash = "sha256:500ae7daea767ca9204710706b10582c345efed73cc12057934afc2c8bd359ce", size = 1121617, upload-time = "2026-05-25T03:24:01.571Z" },
+    { url = "https://files.pythonhosted.org/packages/14/9e/71816216f8f3daab56dec00ba176dc3e7c2ab02366ddfdfc7856b59788fe/opensomeip-0.2.1-cp312-cp312-macosx_10_13_x86_64.whl", hash = "sha256:bd8854f706d70743fba6a1cbbc17300deb64fc894005be899b992088672c0ebb", size = 1150764, upload-time = "2026-11-15T16:21:17.941Z" },
+    { url = "https://files.pythonhosted.org/packages/46/07/9af551aee48689cf25038041bafcc43b34a0a0c007f1983a195fc09d5d2f/opensomeip-0.2.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:e213fb928f8eb5a4ed073585ecd0b530e6865a5515daa08be6398aaf0d9fdfcf", size = 1067182, upload-time = "2026-11-15T16:21:19.442Z" },
+    { url = "https://files.pythonhosted.org/packages/65/c3/2bc6c05cb674d8e4dd545e5837498c910c3be619c22d71a9bbc42876fbfd/opensomeip-0.2.1-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:3a11c0306fcc06eaa93222e0d3a81bd6f855565a4e0f2cb75ccdfc415e1dd4c3", size = 1239993, upload-time = "2026-11-15T16:21:20.882Z" },
+    { url = "https://files.pythonhosted.org/packages/16/67/029c2e42dbe4529b5a53c4f1fb69b238e72dd6436865b2339260cf3b001d/opensomeip-0.2.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:8992ac9db567cc04b569ab38f15593bf6b954f8f192106be99a536d8df607704", size = 1315454, upload-time = "2026-11-15T16:21:22.646Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/b5/8497207f85955f61f3665fa1115a29bbdc79d680224406728a8bd8b9a05a/opensomeip-0.2.1-cp312-cp312-win_amd64.whl", hash = "sha256:e0bb3958d5abdce505e80308dd5d82e7dd1a51a4987350ee330da15fd2b1b721", size = 2773498, upload-time = "2026-11-15T16:21:24.292Z" },
+    { url = "https://files.pythonhosted.org/packages/de/b4/75aa65ada643d9c4740c1daf8373fc0279253e2ea83541d21252d5ae9f32/opensomeip-0.2.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:02e2e893ae1ee7e31cf0925ff973333b45c439e5f3d6b431dc418cf50fa6452c", size = 1150809, upload-time = "2026-11-15T16:21:25.581Z" },
+    { url = "https://files.pythonhosted.org/packages/36/49/88b42c6928d8498fbb84976ca1e25e31fa301a75bf428c305e9a6299561d/opensomeip-0.2.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:2f1a702595a9af13812e3dfde2b1056b1e421319f1601ed66f4eff4b67ae5825", size = 1067278, upload-time = "2026-11-15T16:21:26.928Z" },
+    { url = "https://files.pythonhosted.org/packages/b2/31/966bba00b1be4c3abb578c3cca18884fffa632eb3c54d425099786c0bce7/opensomeip-0.2.1-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2af39ae6f9fc682a3e1e3176dd6dec03fd2ba4e7263cafafda01a2f806358f1e", size = 1239949, upload-time = "2026-11-15T16:21:28.336Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/fa/1e09073ac7bafbae7a3a5d42bbae350edfdf183d9cf577ef7b9879c7cb56/opensomeip-0.2.1-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:496ba974eeef7502ceaa6ceef8c1a1c5de7c4ca194223519b6f8318db1005f83", size = 1316216, upload-time = "2026-11-15T16:21:30.033Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/9d/1cd90c5e555724bb6d12221493905f7de822b5c0ca039816ab81e661b2fe/opensomeip-0.2.1-cp313-cp313-win_amd64.whl", hash = "sha256:c936c994aa1cc182d79a6d4c0488bba9ee5a14fd223fdac1e1c6bd7f42e35f0f", size = 2773538, upload-time = "2026-11-15T16:21:31.97Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/a9/aecf2d29d6755fefc9b21091b58581586ed6f4818cea5728667f2a39b8a4/opensomeip-0.2.1-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:7f3436bcd4d8dbd4e9192e717f3f6dd2c02054b2365bf88546b8c4918d33c020", size = 1150555, upload-time = "2026-11-15T16:21:33.437Z" },
+    { url = "https://files.pythonhosted.org/packages/5f/00/59b7b2d0f818c15d6416d2825ede3094b55480e2f26de6a38f7bb6c3aebd/opensomeip-0.2.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:db9c413c478c4eab9cca7bc598f9317110632ba436bea9b0e55027afaa1cb793", size = 1068444, upload-time = "2026-11-15T16:21:34.798Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/a2/f0f520b89fcc18ffe3803694f2074b9fb3302bc2cabac892e83a0f1e3c80/opensomeip-0.2.1-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:a1e4ddc60c7f42d4a4f7ec3c76655bc5e28eee2d79d60bf59159fb7fb7ca069d", size = 1242813, upload-time = "2026-11-15T16:21:36.848Z" },
+    { url = "https://files.pythonhosted.org/packages/23/a3/79ba20f0f6e791b7826b48a1557ca8764709e23e7814ff02bf65cc829151/opensomeip-0.2.1-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:47a6d087308a54db6430612688012a3a50f7ede91c9938c2297fe2c6b4bec3e8", size = 1316055, upload-time = "2026-11-15T16:21:38.398Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/03/795ad40a36466b15fe5b99b702ba470d01f65a9d0fb24e834f588967e033/opensomeip-0.2.1-cp314-cp314-win_amd64.whl", hash = "sha256:abb814b65b3507dee927fab323a341197d2f290c95bd20bf450fd7269f25761b", size = 2821472, upload-time = "2026-11-15T16:21:39.797Z" },
 ]
 
 [[package]]
@@ -5090,7 +5264,7 @@ name = "prompt-toolkit"
 version = "3.0.53"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "wcwidth" },
+    { name = "wcwidth", marker = "sys_platform != 'emscripten'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/7d/ea/39b988c938f75cb75d7045b5c69f8bfed47ee2152c8837fb403de29d6fb8/prompt_toolkit-3.0.53.tar.gz", hash = "sha256:9ec8a0ad96d5c56148b3f914aa79c1564c3fde5d2e6b876e7bc327e353cf8fa6", size = 435492, upload-time = "2026-07-26T20:56:14.758Z" }
 wheels = [
@@ -5437,7 +5611,7 @@ name = "pyobjc-framework-cocoa"
 version = "12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core" },
+    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten') or (python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version < '3.14' and sys_platform == 'win32') or (implementation_name == 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (os_name != 'nt' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/37/6f/89837da349fe7de6476c426f118096b147de923139556d98af1832c64b97/pyobjc_framework_cocoa-12.0.tar.gz", hash = "sha256:02d69305b698015a20fcc8e1296e1528e413d8cf9fdcd590478d359386d76e8a", size = 2771906, upload-time = "2025-10-21T08:30:51.765Z" }
 wheels = [
@@ -5453,8 +5627,8 @@ name = "pyobjc-framework-corebluetooth"
 version = "12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core" },
-    { name = "pyobjc-framework-cocoa" },
+    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten') or (python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version < '3.14' and sys_platform == 'win32') or (implementation_name == 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (os_name != 'nt' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')" },
+    { name = "pyobjc-framework-cocoa", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten') or (python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version < '3.14' and sys_platform == 'win32') or (implementation_name == 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (os_name != 'nt' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/96/b2/ad9e8516cd73611a3a8f8ff2d7d51b917115f3f7f9e7a9760d5fc4e9dd6b/pyobjc_framework_corebluetooth-12.0.tar.gz", hash = "sha256:61ae2a56c3dcb8b7307d833e7d913bd7c063d11a1ea931158facceb38aae21d3", size = 33587, upload-time = "2025-10-21T08:31:18.036Z" }
 wheels = [
@@ -5470,8 +5644,8 @@ name = "pyobjc-framework-libdispatch"
 version = "12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core" },
-    { name = "pyobjc-framework-cocoa" },
+    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten') or (python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version < '3.14' and sys_platform == 'win32') or (implementation_name == 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (os_name != 'nt' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')" },
+    { name = "pyobjc-framework-cocoa", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten') or (python_full_version < '3.14' and sys_platform == 'linux') or (python_full_version < '3.14' and sys_platform == 'win32') or (implementation_name == 'pypy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (os_name != 'nt' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b3/7e/251ea268ce5a341586c963de758c7ff6dea681c98a1fb6da87f6d0004bd3/pyobjc_framework_libdispatch-12.0.tar.gz", hash = "sha256:2ef31c02670c377d9e2875e74053087b1d96b240d2fc8721cc4c665c05394b3a", size = 38599, upload-time = "2025-10-21T08:34:38.878Z" }
 wheels = [
@@ -5547,6 +5721,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pysocks"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
+]
+
+[[package]]
 name = "pyspellchecker"
 version = "0.8.3"
 source = { registry = "https://pypi.org/simple" }
@@ -5569,32 +5752,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/08/ba/45911d754e8eba3d5a841a5ce61a65a685ff1798421ac054f85aa8747dfb/pytest-8.4.1.tar.gz", hash = "sha256:7c67fd69174877359ed9371ec3af8a3d2b04741818c51e5e99cc1742251fa93c", size = 1517714, upload-time = "2025-06-18T05:48:06.109Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/29/16/c8a903f4c4dffe7a12843191437d7cd8e32751d5de349d45d3fe69544e87/pytest-8.4.1-py3-none-any.whl", hash = "sha256:539c70ba6fcead8e78eebbf1115e8b589e7565830d7d006a8723f19ac8a0afb7", size = 365474, upload-time = "2025-06-18T05:48:03.955Z" },
-]
-
-[[package]]
-name = "pytest-anyio"
-version = "0.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "pytest" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/00/44/a02e5877a671b0940f21a7a0d9704c22097b123ed5cdbcca9cab39f17acc/pytest-anyio-0.0.0.tar.gz", hash = "sha256:b41234e9e9ad7ea1dbfefcc1d6891b23d5ef7c9f07ccf804c13a9cc338571fd3", size = 1560, upload-time = "2021-06-29T22:57:30.846Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/25/bd6493ae85d0a281b6a0f248d0fdb1d9aa2b31f18bcd4a8800cf397d8209/pytest_anyio-0.0.0-py2.py3-none-any.whl", hash = "sha256:dc8b5c4741cb16ff90be37fddd585ca943ed12bbeb563de7ace6cd94441d8746", size = 1999, upload-time = "2021-06-29T22:57:29.158Z" },
-]
-
-[[package]]
-name = "pytest-asyncio"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d0/d4/14f53324cb1a6381bef29d698987625d80052bb33932d8e7cbf9b337b17c/pytest_asyncio-1.0.0.tar.gz", hash = "sha256:d15463d13f4456e1ead2594520216b225a16f781e144f8fdf6c5bb4667c48b3f", size = 46960, upload-time = "2025-05-26T04:54:40.484Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/05/ce271016e351fddc8399e546f6e23761967ee09c8c568bbfbecb0c150171/pytest_asyncio-1.0.0-py3-none-any.whl", hash = "sha256:4f024da9f1ef945e680dc68610b52550e36590a67fd31bb3b4943979a1f90ef3", size = 15976, upload-time = "2025-05-26T04:54:39.035Z" },
 ]
 
 [[package]]
@@ -6288,6 +6445,23 @@ wheels = [
 ]
 
 [[package]]
+name = "selenium"
+version = "4.52.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "certifi" },
+    { name = "trio" },
+    { name = "trio-websocket" },
+    { name = "typing-extensions" },
+    { name = "urllib3", extra = ["socks"] },
+    { name = "websocket-client" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/96/07/d9a9ca4bbcfaad6e07e8034ccd719ef42032ab25a421fb9171baad4ed734/selenium-4.52.0.tar.gz", hash = "sha256:40f423c598cc85390c403ef626c9d3457c1ae834d4cf1f38637ebba3cb6f0d7a", size = 1062139, upload-time = "2026-10-29T13:09:43.51Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e6/37/c6d36e31c9d79ff97c5e77345be34f08f39942d9a36afe8b0fa2878344b2/selenium-4.52.0-py3-none-any.whl", hash = "sha256:caa2860d486f71cdeb21fee3248c2f604bba590120dfb4d3d18c4d7cf97c6f1f", size = 12076163, upload-time = "2026-10-29T13:09:41.294Z" },
+]
+
+[[package]]
 name = "semver"
 version = "3.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -6688,7 +6862,7 @@ wheels = [
 
 [[package]]
 name = "trio"
-version = "0.30.0"
+version = "0.35.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -6698,9 +6872,23 @@ dependencies = [
     { name = "sniffio" },
     { name = "sortedcontainers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/01/c1/68d582b4d3a1c1f8118e18042464bb12a7c1b75d64d75111b297687041e3/trio-0.30.0.tar.gz", hash = "sha256:0781c857c0c81f8f51e0089929a26b5bb63d57f927728a5586f7e36171f064df", size = 593776, upload-time = "2025-04-21T00:48:19.507Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/e2/1db4e79abb730bbf048c1024a622b0e1e895f5b0e18c59f3f6b3e4b296ef/trio-0.35.0.tar.gz", hash = "sha256:7efb295c78a0ecd1235c5759e620b5da564ca80d2efcb0055423588547248b96", size = 609525, upload-time = "2026-10-31T23:36:55.506Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/8e/3f6dfda475ecd940e786defe6df6c500734e686c9cd0a0f8ef6821e9b2f2/trio-0.30.0-py3-none-any.whl", hash = "sha256:3bf4f06b8decf8d3cf00af85f40a89824669e2d033bb32469d34840edcfc22a5", size = 499194, upload-time = "2025-04-21T00:48:17.167Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/c6/77f116686de6b1bb4159ef70d476ef75576ad7819d4eeb783f6efb40f380/trio-0.35.0-py3-none-any.whl", hash = "sha256:9a062a029487c1bdbcc1b2543b729a0bde857ce478b1512c84f391f628e0c5c9", size = 513178, upload-time = "2026-10-31T23:36:53.705Z" },
+]
+
+[[package]]
+name = "trio-websocket"
+version = "0.12.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "outcome" },
+    { name = "trio" },
+    { name = "wsproto" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/3c/8b4358e81f2f2cfe71b66a267f023a91db20a817b9425dd964873796980a/trio_websocket-0.12.2.tar.gz", hash = "sha256:22c72c436f3d1e264d0910a3951934798dcc5b00ae56fc4ee079d46c7cf20fae", size = 33549, upload-time = "2025-02-25T05:16:58.947Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/19/eb640a397bba49ba49ef9dbe2e7e5c04202ba045b6ce2ec36e9cadc51e04/trio_websocket-0.12.2-py3-none-any.whl", hash = "sha256:df605665f1db533f4a386c94525870851096a223adcb97f72a07e8b4beba45b6", size = 21221, upload-time = "2025-02-25T05:16:57.545Z" },
 ]
 
 [[package]]
@@ -6840,11 +7028,16 @@ sdist = { url = "https://files.pythonhosted.org/packages/ad/53/6c420ddf6949097d6
 
 [[package]]
 name = "urllib3"
-version = "2.5.0"
+version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599c47dd506532914ce044817c7752a79b6a51286319bc/urllib3-2.5.0.tar.gz", hash = "sha256:3fc47733c7e419d4bc3f6b3dc2b4f890bb743906a30d56ba4a5bfa4bbff92760", size = 393185, upload-time = "2025-06-18T14:07:41.644Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz", hash = "sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63", size = 458972, upload-time = "2026-09-15T19:29:36.253Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795, upload-time = "2025-06-18T14:07:40.39Z" },
+    { url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
+]
+
+[package.optional-dependencies]
+socks = [
+    { name = "pysocks" },
 ]
 
 [[package]]
@@ -7020,7 +7213,7 @@ name = "winrt-runtime"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions" },
+    { name = "typing-extensions", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/16/dd/acdd527c1d890c8f852cc2af644aa6c160974e66631289420aa871b05e65/winrt_runtime-3.2.1.tar.gz", hash = "sha256:c8dca19e12b234ae6c3dadf1a4d0761b51e708457492c13beb666556958801ea", size = 21721, upload-time = "2025-06-06T14:40:27.593Z" }
 wheels = [
@@ -7040,7 +7233,7 @@ name = "winrt-windows-devices-bluetooth"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b2/a0/1c8a0c469abba7112265c6cb52f0090d08a67c103639aee71fc690e614b8/winrt_windows_devices_bluetooth-3.2.1.tar.gz", hash = "sha256:db496d2d92742006d5a052468fc355bf7bb49e795341d695c374746113d74505", size = 23732, upload-time = "2025-06-06T14:41:20.489Z" }
 wheels = [
@@ -7060,7 +7253,7 @@ name = "winrt-windows-devices-bluetooth-advertisement"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/06/fc/7ffe66ca4109b9e994b27c00f3d2d506e6e549e268791f755287ad9106d8/winrt_windows_devices_bluetooth_advertisement-3.2.1.tar.gz", hash = "sha256:0223852a7b7fa5c8dea3c6a93473bd783df4439b1ed938d9871f947933e574cc", size = 16906, upload-time = "2025-06-06T14:41:21.448Z" }
 wheels = [
@@ -7080,7 +7273,7 @@ name = "winrt-windows-devices-bluetooth-genericattributeprofile"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/44/21/aeeddc0eccdfbd25e543360b5cc093233e2eab3cdfb53ad3cabae1b5d04d/winrt_windows_devices_bluetooth_genericattributeprofile-3.2.1.tar.gz", hash = "sha256:cdf6ddc375e9150d040aca67f5a17c41ceaf13a63f3668f96608bc1d045dde71", size = 38896, upload-time = "2025-06-06T14:41:22.687Z" }
 wheels = [
@@ -7100,7 +7293,7 @@ name = "winrt-windows-devices-enumeration"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/9e/dd/75835bfbd063dffa152109727dedbd80f6e92ea284855f7855d48cdf31c9/winrt_windows_devices_enumeration-3.2.1.tar.gz", hash = "sha256:df316899e39bfc0ffc1f3cb0f5ee54d04e1d167fbbcc1484d2d5121449a935cf", size = 23538, upload-time = "2025-06-06T14:41:26.787Z" }
 wheels = [
@@ -7120,7 +7313,7 @@ name = "winrt-windows-foundation"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/0c/55/098ce7ea0679efcc1298b269c48768f010b6c68f90c588f654ec874c8a74/winrt_windows_foundation-3.2.1.tar.gz", hash = "sha256:ad2f1fcaa6c34672df45527d7c533731fdf65b67c4638c2b4aca949f6eec0656", size = 30485, upload-time = "2025-06-06T14:41:53.344Z" }
 wheels = [
@@ -7140,7 +7333,7 @@ name = "winrt-windows-foundation-collections"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/ef/62/d21e3f1eeb8d47077887bbf0c3882c49277a84d8f98f7c12bda64d498a07/winrt_windows_foundation_collections-3.2.1.tar.gz", hash = "sha256:0eff1ad0d8d763ad17e9e7bbd0c26a62b27215016393c05b09b046d6503ae6d5", size = 16043, upload-time = "2025-06-06T14:41:53.983Z" }
 wheels = [
@@ -7160,7 +7353,7 @@ name = "winrt-windows-storage-streams"
 version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "winrt-runtime" },
+    { name = "winrt-runtime", marker = "(python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten') or sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/00/50/f4488b07281566e3850fcae1021f0285c9653992f60a915e15567047db63/winrt_windows_storage_streams-3.2.1.tar.gz", hash = "sha256:476f522722751eb0b571bc7802d85a82a3cae8b1cce66061e6e758f525e7b80f", size = 34335, upload-time = "2025-06-06T14:43:23.905Z" }
 wheels = [

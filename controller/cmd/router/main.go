@@ -25,7 +25,6 @@ import (
 	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	kclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/go-logr/logr"
@@ -50,6 +49,10 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0",
 		"The address the metric endpoint binds to. Use :8080 to enable. Set to 0 to disable.")
 
+	var configFile string
+	flag.StringVar(&configFile, "config-file", "/etc/jumpstarter/config.yaml",
+		"The controller configuration file to read the gRPC settings from.")
+
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "router"))
@@ -72,17 +75,7 @@ func main() {
 		logger.Info("Serving metrics server", "bindAddress", listenAddr)
 	}
 
-	cfg := ctrl.GetConfigOrDie()
-	client, err := kclient.New(cfg, kclient.Options{})
-	if err != nil {
-		logger.Error(err, "failed to create k8s client")
-		os.Exit(1)
-	}
-
-	serverOption, err := config.LoadRouterConfiguration(ctx, client, kclient.ObjectKey{
-		Namespace: os.Getenv("NAMESPACE"),
-		Name:      "jumpstarter-controller",
-	})
+	serverOption, err := config.LoadRouterConfiguration(configFile)
 	if err != nil {
 		logger.Error(err, "failed to load router configuration")
 		os.Exit(1)

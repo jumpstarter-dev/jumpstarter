@@ -66,9 +66,10 @@ func (r *Reconciler) createOrUpdateIngress(ctx context.Context, ingress *network
 	return nil
 }
 
-// extractHostname extracts the hostname from an endpoint address.
-// It handles formats like: "hostname", "hostname:port", "IPv4:port", "[IPv6]", "[IPv6]:port"
-func extractHostname(address string) string {
+// ExtractHostname extracts the hostname from an endpoint address, without
+// brackets or port. It handles formats like: "hostname", "hostname:port",
+// "IPv4:port", "[IPv6]", "[IPv6]:port".
+func ExtractHostname(address string) string {
 	// Handle IPv6 addresses in brackets
 	if strings.HasPrefix(address, "[") {
 		// Find the closing bracket
@@ -106,7 +107,7 @@ func (r *Reconciler) createIngressForEndpoint(ctx context.Context, owner metav1.
 	}
 
 	// Extract hostname from address
-	hostname := extractHostname(endpoint.Address)
+	hostname := ExtractHostname(endpoint.Address)
 	if hostname == "" {
 		log.Info("Skipping ingress creation: no hostname in endpoint address",
 			"address", endpoint.Address)
@@ -207,7 +208,7 @@ func (r *Reconciler) createIngressForLoginEndpoint(ctx context.Context, owner me
 	}
 
 	// Extract hostname from address
-	hostname := extractHostname(endpoint.Address)
+	hostname := ExtractHostname(endpoint.Address)
 	if hostname == "" {
 		log.Info("Skipping login ingress creation: no hostname in endpoint address",
 			"address", endpoint.Address)

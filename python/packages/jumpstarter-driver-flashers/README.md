@@ -49,7 +49,7 @@ export:
       port: "1"
 ```
 
-flasher drivers require four children drivers:
+flasher drivers require five children drivers:
 
 | Child Driver | Description                                                                       | Auto-created |
 | ------------ | --------------------------------------------------------------------------------- | ------------ |
@@ -57,23 +57,50 @@ flasher drivers require four children drivers:
 | power        | To power on and off the DUT                                                       | No           |
 | tftp         | To serve binaries via TFTP                                                        | Yes          |
 | http         | To serve the images via HTTP                                                      | Yes          |
+| uboot        | To power cycle the DUT into the U-Boot prompt                                     | Yes          |
 
 The power driver is used to control power cycling of the DUT, and the serial
 interface is used to communicate with the DUT bootloader via serial. TFTP and
 HTTP servers are used to serve images to the DUT bootloader and busybox shell.
+
+The auto-created `uboot` child waits up to 15 seconds for the U-Boot prompt
+after each power cycle. For a board that takes longer to reach U-Boot, or one
+with a different prompt, configure the child explicitly with its own
+`prompt_timeout` or `prompt`:
+
+```yaml
+export:
+  storage:
+    type: "jumpstarter_driver_flashers.driver.TIJ784S4Flasher"
+    children:
+      serial:
+        ref: "serial"
+      power:
+        ref: "power"
+      uboot:
+        type: "jumpstarter_driver_uboot.driver.UbootConsole"
+        config:
+          prompt_timeout: 30
+        children:
+          serial:
+            ref: "serial"
+          power:
+            ref: "power"
+```
 
 ### Config parameters
 
 | Parameter      | Description                                | Type | Required | Default                      |
 | -------------- | ------------------------------------------ | ---- | -------- | ---------------------------- |
 | flasher_bundle | The OCI bundle to use for the flasher      | str  | yes      |                              |
-| cache_dir      | The directory to cache the images          | str  | no       | /var/lib/jumpstarter/flasher |
+| cache_dir      | The directory to cache the bundles. A cached bundle is reused across sessions until its tag moves to another manifest digest; older versions are removed by a later session once no other session uses the bundle | str  | no       | /var/lib/jumpstarter/flasher |
 | tftp_dir       | The directory to serve the images via TFTP | str  | no       | /var/lib/tftpboot            |
 | http_dir       | The directory to serve the images via HTTP | str  | no       | /var/www/html                |
 | variant        | The variant of the DUT DTB to flash to     | str  | no       | (the default defined in the manifest) |
 | manifest       | The manifest to use from the bundle. Every bundle can have multiple manifests, this is the name of the manifest to use  | str  | no       | manifest.yaml |
 | default_target | The default target to flash to if none specified | str  | no       |                              |
 | exporter_ip        | IP address the DUT uses to reach the exporter tftp/http servers. Passed as `advertised_host` to the auto-created tftp/http children, overriding the detected server IP | str | no | (detected from the tftp/http server) |
+| fls_version    | fls version the DUT downloads from GitHub releases. When unset, the DUT fetches the fls binary shipped in the exporter image from the exporter's HTTP server. Clients can still override with `--fls-version` or `--fls-binary-url` | str | no | (serve the exporter's fls binary) |
 
 ### oci-bundles
 
@@ -202,8 +229,11 @@ Options:
                                  (default: 3)
   --method [fls|shell]           Method to use for flash operation (default:
                                  fls)
-  --fls-version TEXT             Download an specific fls version from the
-                                 github releases
+  --fls-version TEXT             Download a specific fls version from the
+                                 GitHub releases. Default: the exporter's
+                                 fls_version setting, else the fls binary
+                                 shipped in the exporter image. An empty
+                                 string requires the exporter's binary
   --fls-binary-url TEXT          Custom URL to download FLS binary from
                                  (overrides --fls-version)
   --power-off / --no-power-off   Power off device after flashing (default)

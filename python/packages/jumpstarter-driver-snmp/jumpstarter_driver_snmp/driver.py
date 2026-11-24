@@ -1,9 +1,9 @@
-import asyncio
 import socket
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
 from typing import Any
 
+from anyio import Event, fail_after
 from pysnmp.carrier.asyncio.dgram import udp
 from pysnmp.entity import config, engine
 from pysnmp.entity.rfc3413 import cmdgen
@@ -49,6 +49,12 @@ class SNMPServer(Driver):
     auth_key: str | None = field(default=None)
     priv_protocol: PrivProtocol = field(default=PrivProtocol.NONE)
     priv_key: str | None = field(default=None)
+    # Integer values written to the control OID for power on/off. Most PDUs
+    # use 1=on/0=off, but some vendors differ -- e.g. APC PowerNet uses
+    # 1=on/2=off (immediateOn/immediateOff), where the default off value (0)
+    # is ignored by the PDU.
+    on_value: int = field(default=PowerState.ON.value)
+    off_value: int = field(default=PowerState.OFF.value)
     timeout: float = field(default=5.0)
 
     def __post_init__(self):
@@ -126,7 +132,7 @@ class SNMPServer(Driver):
     def client(cls) -> str:
         return "jumpstarter_driver_snmp.client.SNMPServerClient"
 
-    def _create_snmp_callback(self, result: dict[str, Any], response_received: asyncio.Event):
+    def _create_snmp_callback(self, result: dict[str, Any], response_received: Event):
         def callback(snmpEngine, sendRequestHandle, errorIndication, errorStatus, errorIndex, varBinds, cbCtx):
             self.logger.debug(f"Callback {errorIndication} {errorStatus} {errorIndex} {varBinds}")
             if errorIndication:
@@ -147,7 +153,7 @@ class SNMPServer(Driver):
 
         return callback
 
-    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: asyncio.Event):
+    async def _run_snmp_dispatcher(self, snmp_engine: engine.SnmpEngine, response_received: Event):
         """Run the SNMP dispatcher until response is received"""
         snmp_engine.open_dispatcher()
         try:
@@ -165,10 +171,11 @@ class SNMPServer(Driver):
         result = {"success": False, "error": None}
 
         try:
-            self.logger.info(f"Sending power {state.name} command to {self.host}")
+            value = self.on_value if state == PowerState.ON else self.off_value
+            self.logger.info(f"Sending power {state.name} command (i {value}) to {self.host}")
 
             # Create event in async context (required for Python 3.14+)
-            response_received = asyncio.Event()
+            response_received = Event()
 
             # Set up SNMP engine
             snmp_engine = self._setup_snmp()
@@ -180,16 +187,14 @@ class SNMPServer(Driver):
                 "my-target",
                 None,
                 "",
-                [(self.full_oid, rfc1902.Integer(state.value))],
+                [(self.full_oid, rfc1902.Integer(value))],
                 callback,
             )
 
             # Run dispatcher with timeout
             try:
-                await asyncio.wait_for(
-                    self._run_snmp_dispatcher(snmp_engine, response_received),
-                    self.timeout
-                )
+                with fail_after(self.timeout):
+                    await self._run_snmp_dispatcher(snmp_engine, response_received)
             except TimeoutError:
                 self.logger.warning(f"SNMP operation timed out after {self.timeout} seconds")
                 result["error"] = "SNMP operation timed out"

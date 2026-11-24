@@ -240,7 +240,7 @@ def test_client_list_rich_add_names():
 # Tests for get_ca_bundle and get_client_config
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_with_ca_cert():
     """Test get_ca_bundle returns base64-encoded CA certificate"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -259,7 +259,7 @@ async def test_get_ca_bundle_with_ca_cert():
     api.core_api.read_namespaced_config_map.assert_called_once_with("jumpstarter-service-ca-cert", "test-namespace")
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_empty_ca_cert():
     """Test get_ca_bundle returns empty string when ca.crt is empty"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -274,7 +274,7 @@ async def test_get_ca_bundle_empty_ca_cert():
     assert result == ""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_missing_ca_crt_key():
     """Test get_ca_bundle returns empty string when ca.crt key is missing"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -289,7 +289,7 @@ async def test_get_ca_bundle_missing_ca_crt_key():
     assert result == ""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_configmap_not_found():
     """Test get_ca_bundle returns empty string when ConfigMap doesn't exist"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -303,7 +303,7 @@ async def test_get_ca_bundle_configmap_not_found():
     assert result == ""
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_ca_bundle_other_api_error():
     """Test get_ca_bundle raises exception for non-404 errors"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -318,7 +318,7 @@ async def test_get_ca_bundle_other_api_error():
     assert exc_info.value.status == 403  # type: ignore[attr-defined]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_client_config_includes_ca_bundle():
     """Test get_client_config includes CA bundle from ConfigMap"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -363,7 +363,7 @@ async def test_get_client_config_includes_ca_bundle():
     assert config.token == token
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_client_config_without_ca_bundle():
     """Test get_client_config works when CA ConfigMap doesn't exist"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")
@@ -427,7 +427,7 @@ def test_client_from_dict_keeps_labels():
     assert '"team": "platform"' in client.dump_json()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_client_config_without_credentials():
     """A client whose credentials the controller has not issued yet is reported, not crashed on"""
     api = ClientsV1Alpha1Api(namespace="test-namespace")

@@ -44,7 +44,7 @@ using mitmproxy's ``inject.websocket`` command.
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: TID251
 import json
 import math
 import random
@@ -131,7 +131,7 @@ class Handler:
                     "normal", DEFAULT_SCENARIOS["normal"],
                 ))
 
-                task = asyncio.create_task(
+                task = asyncio.create_task(  # noqa: TID251
                     self._push_telemetry(
                         flow, scenario, interval_ms / 1000.0,
                     )
@@ -169,7 +169,7 @@ class Handler:
                 new_scenario, DEFAULT_SCENARIOS["normal"],
             ))
             interval_ms = config.get("push_interval_ms", 100)
-            task = asyncio.create_task(
+            task = asyncio.create_task(  # noqa: TID251
                 self._push_telemetry(
                     flow, scenario, interval_ms / 1000.0,
                 )

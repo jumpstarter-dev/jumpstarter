@@ -8,8 +8,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 
 from anyio import connect_tcp, to_thread
+from jumpstarter_driver_appium.driver import validate_appium_config
 from jumpstarter_driver_network.driver import TcpNetwork
 
+from .appium import AdbDeviceAppium
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver
 from jumpstarter.driver.decorators import export, exportstream
@@ -559,6 +561,8 @@ class AdbDevice(Driver):
     #: Which ADB server to use. Rarely set: the server is implicit and shared.
     server_port: int = 15037
     adopt_existing_server: bool = True
+    #: Run Appium with UiAutomator2 on the exporter for this device; see the Appium driver.
+    appium: dict | None = None
 
     _lock: threading.Lock = field(init=False, repr=False)
     _server: _SharedServer | None = field(default=None, init=False, repr=False)
@@ -588,6 +592,10 @@ class AdbDevice(Driver):
         self.adb_path = _resolve_adb_path(self.adb_path, self.connect_timeout)
         if self.usb_port is not None:
             self.usb_port = self._normalize_usb_port(self.usb_port)
+        if self.appium is not None:
+            if "appium" in self.children:
+                raise ConfigurationError("child appium conflicts with the appium option")
+            self.children["appium"] = AdbDeviceAppium(device=self, **self.appium)
 
     def _validate_config(self) -> None:
         """Reject a config whose fields do not match its transport."""
@@ -601,6 +609,7 @@ class AdbDevice(Driver):
         _validate_port("server_port", self.server_port)
         _validate_port("adbd_port", self.adbd_port)
         _validate_timeout(self.connect_timeout)
+        validate_appium_config(self.appium)
 
         if self.transport == TRANSPORT_USB:
             if self.address is not None:
@@ -1013,6 +1022,9 @@ class AdbDevice(Driver):
         was already in the shared ADB server belongs to whoever made it, and removing it
         would break them — silently, since adb reports nothing.
         """
+        appium = self.children.get("appium")
+        if appium is not None:
+            appium.close()  # Before the ADB server it uses can go away.
         with self._lock:
             forward_port, forward_serial, owns_forward = self._forward_port, self._forward_serial, self._owns_forward
             connected, owns_connection = self._connected, self._owns_connection

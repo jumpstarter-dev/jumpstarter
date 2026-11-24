@@ -22,6 +22,11 @@
     "**/vendor/**",
     "**/examples/**"
   ],
+  // Renovate's pre-commit manager is opt-in; without it the ruff hook in
+  // python/.pre-commit-config.yaml never updates and drifts from the ruff pin.
+  "pre-commit": {
+    "enabled": true
+  },
   "customDatasources": {
     // Fedora Cloud qcow2 images have no built-in datasource. The official
     // releases.json feed lists every GA image; the transform extracts the
@@ -332,13 +337,15 @@
       ]
     },
     {
-      "description": "Group Python dev tools",
+      "description": "Group Python dev tools; the ruff pre-commit hook moves with the ruff pin",
       "groupName": "python-dev-tools",
       "matchManagers": [
-        "pep621"
+        "pep621",
+        "pre-commit"
       ],
       "matchPackageNames": [
         "ruff",
+        "astral-sh/ruff-pre-commit",
         "sphinx",
         "sphinx-**"
       ]

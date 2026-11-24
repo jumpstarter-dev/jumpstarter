@@ -37,7 +37,7 @@ class ShellClient(DriverClient):
                 if stderr:
                     print(stderr, end='', file=sys.stderr, flush=True)
                 if code is not None:
-                    returncode = code
+                    returncode = int(code)
             return returncode
         return execute
 

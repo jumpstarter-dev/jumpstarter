@@ -61,7 +61,7 @@ RUN  --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=locked,uid=1
       -ldflags "-X main.version=${GIT_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
       -o exporter-set-controller ./cmd/exporter-set-controller
 
-FROM registry.access.redhat.com/ubi9/ubi-micro:9.8-1791895366@sha256:5be877a2a280ae36eb9ab80ca4efb28bbf77c57abbba38137cdc37a03b8465e6
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.9-1794478307@sha256:dbd325b96bcd432dd42816d31412bdf1dc0fb973b79ed310344bc23c76c068db
 WORKDIR /
 COPY --from=builder /etc/pki/tls/certs/ca-bundle.crt /etc/pki/tls/certs/ca-bundle.crt
 COPY --from=builder /build/manager .

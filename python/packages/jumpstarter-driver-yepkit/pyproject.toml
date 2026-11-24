@@ -16,7 +16,6 @@ dependencies = [
 [project.entry-points."jumpstarter.drivers"]
 Ykush = "jumpstarter_driver_yepkit.driver:Ykush"
 
-
 [tool.hatch.version]
 source = "vcs"
 raw-options = { 'root' = '../../../' }
@@ -30,14 +29,13 @@ addopts = "--cov --cov-report=html --cov-report=xml"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_yepkit"]
-asyncio_mode = "auto"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
-dev = ["pytest-cov>=6.0.0", "pytest>=8.3.3"]
+dev = ["pytest-cov>=6.0.0", "pytest>=8.4"]
 
 [tool.hatch.build.hooks.pin_jumpstarter]
 name = "pin_jumpstarter"

@@ -6,17 +6,18 @@ Tests the Click CLI interface including the pipe command.
 
 import os
 import sys
+import threading
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from anyio import BrokenResourceError, EndOfStream, Event, fail_after
+from anyio import BrokenResourceError, EndOfStream, Event, create_task_group, fail_after
 from click.testing import CliRunner
 
 from .client import _stdin_supplies_data
 from .console import ConsoleStreamDrop
 from .driver import PySerial
-from jumpstarter.client.core import DriverMethodNotImplemented
+from jumpstarter.client.core import ConsoleInUse, DriverError, DriverMethodNotImplemented
 from jumpstarter.common.utils import serve
 
 
@@ -559,3 +560,132 @@ async def test_serial_to_output_receives_data_then_end_of_stream(pyserial_client
         with open("test.log", "rb") as f:  # noqa: ASYNC230
             content = f.read()
             assert content == b"HelloWorld"
+
+
+class _PipeWriter:
+    """Write end of a pipe that can be closed once, from any thread."""
+
+    def __init__(self, fd: int):
+        self._fd: int | None = fd
+        self._lock = threading.Lock()
+        self.closed_by_watchdog = False
+
+    def close(self, from_watchdog: bool = False) -> None:
+        with self._lock:
+            if self._fd is not None:
+                self.closed_by_watchdog = from_watchdog
+                os.close(self._fd)
+                self._fd = None
+
+
+def _open_text_stdin(fd: int):
+    """Wrap fd like sys.stdin: TextIOWrapper -> BufferedReader -> FileIO."""
+    return open(fd)  # closed by the caller
+
+
+@pytest.mark.anyio
+async def test_stdin_to_serial_forwards_partial_input(pyserial_client, monkeypatch):
+    """Input on a live stdin (a terminal, twister's --device-serial-pty) must be
+    forwarded as it arrives, not only once 1024 bytes or EOF are reached."""
+    read_fd, write_fd = os.pipe()
+    writer = _PipeWriter(write_fd)
+    sent = []
+    got_data = Event()
+
+    class Recorder:
+        async def send(self, data):
+            sent.append(data)
+            got_data.set()
+
+        async def send_eof(self):
+            pass
+
+    # The stdin read runs in a worker thread that cancellation can't interrupt,
+    # so a regression would hang: a watchdog closes the pipe (EOF) instead.
+    watchdog = threading.Timer(3, writer.close, kwargs={"from_watchdog": True})
+    stdin = _open_text_stdin(read_fd)
+    monkeypatch.setattr(sys, "stdin", stdin)
+    watchdog.start()
+    try:
+        os.write(write_fd, b"ping\n")
+        async with create_task_group() as tg:
+            tg.start_soon(pyserial_client._stdin_to_serial, Recorder())
+            await got_data.wait()
+            writer.close()
+    finally:
+        watchdog.cancel()
+        writer.close()
+        stdin.close()
+
+    assert not writer.closed_by_watchdog, "stdin data was only forwarded at EOF"
+    assert b"".join(sent) == b"ping\n"
+
+
+def test_pipe_command_passes_retry_options(pyserial_client):
+    """--retry-count/--retry-interval reach _pipe_serial."""
+    with patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt
+        CliRunner().invoke(pyserial_client.cli(), ["pipe", "-i", "--retry-count", "10", "--retry-interval", "0.25"])
+    assert mock_call.call_args[0][-2:] == (10, 0.25)
+
+
+def test_pipe_command_retry_defaults(pyserial_client):
+    with patch.object(pyserial_client.portal, "call") as mock_call:
+        mock_call.side_effect = KeyboardInterrupt
+        CliRunner().invoke(pyserial_client.cli(), ["pipe", "-i"])
+    assert mock_call.call_args[0][-2:] == (0, 0.5)
+
+
+def test_pipe_command_rejects_negative_retry_count(pyserial_client):
+    result = CliRunner().invoke(pyserial_client.cli(), ["pipe", "--retry-count", "-1"])
+    assert result.exit_code == 2
+
+
+def _flaky_stream_async(client, failures: list[Exception]):
+    """stream_async that raises each of ``failures`` in turn, then attaches for real."""
+    real = client.stream_async
+    calls = []
+
+    @asynccontextmanager
+    async def stream_async(method):
+        calls.append(method)
+        if failures:
+            raise failures.pop(0)
+        async with real(method) as stream:
+            yield stream
+
+    return stream_async, calls
+
+
+async def _attach_once(client, retry_count: int, retry_interval: float = 0):
+    from contextlib import AsyncExitStack
+
+    async with AsyncExitStack() as stack:
+        await client._attach(stack, "connect", retry_count, retry_interval)
+
+
+def test_attach_retries_while_console_in_use(pyserial_client):
+    stream_async, calls = _flaky_stream_async(pyserial_client, [ConsoleInUse("in use"), ConsoleInUse("in use")])
+    with patch.object(pyserial_client, "stream_async", stream_async):
+        pyserial_client.portal.call(_attach_once, pyserial_client, 2)
+    assert calls == ["connect"] * 3
+
+
+def test_attach_gives_up_after_retry_count(pyserial_client):
+    stream_async, calls = _flaky_stream_async(pyserial_client, [ConsoleInUse("in use")] * 5)
+    with patch.object(pyserial_client, "stream_async", stream_async), pytest.raises(ConsoleInUse):
+        pyserial_client.portal.call(_attach_once, pyserial_client, 2)
+    assert len(calls) == 3
+
+
+def test_attach_does_not_retry_other_errors(pyserial_client):
+    stream_async, calls = _flaky_stream_async(pyserial_client, [DriverError("broken")])
+    with patch.object(pyserial_client, "stream_async", stream_async), pytest.raises(DriverError, match="broken"):
+        pyserial_client.portal.call(_attach_once, pyserial_client, 5)
+    assert len(calls) == 1
+
+
+def test_attach_sees_a_real_console_in_use(pyserial_client):
+    """End to end: a console held by another client surfaces as ConsoleInUse."""
+    with pyserial_client.stream(), pytest.raises(ConsoleInUse):
+        pyserial_client.portal.call(_attach_once, pyserial_client, 0)

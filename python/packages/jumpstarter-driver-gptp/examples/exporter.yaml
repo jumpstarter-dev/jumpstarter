@@ -1,0 +1,17 @@
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: gptp-example
+endpoint: grpc.jumpstarter.192.168.0.203.nip.io:8082
+token: "<token>"
+export:
+  gptp:
+    type: jumpstarter_driver_gptp.driver.Gptp
+    config:
+      interface: eth0
+      domain: 0
+      profile: gptp
+      transport: L2
+      role: auto
+      sync_system_clock: true

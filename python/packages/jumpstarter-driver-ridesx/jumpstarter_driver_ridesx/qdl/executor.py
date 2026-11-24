@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import logging
 import subprocess
 from collections import Counter
+from functools import partial
 from pathlib import Path
+
+from anyio import sleep, to_thread
 
 from .. import fastboot as fb
 from ..tac import send_tac_sequence
@@ -224,7 +226,7 @@ async def _poll_dmesg(
     logger.info("Waiting for device in %s mode (marker: %s)", mode, marker)
     elapsed = 0.0
     while True:
-        await asyncio.sleep(interval)
+        await sleep(interval)
         elapsed += interval
         try:
             check_dmesg(marker, baseline=baseline)
@@ -296,17 +298,19 @@ async def execute_step(
         )
         return None
     if isinstance(step, SleepStep):
-        await asyncio.sleep(step.sleep)
+        await sleep(step.sleep)
         return None
     if isinstance(step, QdlStep):
-        result = await asyncio.to_thread(run_qdl_step, step, firmware_root, timeout=qdl_timeout)
+        result = await to_thread.run_sync(
+            partial(run_qdl_step, step, firmware_root, timeout=qdl_timeout), abandon_on_cancel=True
+        )
         if result.returncode != 0:
             raise RuntimeError(f"QDL failed ({result.returncode}): {result.stderr or result.stdout}")
         return StepResult(stdout=result.stdout, stderr=result.stderr)
     if isinstance(step, FastbootStep):
-        return await asyncio.to_thread(
-            run_fastboot_step, step, firmware_root, timeout=fastboot_timeout,
-            board_revision=board_revision,
+        return await to_thread.run_sync(
+            partial(run_fastboot_step, step, firmware_root, timeout=fastboot_timeout, board_revision=board_revision),
+            abandon_on_cancel=True,
         )
     raise TypeError(f"Unsupported step type: {type(step)!r}")
 

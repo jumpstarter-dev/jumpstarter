@@ -28,7 +28,30 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 )
+
+// updateJumpstarter reads the Jumpstarter named by key, applies mutate and
+// sends the difference as a merge patch, and returns the patched object.
+//
+// The operator writes the resource's status while it reconciles, and a status
+// write changes the resource version too. A full update carries the version it
+// read, so it can be rejected with a conflict even though the test never
+// touches the status. The merge patch carries no version: the API server
+// applies the changed fields to whatever version is current. That is safe
+// because the operator never writes the spec, so the spec the patch lands on
+// is the one mutate saw.
+func updateJumpstarter(key types.NamespacedName, mutate func(*operatorv1alpha1.Jumpstarter)) *operatorv1alpha1.Jumpstarter {
+	GinkgoHelper()
+	jumpstarter := &operatorv1alpha1.Jumpstarter{}
+	Expect(k8sClient.Get(ctx, key, jumpstarter)).To(Succeed())
+	original := jumpstarter.DeepCopy()
+	mutate(jumpstarter)
+	Expect(k8sClient.Patch(ctx, jumpstarter, client.MergeFrom(original))).To(Succeed())
+	return jumpstarter
+}
 
 // CreateTestNamespace creates a unique test namespace with a UUID suffix.
 // It returns the generated namespace name.

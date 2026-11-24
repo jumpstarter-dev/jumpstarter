@@ -17,24 +17,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func LoadRouterConfiguration(
-	ctx context.Context,
-	client client.Reader,
-	key client.ObjectKey,
-) ([]grpc.ServerOption, error) {
-	var configmap corev1.ConfigMap
-	if err := client.Get(ctx, key, &configmap); err != nil {
+func LoadRouterConfiguration(path string) ([]grpc.ServerOption, error) {
+	rawConfig, err := os.ReadFile(path)
+	if err != nil {
 		return nil, err
 	}
 
-	rawConfig, ok := configmap.Data["config"]
-	if !ok {
-		return nil, fmt.Errorf("LoadRouterConfiguration: missing config section")
-	}
-
 	var config Config
-	err := yaml.UnmarshalStrict([]byte(rawConfig), &config)
-	if err != nil {
+	if err := yaml.UnmarshalStrict(rawConfig, &config); err != nil {
 		return nil, err
 	}
 

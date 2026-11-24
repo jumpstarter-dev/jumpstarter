@@ -1,4 +1,4 @@
-import asyncio
+import asyncio  # noqa: TID251
 import base64
 import logging
 from typing import Literal

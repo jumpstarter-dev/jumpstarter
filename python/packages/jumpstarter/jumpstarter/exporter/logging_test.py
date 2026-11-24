@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from jumpstarter.common import LogSource
-from jumpstarter.exporter.logging import LogHandler, get_logger
+from jumpstarter.exporter.logging import LogFanOut, LogHandler, get_logger
 
 
 class TestLogHandler:
@@ -238,6 +238,31 @@ class TestLogHandlerContextManager:
 
         assert len(queue) == 1
         assert queue[0].source == LogSource.BEFORE_LEASE_HOOK.value
+
+
+class TestLogFanOut:
+    def test_last_stream_leaves_its_unread_records_to_the_next(self) -> None:
+        """A client that reconnects mid-hook still gets what its old stream had not sent."""
+        fanout = LogFanOut()
+        with fanout.subscribe() as first:
+            fanout.append("sent")
+            assert first.popleft() == "sent"
+            fanout.append("not sent yet")
+        fanout.append("logged while no stream is open")
+
+        with fanout.subscribe() as second:
+            assert list(second) == ["not sent yet", "logged while no stream is open"]
+
+    def test_stream_closing_beside_another_leaves_nothing_behind(self) -> None:
+        """The stream still open has the closing one's unread records already."""
+        fanout = LogFanOut()
+        with fanout.subscribe() as staying:
+            with fanout.subscribe():
+                fanout.append("for both")
+            assert staying.popleft() == "for both"
+
+        with fanout.subscribe() as later:
+            assert not later
 
 
 class TestGetLogger:

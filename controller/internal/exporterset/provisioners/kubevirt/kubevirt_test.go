@@ -60,8 +60,8 @@ func TestParseParams_defaults(t *testing.T) {
 	if p.Memory != defaultMemory {
 		t.Errorf("memory = %q, want %q", p.Memory, defaultMemory)
 	}
-	if p.DiskSize != defaultDiskSize {
-		t.Errorf("diskSize = %q, want %q", p.DiskSize, defaultDiskSize)
+	if got := p.Storage.Disks["root"].Size; got != defaultDiskSize {
+		t.Errorf("root disk size = %q, want %q", got, defaultDiskSize)
 	}
 	if p.Image != "quay.io/test/image:latest" {
 		t.Errorf("image = %q", p.Image)
@@ -112,8 +112,8 @@ func TestParseParams_overridesResources(t *testing.T) {
 	if p.Memory != "16Gi" {
 		t.Errorf("memory = %q, want 16Gi", p.Memory)
 	}
-	if p.DiskSize != "100Gi" {
-		t.Errorf("diskSize = %q, want 100Gi", p.DiskSize)
+	if got := p.Storage.Disks["root"].Size; got != "100Gi" {
+		t.Errorf("root disk size = %q, want 100Gi", got)
 	}
 }
 
@@ -153,7 +153,26 @@ func TestParseParams_rejectsInvalidMemory(t *testing.T) {
 	}
 }
 
-func TestEnrichExporterExport_injectsAllDrivers(t *testing.T) {
+func TestParseParams_rejectsDiskNamesLongerThanTheVirtioBlkID(t *testing.T) {
+	params := map[string]any{
+		"namespace": "test-ns",
+		"image":     "quay.io/test/image:latest",
+		"storage": map[string]any{
+			"type": "dataVolume",
+			"disks": map[string]any{
+				"root":                  map[string]any{"size": "10Gi"},
+				"abcdefghijklmnopqrstu": map[string]any{"size": "1Gi"},
+			},
+		},
+	}
+
+	_, err := parseParams(params)
+	if err == nil {
+		t.Fatal("expected error for a disk name longer than the virtio-blk ID")
+	}
+}
+
+func TestEnrichExporterExport_injectsPowerAndConsoleForContainerDisk(t *testing.T) {
 	prov := New("dev", nil)
 
 	params := map[string]any{
@@ -169,7 +188,11 @@ func TestEnrichExporterExport_injectsAllDrivers(t *testing.T) {
 
 	assertDriverExists(t, result, "power", kubevirtPowerType)
 	assertDriverExists(t, result, "console", kubevirtConsoleType)
-	assertDriverExists(t, result, "storage", kubevirtStorageType)
+	// Flashing requires DataVolume-backed disks, so a containerDisk VM gets no
+	// storage driver at all.
+	if d := findDriver(result, "storage"); d != nil {
+		t.Errorf("storage driver injected for containerDisk storage")
+	}
 }
 
 func TestEnrichExporterExport_forwardPortsNotInjectedWithoutVTC(t *testing.T) {
@@ -329,12 +352,13 @@ func TestEnrichExporterExport_storageConfigUsesProvisionedDiskSettings(t *testin
 		t.Fatal("storage driver not found")
 	}
 	config := unmarshalConfig(t, storageDriver.Config)
-	if got := config["disk_size"]; got != "40Gi" {
+	root := config["disks"].(map[string]any)["root"].(map[string]any)
+	if got := root["size"]; got != "40Gi" {
 		t.Errorf("storage disk_size = %v, want 40Gi", got)
 	}
-	accessModes, ok := config["access_modes"].([]any)
+	accessModes, ok := root["access_modes"].([]any)
 	if !ok || len(accessModes) != 1 || accessModes[0] != "ReadWriteMany" {
-		t.Errorf("storage access_modes = %#v, want [ReadWriteMany]", config["access_modes"])
+		t.Errorf("storage access_modes = %#v, want [ReadWriteMany]", root["access_modes"])
 	}
 }
 
@@ -421,6 +445,17 @@ func newRemoteTestProvisioner(
 	objects ...client.Object,
 ) (*Provisioner, *virtualtargetv1alpha1.VirtualTargetClass) {
 	t.Helper()
+	prov, vtc, _ := newRemoteTestProvisionerWithRemote(t, objects...)
+	return prov, vtc
+}
+
+// newRemoteTestProvisionerWithRemote also returns the remote client, so a test can
+// inspect what the provisioner wrote to the remote cluster.
+func newRemoteTestProvisionerWithRemote(
+	t *testing.T,
+	objects ...client.Object,
+) (*Provisioner, *virtualtargetv1alpha1.VirtualTargetClass, client.Client) {
+	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
@@ -429,7 +464,7 @@ func newRemoteTestProvisioner(
 		ObjectMeta: metav1.ObjectMeta{Name: "credentials", Namespace: "test-ns"},
 	}
 	managementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
-	remoteClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+	remoteClient := fake.NewClientBuilder().WithScheme(remoteScheme()).WithObjects(objects...).Build()
 	vtc := &virtualtargetv1alpha1.VirtualTargetClass{
 		ObjectMeta: metav1.ObjectMeta{Name: "kubevirt-class", Namespace: "test-ns"},
 		Spec: virtualtargetv1alpha1.VirtualTargetClassSpec{
@@ -445,7 +480,7 @@ func newRemoteTestProvisioner(
 	}
 	prov := New("dev", managementClient)
 	prov.remoteClients.set("test-ns/kubevirt-class/"+storedSecret.ResourceVersion, remoteClient)
-	return prov, vtc
+	return prov, vtc, remoteClient
 }
 
 func findDriver(drivers []virtualtargetv1alpha1.DriverConfig, name string) *virtualtargetv1alpha1.DriverConfig {

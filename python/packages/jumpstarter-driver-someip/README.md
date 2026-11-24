@@ -54,7 +54,11 @@ export:
 
 When the target ECU does not run SOME/IP-SD (e.g. Zephyr firmware with
 multicast TX disabled), set `remote_host` and optionally `remote_port`
-to send messages directly without Service Discovery:
+to send messages directly without Service Discovery.
+
+opensomeip 0.2 sends RPC and events to `remote_host` when it is set, and
+does not fall back to `127.0.0.1:30490`. Point `remote_host` at the peer's
+application endpoint (the address that peer binds).
 
 ```yaml
 export:
@@ -167,6 +171,9 @@ RPC handlers run inside the exporter process, so responses are configured
 declaratively rather than via a per-request callback: set a canned response for
 a `(service_id, method_id)` and the server serves it. This maps naturally onto
 getter-style SOME/IP methods; update the response to change what a client reads.
+opensomeip 0.2 serves those methods on the application socket for every
+service this driver has offered or given a method response. A client reaches
+the simulated ECU by setting `remote_host` to this exporter's `host` and `port`.
 
 ```python
 from jumpstarter.common.utils import env

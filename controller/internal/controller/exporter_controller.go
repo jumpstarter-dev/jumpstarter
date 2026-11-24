@@ -34,7 +34,15 @@ import (
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 )
 
-const reasonSeen = "Seen"
+const (
+	reasonSeen = "Seen"
+
+	// exporterOfflineThreshold is how long after the last heartbeat an exporter
+	// is considered offline. The ExporterSet reconciler
+	// (internal/exporterset/reconciler.go) uses the same value to decide when a
+	// deployed exporter can be recycled — if either changes, both must change.
+	exporterOfflineThreshold = time.Minute
+)
 
 // ExporterReconciler reconciles a Exporter object
 type ExporterReconciler struct {
@@ -131,7 +139,7 @@ func (r *ExporterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			exporter.Name, exporter.Status.LastSeen.String())
 	} else if prevOnline && !newOnline {
 		if exporter.Status.ExporterStatusValue == jumpstarterdevv1alpha1.ExporterStatusOffline &&
-			time.Since(exporter.Status.LastSeen.Time) <= time.Minute {
+			time.Since(exporter.Status.LastSeen.Time) <= exporterOfflineThreshold {
 			r.emitEventf(&exporter, corev1.EventTypeWarning, "ExporterOffline",
 				"Exporter reported offline (graceful shutdown): exporter=%s message=%s",
 				exporter.Name, exporter.Status.StatusMessage)
@@ -298,7 +306,7 @@ func (r *ExporterReconciler) reconcileStatusConditionsOnline(
 		// Online once the Status stream connects and updates LastSeen.
 		exporter.Status.StatusMessage = "Never seen"
 		// marking the exporter as not yet seen, no need to requeue
-	} else if time.Since(exporter.Status.LastSeen.Time) > time.Minute {
+	} else if time.Since(exporter.Status.LastSeen.Time) > exporterOfflineThreshold {
 		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
 			Type:               string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 			Status:             metav1.ConditionFalse,

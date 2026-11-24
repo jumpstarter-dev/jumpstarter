@@ -115,7 +115,7 @@ for f in __init__.py client.py driver_test.py driver.py; do
     envsubst < ${SCRIPT_DIR}/driver/jumpstarter_driver/${f}.tmpl > ${MODULE_DIRECTORY}/${f}
 done
 
-for f in .gitignore pyproject.toml examples/exporter.yaml; do
+for f in .gitignore pyproject.toml conftest.py examples/exporter.yaml; do
     echo "Creating: ${DRIVER_DIRECTORY}/${f}"
     envsubst < ${SCRIPT_DIR}/driver/${f}.tmpl > ${DRIVER_DIRECTORY}/${f}
 done

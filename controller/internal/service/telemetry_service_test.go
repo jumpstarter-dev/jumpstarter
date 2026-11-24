@@ -587,14 +587,13 @@ func startTelemetryGRPCServer(t *testing.T, signer *oidc.Signer) (addr string, l
 	}
 	if conn == nil {
 		cancel()
-		<-errCh
-		t.Fatal("telemetry gRPC server did not become ready")
+		t.Fatalf("telemetry gRPC server did not become ready: Start returned %v", <-errCh)
 	}
 
 	cleanup = func() {
 		_ = conn.Close()
 		cancel()
-		<-errCh
+		t.Logf("telemetry server stopped: %v", <-errCh)
 	}
 	_ = client // returned via dialTelemetryClient helper below
 	return addr, logBuf, cleanup
@@ -702,8 +701,7 @@ func TestTelemetryService_StartDrainsLokiAfterGRPCStops(t *testing.T) {
 	if conn == nil {
 		cancel()
 		releaseFlush()
-		<-errCh
-		t.Fatal("telemetry gRPC server did not become ready")
+		t.Fatalf("telemetry gRPC server did not become ready: Start returned %v", <-errCh)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 

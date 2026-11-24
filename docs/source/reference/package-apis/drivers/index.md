@@ -5,6 +5,15 @@ driver is contained in a separate package in the form of
 `jumpstarter-driver-{name}` and provides specific functionality for interacting
 with different hardware components and systems.
 
+## Common Configuration
+
+All drivers support these base configuration fields:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `log_level` | Logging level (`DEBUG`, `INFO`, `WARNING`, etc.). Inherited from the parent driver when unset. | parent's level, else `"INFO"` |
+| `description` | Custom description shown in CLI help | `None` |
+
 ## Types of Drivers
 
 Jumpstarter includes several types of drivers organized by their primary
@@ -29,6 +38,7 @@ Drivers that control the power state and basic operation of devices:
 Drivers that provide various communication interfaces:
 
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
+- {doc}`iOS Device <iosdevice>` (`jumpstarter-driver-iosdevice`) - Per-device iOS usbmux transport
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
@@ -70,6 +80,7 @@ Drivers for automotive diagnostic protocols:
 - {doc}`UDS over CAN <uds-can>` (`jumpstarter-driver-uds-can`) - UDS diagnostics over CAN/ISO-TP transport
 - {doc}`OBD-II <obd>` (`jumpstarter-driver-obd`) - OBD-II vehicle diagnostics via ELM327
 - {doc}`SOME/IP <someip>` (`jumpstarter-driver-someip`) - SOME/IP protocol operations via opensomeip
+- {doc}`gPTP <gptp>` (`jumpstarter-driver-gptp`) - IEEE 802.1AS / PTP time synchronization for automotive Ethernet (linuxptp)
 
 ### Flashing and Programming
 
@@ -82,12 +93,14 @@ Drivers for flashing firmware and programming devices:
 - {doc}`ST-LINK MSD <stlink-msd>` (`jumpstarter-driver-stlink-msd`) - ST-LINK mass storage flasher for STM32
 - {doc}`U-Boot <uboot>` (`jumpstarter-driver-uboot`) - Universal Bootloader interface
 - {doc}`RideSX <ridesx>` (`jumpstarter-driver-ridesx`) - RideSX fastboot flashing, QDL platform updates, and power management for Qualcomm automotive SoCs
+- {doc}`Zephyr <zephyr>` (`jumpstarter-driver-zephyr`) - Flash Zephyr firmware on a remote board (server-side twister workflow)
 
 ### Emulation
 
 Drivers for virtual and emulated targets:
 
 - {doc}`Android Emulator <androidemulator>` (`jumpstarter-driver-androidemulator`) - Android emulator lifecycle management with ADB tunneling
+- {doc}`iOS Simulator <iossimulator>` (`jumpstarter-driver-iossimulator`) - iOS Simulator lifecycle and idb transport
 - {doc}`KubeVirt <kubevirt>` (`jumpstarter-driver-kubevirt`) - KubeVirt virtual machine provisioning on remote clusters
 - {doc}`QEMU <qemu>` (`jumpstarter-driver-qemu`) - QEMU virtual machine management
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
@@ -105,6 +118,7 @@ Drivers for signal capture, analysis, and protocol decoding:
 
 General-purpose utility drivers:
 
+- {doc}`Appium <appium>` (`jumpstarter-driver-appium`) - Shared Appium interface for UI automation on iOS and Android targets
 - {doc}`Shell <shell>` (`jumpstarter-driver-shell`) - Shell command execution
 - {doc}`SSH Mount <ssh-mount>` (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
 - {doc}`TMT <tmt>` (`jumpstarter-driver-tmt`) - Test Management Tool wrapper
@@ -113,6 +127,7 @@ General-purpose utility drivers:
 :hidden:
 adb.md
 androidemulator.md
+appium.md
 ble.md
 bt-peer.md
 can.md
@@ -127,8 +142,11 @@ energenie.md
 esp32.md
 flashers.md
 gpiod.md
+gptp.md
 http.md
 http-power.md
+iosdevice.md
+iossimulator.md
 iscsi.md
 kubevirt.md
 mitmproxy.md
@@ -166,4 +184,5 @@ video.md
 vnc.md
 xcp.md
 yepkit.md
+zephyr.md
 ```

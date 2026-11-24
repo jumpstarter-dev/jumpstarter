@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -16,7 +15,7 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import yaml
-from anyio import fail_after, run_process, sleep
+from anyio import EndOfStream, current_time, fail_after, move_on_after, run_process, sleep
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -26,6 +25,7 @@ from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
 from jumpstarter.common.fls import get_fls_binary
+from jumpstarter.common.process import open_streaming_process
 from jumpstarter.driver import Driver, FlasherInterface, export
 from jumpstarter.streams.encoding import AutoDecompressIterator
 
@@ -43,15 +43,6 @@ def _vsock_available(socket_path: str = "/dev/vhost-vsock") -> bool:
 class QmpLogFilter(logging.Filter):
     def filter(self, record):
         return False
-
-
-async def _read_pipe(stream: asyncio.StreamReader, name: str, queue: asyncio.Queue):
-    while True:
-        line = await stream.readline()
-        if not line:
-            break
-        await queue.put((name, line.decode("utf-8", errors="replace")))
-    await queue.put((name, None))
 
 
 @dataclass(kw_only=True)
@@ -138,62 +129,27 @@ class QemuFlasher(FlasherInterface, Driver):
         self, cmd: list[str], env: dict[str, str] | None
     ) -> AsyncGenerator[tuple[str, str, int | None], None]:
         """Run a subprocess and yield (stdout, stderr, returncode) tuples as output arrives."""
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
-
-        output_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
-
-        assert process.stdout is not None and process.stderr is not None
-        tasks = [
-            asyncio.create_task(_read_pipe(process.stdout, "stdout", output_queue)),
-            asyncio.create_task(_read_pipe(process.stderr, "stderr", output_queue)),
-        ]
-
-        finished_streams = 0
-        start_time = asyncio.get_running_loop().time()
-
-        try:
-            while finished_streams < 2:
-                elapsed = asyncio.get_running_loop().time() - start_time
-                if elapsed >= self.parent.flash_timeout:
-                    process.kill()
-                    await process.wait()
+        deadline = current_time() + self.parent.flash_timeout
+        async with open_streaming_process(cmd, env=env, stop_grace=0) as process:
+            while True:
+                with move_on_after(deadline - current_time()) as timeout:
+                    try:
+                        line = await process.receive_line()
+                    except EndOfStream:
+                        break
+                if timeout.cancelled_caught:
+                    await process.stop()
                     raise RuntimeError(f"fls flash timed out after {self.parent.flash_timeout}s")
+                text = line.data.decode("utf-8", errors="replace")
+                yield (text, "", None) if line.source == "stdout" else ("", text, None)
+            returncode = await process.wait()
 
-                remaining = self.parent.flash_timeout - elapsed
-                try:
-                    name, text = await asyncio.wait_for(output_queue.get(), timeout=min(remaining, 30))
-                except TimeoutError:
-                    continue
+        if returncode != 0:
+            self.logger.error(f"fls failed - return code: {returncode}")
+            raise RuntimeError(f"fls flash failed (return code {returncode})")
 
-                if text is None:
-                    finished_streams += 1
-                    continue
-
-                stdout_chunk = text if name == "stdout" else ""
-                stderr_chunk = text if name == "stderr" else ""
-                yield stdout_chunk, stderr_chunk, None
-
-            await process.wait()
-            returncode = process.returncode
-
-            if returncode != 0:
-                self.logger.error(f"fls failed - return code: {returncode}")
-                raise RuntimeError(f"fls flash failed (return code {returncode})")
-
-            self.logger.info("OCI flash completed successfully")
-            yield "", "", returncode
-        finally:
-            for task in tasks:
-                task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
+        self.logger.info("OCI flash completed successfully")
+        yield "", "", returncode
 
     @export
     async def dump(self, target, partition: str | None = None):
@@ -321,6 +277,7 @@ class QemuPower(PowerInterface, Driver):
                 self.parent._wrap_command(["qemu-img", "info", "--output=json", str(root)]),
                 stdout=PIPE,
                 stderr=PIPE,
+                check=False,
             )
             try:
                 proc.check_returncode()
@@ -360,6 +317,7 @@ class QemuPower(PowerInterface, Driver):
                         self.parent._wrap_command(["qemu-img", "resize", str(root), str(requested)]),
                         stdout=PIPE,
                         stderr=PIPE,
+                        check=False,
                     )
                     if proc.returncode != 0:
                         raise RuntimeError(f"Failed to resize disk: {proc.stderr.decode()}")

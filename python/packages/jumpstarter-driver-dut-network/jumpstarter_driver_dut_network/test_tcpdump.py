@@ -4,11 +4,13 @@ Tests config validation (enable_tcpdump gating), argument sanitization,
 and the streaming driver method using mocked subprocesses.
 """
 
-import asyncio
+import os
+import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from anyio import fail_after
 
 from .driver import DutNetwork
 
@@ -160,127 +162,87 @@ class TestSanitizeTcpdumpArgs:
         assert DutNetwork._sanitize_tcpdump_args(args) == ["-c", "5"]
 
 
+FAKE_TCPDUMP = """\
+import os, sys, time
+mode = os.environ["FAKE_TCPDUMP"]
+if mode == "args":
+    print(" ".join(sys.argv[1:]), flush=True)
+elif mode == "lines":
+    sys.stderr.write("tcpdump: listening on eth-dut\\n")
+    sys.stderr.flush()
+    print("12:00:00.000000 IP 192.168.100.10 > 8.8.8.8: ICMP echo request", flush=True)
+    print("12:00:00.001000 IP 8.8.8.8 > 192.168.100.10: ICMP echo reply", flush=True)
+elif mode == "forever":
+    print(os.getpid(), flush=True)
+    time.sleep(60)
+"""
+
+
+@pytest.fixture
+def fake_tcpdump(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tcpdump = bin_dir / "tcpdump"
+    tcpdump.write_text(f"#!{sys.executable}\n{FAKE_TCPDUMP}")
+    tcpdump.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    return lambda mode: monkeypatch.setenv("FAKE_TCPDUMP", mode)
+
+
 class TestTcpdumpMethod:
-    def test_tcpdump_raises_when_disabled(self, tmp_path: Path):
+    @pytest.mark.anyio
+    async def test_tcpdump_raises_when_disabled(self, tmp_path: Path):
         driver = _make_driver(tmp_path, enable_tcpdump=False)
         with pytest.raises(RuntimeError, match="tcpdump is not enabled"):
-            asyncio.run(
-                _consume_async_gen(driver.tcpdump())
-            )
+            await _consume_async_gen(driver.tcpdump())
 
-    def test_tcpdump_streams_output(self, tmp_path: Path):
+    @pytest.mark.anyio
+    async def test_tcpdump_streams_output_lines_with_stderr_merged(self, tmp_path: Path, fake_tcpdump):
+        fake_tcpdump("lines")
         driver = _make_driver(tmp_path, enable_tcpdump=True)
 
-        mock_stdout = AsyncMock()
-        lines = [
-            b"12:00:00.000000 IP 192.168.100.10 > 8.8.8.8: ICMP echo request\n",
-            b"12:00:00.001000 IP 8.8.8.8 > 192.168.100.10: ICMP echo reply\n",
-            b"",  # EOF
+        output = await _consume_async_gen(driver.tcpdump())
+
+        assert output == [
+            "tcpdump: listening on eth-dut",
+            "12:00:00.000000 IP 192.168.100.10 > 8.8.8.8: ICMP echo request",
+            "12:00:00.001000 IP 8.8.8.8 > 192.168.100.10: ICMP echo reply",
         ]
-        state = {"call_count": 0}
 
-        async def mock_readline():
-            if state["call_count"] < len(lines):
-                result = lines[state["call_count"]]
-                state["call_count"] += 1
-                return result
-            return b""
-
-        mock_stdout.readline = mock_readline
-
-        mock_proc = AsyncMock()
-        mock_proc.stdout = mock_stdout
-        mock_proc.returncode = None
-        mock_proc.terminate = MagicMock()
-        mock_proc.wait = AsyncMock()
-
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc):
-            output = asyncio.run(
-                _consume_async_gen(driver.tcpdump())
-            )
-
-        assert len(output) == 2
-        assert "ICMP echo request" in output[0]
-        assert "ICMP echo reply" in output[1]
-
-    def test_tcpdump_enforces_interface(self, tmp_path: Path):
+    @pytest.mark.anyio
+    async def test_tcpdump_enforces_interface(self, tmp_path: Path, fake_tcpdump):
+        fake_tcpdump("args")
         driver = _make_driver(tmp_path, enable_tcpdump=True)
 
-        mock_stdout = AsyncMock()
-        mock_stdout.readline = AsyncMock(return_value=b"")
+        [args] = await _consume_async_gen(driver.tcpdump(args=["-i", "evil-iface", "-c", "1"]))
 
-        mock_proc = AsyncMock()
-        mock_proc.stdout = mock_stdout
-        mock_proc.returncode = 0
-        mock_proc.terminate = MagicMock()
-        mock_proc.wait = AsyncMock()
-
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc) as mock_exec:
-            asyncio.run(
-                _consume_async_gen(driver.tcpdump(args=["-i", "evil-iface", "-c", "1"]))
-            )
-
-        # Verify the command was called with the correct interface
-        call_args = mock_exec.call_args[0]
-        cmd = list(call_args)
-        assert cmd[0] == "tcpdump"
-        assert "-i" in cmd
-        iface_idx = cmd.index("-i")
-        assert cmd[iface_idx + 1] == "eth-dut"
-        # The user-specified -i should have been removed by sanitization
+        cmd = args.split()
+        assert cmd[cmd.index("-i") + 1] == "eth-dut"
         assert cmd.count("-i") == 1
 
-    def test_tcpdump_passes_extra_args(self, tmp_path: Path):
+    @pytest.mark.anyio
+    async def test_tcpdump_passes_extra_args(self, tmp_path: Path, fake_tcpdump):
+        fake_tcpdump("args")
         driver = _make_driver(tmp_path, enable_tcpdump=True)
 
-        mock_stdout = AsyncMock()
-        mock_stdout.readline = AsyncMock(return_value=b"")
+        [args] = await _consume_async_gen(driver.tcpdump(args=["-c", "10", "-n", "port", "80"]))
 
-        mock_proc = AsyncMock()
-        mock_proc.stdout = mock_stdout
-        mock_proc.returncode = 0
-        mock_proc.terminate = MagicMock()
-        mock_proc.wait = AsyncMock()
+        assert args.endswith("-c 10 -n port 80")
 
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc) as mock_exec:
-            asyncio.run(
-                _consume_async_gen(driver.tcpdump(args=["-c", "10", "-n", "port", "80"]))
-            )
-
-        call_args = mock_exec.call_args[0]
-        cmd = list(call_args)
-        assert "-c" in cmd
-        assert "10" in cmd
-        assert "-n" in cmd
-        assert "port" in cmd
-        assert "80" in cmd
-
-    def test_tcpdump_cleanup_on_cancel(self, tmp_path: Path):
+    @pytest.mark.anyio
+    async def test_tcpdump_stops_when_the_consumer_stops(self, tmp_path: Path, fake_tcpdump):
+        fake_tcpdump("forever")
         driver = _make_driver(tmp_path, enable_tcpdump=True)
+        stream = driver.tcpdump()
 
-        mock_stdout = AsyncMock()
-        # Simulate a stream that never ends
-        mock_stdout.readline = AsyncMock(
-            side_effect=[b"line 1\n", b"line 2\n", asyncio.CancelledError()]
-        )
+        with fail_after(10):
+            pid = int(await stream.__anext__())
+            assert driver._tcpdump_process is not None
+            await stream.aclose()
 
-        mock_proc = AsyncMock()
-        mock_proc.stdout = mock_stdout
-        mock_proc.returncode = None
-        mock_proc.terminate = MagicMock()
-        mock_proc.wait = AsyncMock()
-
-        with patch(f"{_DRIVER_MODULE}.asyncio.subprocess.create_subprocess_exec",
-                   return_value=mock_proc), pytest.raises(asyncio.CancelledError):
-            asyncio.run(
-                _consume_async_gen(driver.tcpdump())
-            )
-
-        # Verify the process was terminated
-        mock_proc.terminate.assert_called_once()
+        assert driver._tcpdump_process is None
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
 
 
 class TestTcpdumpCleanup:

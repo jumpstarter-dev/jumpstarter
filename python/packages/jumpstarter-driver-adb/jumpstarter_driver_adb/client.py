@@ -1,14 +1,17 @@
-import asyncio
 import subprocess
 from collections.abc import Generator
 from concurrent.futures import CancelledError as FutureCancelledError
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import anyio
 import click
 from jumpstarter_driver_network.adapters import TcpPortforwardAdapter
 
 from jumpstarter.client import DriverClient
+
+if TYPE_CHECKING:
+    from jumpstarter_driver_appium.client import AppiumClient
 
 #: Seconds to allow the **local** ``adb connect`` when attaching.
 #:
@@ -23,24 +26,6 @@ ADB_CONNECT_TIMEOUT = 60.0
 #: Seconds to allow the local ``adb disconnect`` during teardown. Shorter than the
 #: connect: nothing has to be started, and teardown must not hang on a wedged adb.
 ADB_DISCONNECT_TIMEOUT = 30.0
-
-
-def _is_cancelled(exc: BaseException) -> bool:
-    """Whether *exc* is a task cancellation.
-
-    Checked without ``anyio.get_cancelled_exc_class()``, which resolves the *running*
-    backend and raises ``NoEventLoopError`` when there is none. These waits run in a
-    worker thread, off the loop, so asking there would raise from the except arm and
-    mask the very cancellation being handled -- reproduced as a test failure.
-
-    Both backends' cancellations are matched directly: asyncio's ``CancelledError``
-    (which trio's also subclasses on recent versions) and trio's ``Cancelled`` by
-    name, so trio need not be installed. Portal futures can instead raise
-    ``concurrent.futures.CancelledError`` when their task is cancelled.
-    """
-    if isinstance(exc, (asyncio.CancelledError, FutureCancelledError)):
-        return True
-    return type(exc).__name__ == "Cancelled" and type(exc).__module__.startswith("trio")
 
 
 def _wait_for_interrupt(client: DriverClient) -> None:
@@ -63,15 +48,10 @@ def _wait_for_interrupt(client: DriverClient) -> None:
     """
     try:
         client.portal.call(anyio.sleep_forever)
-    except (KeyboardInterrupt, SystemExit, GeneratorExit, RuntimeError):
-        # RuntimeError covers the portal already being shut down when we ask.
+    except (KeyboardInterrupt, SystemExit, GeneratorExit, RuntimeError, FutureCancelledError):
+        # RuntimeError covers the portal already being shut down when we ask, and
+        # the portal reports its cancelled task as a cancelled future.
         return
-    except BaseException as e:
-        # Cancellation derives from BaseException, not Exception, so it needs its
-        # own arm.
-        if _is_cancelled(e):
-            return
-        raise
 
 
 def _adb_connect(adb: str, target: str, *, timeout: float = ADB_CONNECT_TIMEOUT) -> str:
@@ -221,6 +201,14 @@ class AdbDeviceClient(DriverClient):
     and ``serve`` just holds the address open so you can drive adb yourself.
     """
 
+    @property
+    def appium(self) -> "AppiumClient":
+        """The device's Appium, when the exporter configures one; see the shared Appium client."""
+        child = self.children.get("appium")
+        if child is None:
+            raise AttributeError("Appium is not configured for this device on the exporter")
+        return child  # ty: ignore[invalid-return-type]
+
     def info(self) -> dict:
         """Describe the device: transport, selector, and whether it is present."""
         return self.call("info")
@@ -306,6 +294,9 @@ class AdbDeviceClient(DriverClient):
             Jumpstarter does not wrap the adb CLI. Use `connect` to add this device to
             your own ADB server, then run your own `adb -s <address> ...`.
             """
+
+        if "appium" in self.children:
+            adb.add_command(self.appium.cli(), "appium")
 
         @adb.command()
         def info():

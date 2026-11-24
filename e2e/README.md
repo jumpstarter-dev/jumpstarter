@@ -13,11 +13,21 @@ it; it can't generate the prerequisite/steps/pass-check text.
 ## Global prerequisites (`make e2e-run`, non-compat suite)
 
 Built by `make e2e-setup` (`e2e/setup-e2e.sh`): kind cluster, dex OIDC provider +
-TLS CA, controller/operator deployed via `make -C controller deploy`, namespace
+TLS CA, controller/operator deployed via `make -C controller deploy` with
+telemetry enabled (`OPERATOR_ENABLE_TELEMETRY=true`, which requires the locally
+built telemetry image), telemetry reachable from the host as
+`telemetry.<baseDomain>:9093` (NodePort 30015 created by the operator from
+`spec.telemetry.grpc.endpoints`, mapped to host port 9093 by
+`controller/hack/kind_cluster.yaml`, with the same baseDomain DNS/hosts setup as
+the other gRPC endpoints; a kind
+cluster created before that mapping existed must be recreated with
+`make -C controller clean`), namespace
 `jumpstarter-lab`, service accounts `test-client-sa`/`test-exporter-sa`,
 `/etc/jumpstarter/exporters` dir, endpoint/login-endpoint env written to
 `.e2e-setup-complete`, QEMU guest image prefetched. Tests run via `make e2e-run`
 → `e2e/run-e2e.sh` (`go run ginkgo`) with `JUMPSTARTER_GRPC_INSECURE=1`.
+
+No `.svc` host alias is needed for telemetry.
 
 ---
 
@@ -185,6 +195,28 @@ arch detected via `qemu-guest-arch.sh`; Alpine guest image ensured via
 
 ---
 
+## Lane: `exporterset-qemu-ssh` (`exporterset_qemu_ssh_test.go`)
+
+Prereq: `setup-qemu-ssh-e2e.sh` configures root SSH + rootful Podman on the CI
+runner (needs passwordless `sudo`), copies exporter/runtime images into rootful
+Podman's store from the container tool that built them, detects the
+Kind-reachable host IP (the host's primary address; `IP=` overrides), creates
+the SSH Secret, and renders `.e2e/exporterset-qemu-ssh-kind.yaml` from
+`manifests/exporterset-qemu-ssh-kind.yaml`. The cluster must enable
+`qemu-ssh.jumpstarter.dev`; the e2e deploy template
+`controller/hack/deploy_with_operator.sh` (used by `make e2e-setup`) does.
+OIDC client `test-client-exporterset-qemu-ssh`. AfterAll deletes CRs and runs
+`setup-qemu-ssh-e2e.sh --cleanup` for host-side quadlets/containers and the
+SSH Secret.
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| brings an Exporter Online via SSH-deployed Podman containers | wait for ExporterSet-created Exporter, wait Online/Registered/Available; check `sudo podman ps` for e2e containers | exporter Available; exporter+runtime containers Up |
+| recycles a terminal exporter and refills the pool (ExitAndReplace) | record the Available exporter, lease+release so exitOnLeaseEnd makes it terminal, wait for recycle (runs before the power-cycle test so it starts from a never-leased exporter) | old exporter deleted; one replacement with a new UID comes Online; replacement's containers Up |
+| can lease, power on, and power off through the SSH-deployed exporter | `jmp shell` → `j qemu power on && sleep 5 && j qemu power off` | no error |
+
+---
+
 ## Lane: `auth-logging` (`auth_logging_test.go`)
 
 Prereq: self-contained — creates its own legacy client/exporter
@@ -196,6 +228,27 @@ in compat suites** (old controllers lack this logging; the Describe is not label
 |---|---|---|
 | controller logs client authentication failures with the peer address | corrupt token in client's local yaml config, `jmp get exporters --client test-client-authlog` | command errors; controller logs (since test start) eventually contain "client authentication failed" with a `"peer"` field; corrupted token value never appears in logs |
 | controller logs exporter authentication failures with the peer address | corrupt token in exporter's yaml config, start exporter once | controller logs eventually contain "exporter authentication failed" with `"peer"`; token value never appears in logs |
+
+---
+
+## Lane: `telemetry` (`telemetry_test.go`)
+
+Prereq: self-contained — creates its own dex OIDC client/exporter
+(`test-client-telemetry` / `test-exporter-telemetry`, label
+`example.com/board=telemetry`), logs both in with the password grant, applies the
+driver overlay `exporter.yaml`, runs the exporter in loop mode, and takes one
+lease for both specs with `jmp shell --client test-client-telemetry --selector
+example.com/board=telemetry j power on`. Needs the
+global telemetry setup. Setup checks the operator advertises `telemetry.<baseDomain>`
+and a CA certificate, so both callers use verified TLS rather than a `.svc` host alias.
+Telemetry runs without Loki, so it writes PushLogs entries
+to its stdout. **Not run in compat suites**: older controllers issue no
+telemetry token.
+
+| Test Name | Steps | Pass Check |
+|---|---|---|
+| reports metrics from an exporter logged in through dex | none (uses the setup lease) | telemetry `/metrics` (read through the API server pod proxy on port 8080) eventually has `jumpstarter_operation_duration_seconds_count{driver_type="power",exporter="test-exporter-telemetry",operation="on",result="success"}` |
+| receives logs from that exporter and from jmp shell | none (uses the setup lease) | telemetry pod logs since the lane started eventually hold a JSON entry with `component=exporter`, `exporter=test-exporter-telemetry` and one with `component=cli`, `client=test-client-telemetry` |
 
 ---
 
@@ -248,7 +301,10 @@ venv/binary isn't found.
 - **Lanes = Ginkgo `Label(...)`** on each top-level `Describe`; selected via
   `GINKGO_LABEL_FILTER` / `--label-filter` (see `e2e/run-e2e.sh` header comment).
   CI's `e2e-tests` job runs `make e2e-run`, which defaults to
-  `--label-filter '!lease-churn'` (still includes `exporterset-qemu`).
+  `--label-filter '!lease-churn && !exporterset-qemu-ssh'` (still includes
+  `exporterset-qemu`). The `e2e-exporterset-qemu-ssh` CI job runs
+  `make e2e-exporterset-qemu-ssh` separately — it sets up SSH + rootful
+  Podman on the runner via `e2e/scripts/setup-qemu-ssh-e2e.sh`.
   `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
   only on merge-queue/dispatch via `compat/run.sh`. PRs run amd64 only;
   merge-queue and `workflow_dispatch` also run arm64.
@@ -264,4 +320,5 @@ venv/binary isn't found.
   parent Ordered suite already sequences it against other core lease specs.
 - Failure log dumping is lane-specific infrastructure (for example: core and
   exit-on-lease-end dump exporter + controller logs; exporterset-qemu dumps
-  exporterset/QEMU pod logs).
+  exporterset/QEMU pod logs; exporterset-qemu-ssh dumps qemu-ssh controller
+  and Podman container logs).

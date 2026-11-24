@@ -78,9 +78,6 @@ manifests: controller-gen ## Generate WebhookConfiguration and CustomResourceDef
 	$(CONTROLLER_GEN) 	crd webhook paths="./api/..." paths="./internal/..." \
 						output:crd:artifacts:config=deploy/operator/config/crd/bases/
 
-	# Regenerate operator install.yaml to include updated CRDs
-	$(MAKE) -C deploy/operator build-installer
-
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..." paths="./internal/..."
@@ -216,25 +213,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 			-f Containerfile .
 	- $(CONTAINER_TOOL) buildx rm jumpstarter-controller-builder
 
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
-
 ##@ Deployment
-
-ifndef ignore-not-found
-  ignore-not-found = false
-endif
-
-.PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
-
-.PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
 deploy: cluster grpcurl ## Deploy controller using the operator. Set SKIP_BUILD=1 to skip image builds. Set CLUSTER_TYPE=k3s for k3s.
@@ -292,10 +271,6 @@ undeploy-exporterset-sample: ## Remove sample VirtualTargetClass and ExporterSet
 	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64.yaml
 	$(KUBECTL) delete --ignore-not-found=true -f hack/sample-x86_64-kind.yaml
 
-.PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
-
 ##@ Dependencies
 
 ## Location to install dependencies to
@@ -316,10 +291,10 @@ GRPCURL = $(LOCALBIN)/grpcurl
 # renovate: datasource=github-releases depName=kubernetes-sigs/kustomize extractVersion=^kustomize/(?<version>v\d+\.\d+\.\d+)$
 KUSTOMIZE_VERSION ?= v5.8.2
 # renovate: datasource=github-releases depName=kubernetes-sigs/controller-tools extractVersion=^(?<version>v\d+\.\d+\.\d+)$
-CONTROLLER_TOOLS_VERSION ?= v0.22.0
+CONTROLLER_TOOLS_VERSION ?= v0.23.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 # renovate: datasource=github-releases depName=golangci/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.14.0
+GOLANGCI_LINT_VERSION ?= v2.15.0
 # renovate: datasource=github-releases depName=kubernetes-sigs/kind
 KIND_VERSION ?= v0.33.0
 # renovate: datasource=github-releases depName=fullstorydev/grpcurl

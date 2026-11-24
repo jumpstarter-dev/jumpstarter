@@ -32,6 +32,7 @@ from .decorators import (
     MARKER_STREAMING_DRIVERCALL,
 )
 from jumpstarter.common import LogSource, Metadata
+from jumpstarter.common.http import client_session
 from jumpstarter.common.resources import ClientStreamResource, PresignedRequestResource, Resource, ResourceMetadata
 from jumpstarter.common.serde import decode_value, encode_value
 from jumpstarter.common.streams import (
@@ -75,6 +76,16 @@ SUPPORTED_CONTENT_ENCODINGS = (
 )
 
 
+class _DriverLoggerNameFilter(logging.Filter):
+    def __init__(self, display_name: str):
+        super().__init__()
+        self.display_name = display_name
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.name = self.display_name
+        return True
+
+
 @dataclass(kw_only=True)
 class Driver(
     Metadata,
@@ -104,19 +115,45 @@ class Driver(
     methods_description: dict[str, str] = field(default_factory=dict)
     """Map of method names to their help descriptions (configurable via server config)"""
 
-    log_level: str = "INFO"
+    log_level: str | None = None
     logger: logging.Logger = field(init=False)
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
             super().__post_init__()  # ty: ignore[unresolved-attribute]
 
-        self.logger = get_logger(f"driver.{self.__class__.__name__}", LogSource.DRIVER)
-        self.logger.setLevel(self.log_level)
+        display_name = f"driver.{self.__class__.__name__}"
+        # ponytail: accept 16-bit collisions at 5-10 active same-class drivers
+        # (~0.015-0.069%); widen the suffix if stronger isolation is needed.
+        # The name filter below hides the suffix in emitted records.
+        self.logger = get_logger(f"{display_name}.{str(self.uuid)[-4:]}", LogSource.DRIVER)
+        self._logger_filter = _DriverLoggerNameFilter(display_name)
+        self.logger.addFilter(self._logger_filter)
+        self.logger.setLevel(self.log_level if self.log_level is not None else "INFO")
+
+    def propagate_log_level(self, inherited: str = "INFO") -> None:
+        """Set this driver's log level and recurse into all children.
+
+        If a driver has an explicit ``log_level``, that value wins; otherwise
+        it inherits the level from its parent.  Called once from
+        ``Session.__init__`` after the full driver tree is constructed.
+
+        Logger names do not mirror the driver tree, so ``NOTSET`` would not
+        inherit from the parent driver. INFO preserves the existing default
+        when no driver in the ancestry specifies a level.
+        """
+        level = self.log_level if self.log_level is not None else inherited
+        self.logger.setLevel(level)
+        for child in self.children.values():
+            child.propagate_log_level(level)
 
     def close(self):
         for child in self.children.values():
             child.close()
+        # Remove the per-instance name filter added in __post_init__ so it does
+        # not leak on the (global) logger when the driver is torn down.
+        # Python retains the logger itself for the process lifetime.
+        self.logger.removeFilter(self._logger_filter)
 
     def shutdown(self):
         """Session-end teardown hook, run by the exporter before close().
@@ -139,6 +176,20 @@ class Driver(
     def reset(self):
         for child in self.children.values():
             child.reset()
+
+    @asynccontextmanager
+    async def serving(self):
+        """Open for as long as the session serves this driver.
+
+        The session enters it for every driver, children included, before its
+        gRPC server starts, and leaves it after the server stopped and before
+        shutdown(). Background work started here, in a task group, is owned by
+        the session: leaving cancels it and waits for it to finish. Code after
+        the yield runs cancelled, so cleanup that awaits must shield itself.
+        Work that fails ends this context early: the session logs the error and
+        goes on serving the driver's RPCs and every other driver.
+        """
+        yield
 
     @classmethod
     @abstractmethod
@@ -422,24 +473,26 @@ class Driver(
         """GET with manual redirect following to preserve percent-encoding in URLs."""
         current_url = url
         current_headers = headers
-        for _ in range(max_redirects + 1):
-            async with aiohttp.request(
-                "GET", self._make_url(current_url), headers=current_headers, raise_for_status=True,
-                timeout=timeout, allow_redirects=False,
-            ) as resp:
-                if resp.status not in (301, 302, 303, 307, 308):
-                    async with AiohttpStreamReaderStream(
-                        reader=resp.content, content_length=resp.content_length,
-                    ) as stream:
-                        yield ProgressStream(stream=stream, logging=True)
-                        return
-                location = resp.headers.get("Location", "")
-                if not location:
-                    raise RuntimeError(
-                        f"Presigned HTTP GET redirect missing Location header for {self._redact_url(current_url)}"
-                    )
-                current_headers = self._strip_sensitive_headers(current_headers, current_url, location)
-                current_url = location
+        # One session follows the redirects; the dummy jar keeps hops from sharing cookies.
+        async with client_session(timeout=timeout, cookie_jar=aiohttp.DummyCookieJar()) as session:
+            for _ in range(max_redirects + 1):
+                async with session.get(
+                    self._make_url(current_url), headers=current_headers, raise_for_status=True,
+                    allow_redirects=False,
+                ) as resp:
+                    if resp.status not in (301, 302, 303, 307, 308):
+                        async with AiohttpStreamReaderStream(
+                            reader=resp.content, content_length=resp.content_length,
+                        ) as stream:
+                            yield ProgressStream(stream=stream, logging=True)
+                            return
+                    location = resp.headers.get("Location", "")
+                    if not location:
+                        raise RuntimeError(
+                            f"Presigned HTTP GET redirect missing Location header for {self._redact_url(current_url)}"
+                        )
+                    current_headers = self._strip_sensitive_headers(current_headers, current_url, location)
+                    current_url = location
         raise RuntimeError(f"Too many redirects ({max_redirects}) for {self._redact_url(url)}")
 
     @asynccontextmanager
@@ -452,10 +505,13 @@ class Driver(
                         yield stream
                 case "PUT":
                     remote, stream = create_memory_stream()
-                    async with aiohttp.request(
-                        method, self._make_url(url), headers=headers, raise_for_status=True,
-                        data=remote, timeout=client_timeout,
-                    ) as _resp, stream:
+                    async with (
+                        client_session(timeout=client_timeout) as session,
+                        session.put(
+                            self._make_url(url), headers=headers, raise_for_status=True, data=remote,
+                        ) as _resp,
+                        stream,
+                    ):
                         yield ProgressStream(stream=stream, logging=True)
                 case _:
                     # INVARIANT: method is always one of GET or PUT, see PresignedRequestResource

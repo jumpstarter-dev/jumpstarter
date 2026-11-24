@@ -1,5 +1,3 @@
-import asyncio
-import asyncio.subprocess
 import ipaddress
 import shutil
 import socket
@@ -12,6 +10,7 @@ from typing import Any, Literal, TypedDict, cast
 
 from . import dnsmasq, iproute, nftables
 from .ntp_server import NtpServer
+from jumpstarter.common.process import StreamingProcess, open_streaming_process
 from jumpstarter.driver import Driver, export
 
 
@@ -251,7 +250,7 @@ class DutNetwork(Driver):
     _pbr_tables: set[int] = field(init=False, default_factory=set)
     _fwd_rule_handles: list[int] = field(init=False, default_factory=list)
     _ntp_server: NtpServer | None = field(init=False, default=None)
-    _tcpdump_process: asyncio.subprocess.Process | None = field(init=False, default=None)
+    _tcpdump_process: StreamingProcess | None = field(init=False, default=None)
 
     @classmethod
     def client(cls) -> str:
@@ -916,26 +915,10 @@ class DutNetwork(Driver):
 
         self.logger.info("Starting tcpdump: %s", " ".join(cmd))
 
-        proc = await asyncio.subprocess.create_subprocess_exec(
-            cmd[0],
-            *cmd[1:],
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        self._tcpdump_process = proc
-
-        try:
-            assert proc.stdout is not None
-            while True:
-                line = await proc.stdout.readline()
-                if not line:
-                    break
-                yield line.decode("utf-8", errors="replace").rstrip("\n")
-        finally:
-            if proc.returncode is None:
-                try:
-                    proc.terminate()
-                    await proc.wait()
-                except ProcessLookupError:
-                    pass
-            self._tcpdump_process = None
+        async with open_streaming_process(cmd, stderr="stdout") as process:
+            self._tcpdump_process = process
+            try:
+                async for line in process.lines():
+                    yield line.data.decode("utf-8", errors="replace").rstrip("\n")
+            finally:
+                self._tcpdump_process = None

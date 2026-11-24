@@ -3177,7 +3177,9 @@ func TestStatusStreamSendsLeaseHooks(t *testing.T) {
 				t.Fatal("timed out waiting for a StatusResponse")
 			}
 			cancel()
-			<-done
+			// Status returns nil or a closed-watch error depending on which select arm
+			// wins once the context is cancelled; only its exit matters here.
+			t.Logf("Status returned after cancel: %v", <-done)
 		})
 	}
 }

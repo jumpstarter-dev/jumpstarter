@@ -1170,6 +1170,222 @@ def test_server_lazy_start(mock_server_cls):
         assert fake.started is True
 
 
+class _OfferingOsipServer(_FakeOsipServer):
+    """Fake whose start() offers ServerConfig.services, as opensomeip 0.2 does."""
+
+    def start(self):
+        super().start()
+        services = getattr(self.config, "services", ()) or ()
+        for service in services:
+            self.offer(service)
+
+
+def _server_that_offers_configured_services(created: list):
+    def build(config):
+        fake = _OfferingOsipServer(config)
+        created.append(fake)
+        return fake
+
+    return build
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_server_config_lists_offered_service(mock_server_cls):
+    """0.2 serves RPC on the application socket only for configured services."""
+    created: list = []
+    mock_server_cls.side_effect = _server_that_offers_configured_services(created)
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.offer_service(0x1801, 0x0001, major_version=2)
+        offered = client.list_offered_services()
+
+    assert len(created) == 1
+    assert {svc.service_id for svc in created[0].config.services} == {0x1801}
+    assert created[0].config.services[0].major_version == 2
+    assert len(offered) == 1
+    assert offered[0].major_version == 2
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_method_response_does_not_leave_a_placeholder_offer(mock_server_cls):
+    """A method response puts the service on the demux without offering it."""
+    created: list = []
+    mock_server_cls.side_effect = _server_that_offers_configured_services(created)
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.set_method_response(0x1801, 0x0005, b"\x01")
+        assert client.list_offered_services() == []
+
+    assert {svc.service_id for svc in created[0].config.services} == {0x1801}
+    assert created[0]._offered == set()
+    assert (0x1801, 0x0005) in created[0].handlers
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_new_service_rebuilds_server_and_keeps_offers_and_handlers(mock_server_cls):
+    """A service id added after start needs a new server whose demux includes it."""
+    created: list = []
+    mock_server_cls.side_effect = _server_that_offers_configured_services(created)
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.offer_service(0x1801, 0x0001, major_version=2)
+        client.set_method_response(0x1801, 0x0005, b"\x01")
+        client.register_event(0x1801, 0x8001, eventgroup_id=1)
+        client.set_field(0x1801, 0x8002, b"\x0a")
+        client.set_method_response(0x1802, 0x0001, b"\x02")
+        offered = client.list_offered_services()
+        assert created[1].started is True
+
+    assert len(created) == 2
+    assert created[0].started is False
+    assert {svc.service_id for svc in created[1].config.services} == {0x1801, 0x1802}
+    assert len(created[1]._offered) == 1
+    assert next(iter(created[1]._offered))[2] == 2
+    assert (0x1801, 0x0005) in created[1].handlers
+    assert (0x1802, 0x0001) in created[1].handlers
+    assert created[1].registered_events[0x8001] == 1
+    assert created[1].fields[0x8002] == b"\x0a"
+    assert len(offered) == 1
+    assert offered[0].service_id == 0x1801
+    assert offered[0].major_version == 2
+
+
+class _FailOnNthStart(_OfferingOsipServer):
+    """Offering fake whose start() raises on one call, counted across instances."""
+
+    fail_on = 0
+    calls = 0
+
+    def start(self):
+        type(self).calls += 1
+        if type(self).calls == type(self).fail_on:
+            raise RuntimeError("bind failed")
+        super().start()
+
+
+def _servers_failing_on_start(created: list, fail_on: int):
+    _FailOnNthStart.fail_on = fail_on
+    _FailOnNthStart.calls = 0
+
+    def build(config):
+        fake = _FailOnNthStart(config)
+        created.append(fake)
+        return fake
+
+    return build
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_failed_rebuild_replays_methods_on_the_next_start(mock_server_cls):
+    """A replacement that fails to start must still replay registered state later.
+
+    The old server is already stopped, so the next start cannot decide to
+    replay by looking at the current server pointer.
+    """
+    created: list = []
+    # offer + method on 0x1801 share server 1. The 0x1802 method is start 2.
+    mock_server_cls.side_effect = _servers_failing_on_start(created, fail_on=2)
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.offer_service(0x1801, 0x0001, major_version=2)
+        client.set_method_response(0x1801, 0x0005, b"\x01")
+        client.register_event(0x1801, 0x8001, eventgroup_id=1)
+        client.set_field(0x1801, 0x8002, b"\x0a")
+        with pytest.raises(DriverError, match="bind failed"):
+            client.set_method_response(0x1802, 0x0001, b"\x02")
+        assert client.list_offered_services() == []
+        client.start_server()
+        offered = client.list_offered_services()
+        # close() stops the current server, so check it while it is running.
+        recovered = created[-1]
+        assert recovered.started is True
+        assert {svc.service_id for svc in recovered.config.services} == {0x1801, 0x1802}
+        assert (0x1801, 0x0005) in recovered.handlers
+        assert recovered.registered_events[0x8001] == 1
+        assert recovered.fields[0x8002] == b"\x0a"
+        assert len(offered) == 1
+        assert offered[0].service_id == 0x1801
+        assert offered[0].major_version == 2
+
+
+@patch("jumpstarter_driver_someip.driver.OsipServer")
+def test_stop_server_after_failed_rebuild_drops_tracked_state(mock_server_cls):
+    """stop_server discards offers and registrations even if startup failed."""
+    created: list = []
+    mock_server_cls.side_effect = _servers_failing_on_start(created, fail_on=2)
+
+    driver = SomeIp(host="127.0.0.1", port=30490)
+    with serve(driver) as client:
+        client.offer_service(0x1801, 0x0001)
+        client.set_method_response(0x1801, 0x0005, b"\x01")
+        with pytest.raises(DriverError, match="bind failed"):
+            client.set_method_response(0x1802, 0x0001, b"\x02")
+        client.stop_server()
+        client.start_server()
+        assert client.list_offered_services() == []
+
+    restarted = created[-1]
+    assert restarted.config.services == []
+    assert restarted.handlers == {}
+    assert restarted._offered == set()
+
+
+def test_opensomeip_0_2_config_matches_driver_usage():
+    """The 0.2 types the driver constructs still accept this shape.
+
+    ClientConfig.remote_endpoint stays unset unless the caller passes one:
+    0.2 no longer implies 127.0.0.1:30490. ServerConfig.services is how a
+    server registers RPC on its application socket. MessageReceiver still
+    exposes the queue receive_message reads.
+    """
+    from opensomeip import ClientConfig, ServerConfig, TransportMode
+    from opensomeip.receiver import MessageReceiver
+    from opensomeip.sd import SdConfig, ServiceInstance
+    from opensomeip.transport import Endpoint
+
+    local = Endpoint("127.0.0.1", 30490)
+    sd = SdConfig(
+        multicast_endpoint=Endpoint("239.127.0.1", 30490),
+        unicast_endpoint=local,
+    )
+    client_cfg = ClientConfig(
+        local_endpoint=local,
+        sd_config=sd,
+        transport_mode=TransportMode.UDP,
+    )
+    assert client_cfg.remote_endpoint is None
+
+    remote = Endpoint("192.168.100.10", 30490)
+    pinned = ClientConfig(
+        local_endpoint=local,
+        sd_config=sd,
+        transport_mode=TransportMode.TCP,
+        remote_endpoint=remote,
+    )
+    assert pinned.remote_endpoint == remote
+
+    service = ServiceInstance(service_id=0x1801, instance_id=0x0001, major_version=2)
+    server_cfg = ServerConfig(
+        local_endpoint=local,
+        sd_config=sd,
+        services=[service],
+        transport_mode=TransportMode.UDP,
+    )
+    assert server_cfg.services == [service]
+
+    receiver = MessageReceiver()
+    assert isinstance(receiver._sync_queue, _queue.Queue)
+
+    msg = Message(message_id=MessageId(0x1801, 0x0005), payload=b"\x01\x02")
+    assert msg.message_id.service_id == 0x1801
+    assert msg.payload.hex() == "0102"
+    assert int(msg.protocol_version) == 1
+
+
 # =========================================================================
 # Stateful loopback server tests
 #
@@ -1265,10 +1481,10 @@ def test_loopback_stop_server_clears_canned_responses(loopback_client):
 # =========================================================================
 # Wire-level integration tests with MockSomeIpServer
 #
-# opensomeip uses Service Discovery to locate services, so connecting to a
-# raw TCP mock server requires a full SD-capable SOME/IP environment.
-# These tests are intended for CI environments with proper SOME/IP networking
-# and are skipped by default.  Set SOMEIP_INTEGRATION_TESTS=1 to enable.
+# opensomeip 0.2 sends RPC only when the client config sets a remote
+# endpoint. Reaching a raw TCP mock still needs a full SD-capable peer.
+# These tests stay skipped by default. Set SOMEIP_INTEGRATION_TESTS to 1
+# to enable them.
 # =========================================================================
 
 _RUN_INTEGRATION = os.environ.get("SOMEIP_INTEGRATION_TESTS", "0") == "1"

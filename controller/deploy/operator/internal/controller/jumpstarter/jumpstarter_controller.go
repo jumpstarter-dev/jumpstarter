@@ -23,10 +23,12 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	goerrors "errors"
 	"fmt"
 	"hash"
 	"maps"
 	"net"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -58,6 +60,10 @@ import (
 const (
 	// appProtocolH2C is the application protocol for HTTP/2 Cleartext
 	appProtocolH2C = "h2c"
+
+	controllerConfigMapName = "jumpstarter-controller"
+	routerConfigMountPath   = "/etc/jumpstarter"
+	routerConfigFileName    = "config.yaml"
 )
 
 // JumpstarterReconciler reconciles a Jumpstarter object
@@ -236,14 +242,8 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	configMapHash := configMapDataHash(desiredConfigMap)
 
-	// Compute TLS secret hashes so that certificate renewals trigger rolling restarts.
-	controllerTLSHash, err := r.getControllerTLSSecretHash(ctx, &jumpstarter)
-	if err != nil {
-		log.Error(err, "Failed to compute controller TLS secret hash")
-		return ctrl.Result{}, err
-	}
 	// Reconcile Controller Deployment
-	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash, controllerTLSHash); err != nil {
+	if err := r.reconcileControllerDeployment(ctx, &jumpstarter, configMapHash); err != nil {
 		log.Error(err, "Failed to reconcile Controller Deployment")
 		return ctrl.Result{}, err
 	}
@@ -266,13 +266,13 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Services (controller, router, login endpoints, and telemetry ClusterIP)
+	// Reconcile controller, router, and login networking
 	if err := r.reconcileServices(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Services")
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile Telemetry ClusterIP Service (part of the networking stage)
+	// Reconcile telemetry's internal scrape Service and gRPC endpoint exposure
 	if err := r.reconcileTelemetryServiceStage(ctx, &jumpstarter); err != nil {
 		log.Error(err, "Failed to reconcile Telemetry service")
 		return ctrl.Result{}, err
@@ -339,8 +339,13 @@ func (r *JumpstarterReconciler) getRouterTLSSecretHash(ctx context.Context, jump
 }
 
 // reconcileControllerDeployment reconciles the controller deployment
-func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash, tlsSecretHash string) error {
+func (r *JumpstarterReconciler) reconcileControllerDeployment(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, configMapHash string) error {
 	log := logf.FromContext(ctx)
+	// The TLS secret hash makes certificate renewals roll the controller.
+	tlsSecretHash, err := r.getControllerTLSSecretHash(ctx, jumpstarter)
+	if err != nil && !suspendedWithoutTLSSecret(controllerReplicas(&jumpstarter.Spec.Controller), err) {
+		return r.waitForTLSSecret(ctx, jumpstarter, "controller", err)
+	}
 	desiredDeployment := r.createControllerDeployment(jumpstarter, configMapHash, tlsSecretHash)
 
 	existingDeployment := &appsv1.Deployment{}
@@ -454,6 +459,9 @@ func (r *JumpstarterReconciler) reconcileRouterDeployment(ctx context.Context, j
 // reconcileServices reconciles all services
 func (r *JumpstarterReconciler) reconcileServices(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
 	log := logf.FromContext(ctx)
+	if err := r.prepareNodePorts(ctx, jumpstarter); err != nil {
+		return err
+	}
 
 	// Reconcile controller services
 	for _, endpoint := range jumpstarter.Spec.Controller.GRPC.Endpoints {
@@ -750,8 +758,50 @@ func secretDataHash(secret *corev1.Secret) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// getTLSSecretHash fetches a TLS secret by name and returns its data hash.
-// Returns an empty string if the secret does not exist yet.
+// tlsSecretMissingError is returned for a TLS secret that a Deployment mounts
+// but that does not exist yet.
+type tlsSecretMissingError struct {
+	name string
+}
+
+func (e *tlsSecretMissingError) Error() string {
+	return fmt.Sprintf("TLS secret %s does not exist yet", e.name)
+}
+
+// waitForTLSSecret returns nil for a TLS secret that does not exist yet, which
+// leaves the component's Deployment as it is, and any other error unchanged.
+//
+// The Deployment's pods mount the secret and its hash is part of their
+// template, so pods created before the secret exists cannot start, and are
+// replaced as soon as it does. On a fresh install that replaces the
+// controller pod that has just taken the leader lease, and the new pod waits
+// for the lease while the old one shuts down. The Secret watch reconciles
+// again once the secret exists.
+func (r *JumpstarterReconciler) waitForTLSSecret(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter, component string, err error) error {
+	var missing *tlsSecretMissingError
+	if !goerrors.As(err, &missing) {
+		return err
+	}
+	logf.FromContext(ctx).Info("Waiting for TLS secret before reconciling deployment",
+		"component", component, "secret", missing.name)
+	r.emitEventf(jumpstarter, corev1.EventTypeNormal, "WaitingForTLSSecret",
+		"The %s deployment waits for TLS secret %s", component, missing.name)
+	return nil
+}
+
+// suspendedWithoutTLSSecret reports whether err is a TLS secret that does not
+// exist yet for a Deployment scaled to zero. That Deployment is reconciled
+// with an empty hash instead of waiting: it runs no pods, so nothing mounts
+// the secret, and the hash it gets once the secret exists changes a template
+// that has no pods to replace.
+func suspendedWithoutTLSSecret(replicas int32, err error) bool {
+	var missing *tlsSecretMissingError
+	return replicas == 0 && goerrors.As(err, &missing)
+}
+
+// getTLSSecretHash fetches a TLS secret by name and returns its data hash, or
+// an empty string when no secret is configured. A secret that does not exist
+// yet is a *tlsSecretMissingError.
 func (r *JumpstarterReconciler) getTLSSecretHash(ctx context.Context, namespace, name string) (string, error) {
 	if name == "" {
 		return "", nil
@@ -759,7 +809,7 @@ func (r *JumpstarterReconciler) getTLSSecretHash(ctx context.Context, namespace,
 	var secret corev1.Secret
 	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret); err != nil {
 		if errors.IsNotFound(err) {
-			return "", nil
+			return "", &tlsSecretMissingError{name: name}
 		}
 		return "", fmt.Errorf("failed to get TLS secret %s: %w", name, err)
 	}
@@ -1068,19 +1118,30 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 				},
 			},
 		},
+	}
+
+	// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
+	defaultMode := int32(420)
+
+	volumeMounts := []corev1.VolumeMount{
 		{
-			Name: "NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath:  "metadata.namespace",
-					APIVersion: "v1",
+			Name:      "config",
+			MountPath: routerConfigMountPath,
+			ReadOnly:  true,
+		},
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: "config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: controllerConfigMapName},
+					Items:                []corev1.KeyToPath{{Key: "config", Path: routerConfigFileName}},
+					DefaultMode:          &defaultMode,
 				},
 			},
 		},
 	}
-
-	var volumeMounts []corev1.VolumeMount
-	var volumes []corev1.Volume
 
 	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided.
 	// Use routerTLSSecretName so the mounted secret matches the hash annotation.
@@ -1096,8 +1157,6 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			MountPath: "/tls",
 			ReadOnly:  true,
 		})
-		// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
-		defaultMode := int32(420)
 		volumes = append(volumes, corev1.Volume{
 			Name: "tls-certs",
 			VolumeSource: corev1.VolumeSource{
@@ -1146,6 +1205,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Command:         []string{"/router"},
 							Args: []string{
 								"-metrics-bind-address=:8080",
+								"-config-file=" + path.Join(routerConfigMountPath, routerConfigFileName),
 							},
 							Env:          envVars,
 							VolumeMounts: volumeMounts,
@@ -1184,8 +1244,9 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
-					ServiceAccountName:        fmt.Sprintf("%s-controller-manager", jumpstarter.Name),
-					TopologySpreadConstraints: jumpstarter.Spec.Routers.TopologySpreadConstraints,
+					ServiceAccountName:           routerServiceAccountName(jumpstarter),
+					AutomountServiceAccountToken: new(false),
+					TopologySpreadConstraints:    jumpstarter.Spec.Routers.TopologySpreadConstraints,
 				},
 			},
 		},
@@ -1217,7 +1278,7 @@ func (r *JumpstarterReconciler) createConfigMap(ctx context.Context, jumpstarter
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "jumpstarter-controller",
+			Name:      controllerConfigMapName,
 			Namespace: jumpstarter.Namespace,
 			Labels: map[string]string{
 				"app":           "jumpstarter-controller",
@@ -1306,9 +1367,13 @@ func (r *JumpstarterReconciler) buildConfig(ctx context.Context, jumpstarter *op
 	if jumpstarter.Spec.Telemetry != nil && jumpstarter.Spec.Telemetry.Enabled {
 		t := jumpstarter.Spec.Telemetry
 		if telemetryReplicas(t) > 0 {
+			endpoint := telemetryEndpointFor(jumpstarter)
+			if endpoint == "" {
+				return config.Config{}, fmt.Errorf("telemetry requires spec.telemetry.grpc.endpoints; automatic exposure requires a baseDomain and a Route or Ingress API")
+			}
 			telemetryCfg := &config.Telemetry{
 				Enabled:  true,
-				Endpoint: telemetryEndpointFor(jumpstarter.Namespace),
+				Endpoint: endpoint,
 			}
 			if t.Logging.Filter.MinSeverity != "" {
 				telemetryCfg.Logging.Filter.MinSeverity = t.Logging.Filter.MinSeverity
@@ -1502,9 +1567,11 @@ func ensurePort(address, defaultPort string) string {
 		return address
 	}
 
-	// No port found, need to add one
-	// net.JoinHostPort handles IPv6 addresses correctly (adds brackets if needed)
-	return net.JoinHostPort(address, defaultPort)
+	// No port found, need to add one.
+	// net.JoinHostPort brackets IPv6 literals, so strip any brackets the address
+	// already carries to avoid producing "[[2001:db8::1]]:443".
+	host := strings.TrimSuffix(strings.TrimPrefix(address, "["), "]")
+	return net.JoinHostPort(host, defaultPort)
 }
 
 // routerServiceNamePrefix is the prefix of every service name
@@ -1560,9 +1627,8 @@ func (r *JumpstarterReconciler) reconcileRouterDeploymentReplica(
 	if !ok {
 		var err error
 		routerTLSHash, err = r.getTLSSecretHash(ctx, jumpstarter.Namespace, secretName)
-		if err != nil {
-			log.Error(err, "Failed to compute router TLS secret hash", "replica", i)
-			return err
+		if err != nil && !suspendedWithoutTLSSecret(routerReplicas(&jumpstarter.Spec.Routers), err) {
+			return r.waitForTLSSecret(ctx, jumpstarter, fmt.Sprintf("router %d", i), err)
 		}
 		tlsHashBySecret[secretName] = routerTLSHash
 	}

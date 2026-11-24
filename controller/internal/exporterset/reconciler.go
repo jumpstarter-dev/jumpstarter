@@ -83,6 +83,23 @@ const (
 
 	defaultScaleDownCooldown = 5 * time.Minute
 
+	// exporterOfflineThreshold mirrors the Exporter controller
+	// (internal/controller/exporter_controller.go): an exporter is considered
+	// offline only once its last heartbeat is older than this. If either copy
+	// changes, both must change.
+	exporterOfflineThreshold = time.Minute
+
+	// exporterStartupDeadline bounds how long a deployed off-cluster Exporter
+	// that has never registered may hold a pool slot. It is measured from
+	// deployment completion (Deployer.DeployedAt), so a slow deploy is not
+	// recycled the moment it succeeds. Past the deadline the deployment is
+	// wedged — containers running, no registration (e.g. the exporter cannot
+	// reach the controller) — and ExitAndReplace recycles it instead of
+	// leaking the slot for the life of the pool. A deployment that fails
+	// outright never sets the deployed marker: it is retried by the next
+	// reconcile and keeps its slot until it succeeds.
+	exporterStartupDeadline = 10 * time.Minute
+
 	// kindExporter is the Kind string used in OwnerReference lookups.
 	kindExporter = "Exporter"
 
@@ -275,6 +292,12 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 	r.emitConditionEvents(&exporterSet, prev.available, prev.progressing, prev.degraded, prev.scalingLimited)
 
+	// Carry the startup-deadline requeue from cleanupBeforeScale into the
+	// final result when it fires sooner than any other pending requeue.
+	if cleanupResult.RequeueAfter > 0 && (result.RequeueAfter == 0 || cleanupResult.RequeueAfter < result.RequeueAfter) {
+		result.RequeueAfter = cleanupResult.RequeueAfter
+	}
+
 	return result, nil
 }
 
@@ -289,13 +312,18 @@ func (r *ExporterSetReconciler) cleanupBeforeScale(
 	if err != nil {
 		return ctrl.Result{}, false, err
 	}
+	var requeueAfter time.Duration
 	if !deleted {
-		deleted, err = r.cleanupTerminalExporters(ctx, es, exporters, podsByExporter)
-		if err != nil {
-			return ctrl.Result{}, false, err
+		var terminalErr error
+		deleted, requeueAfter, terminalErr = r.cleanupTerminalExporters(ctx, es, exporters, podsByExporter)
+		if terminalErr != nil {
+			return ctrl.Result{}, false, terminalErr
 		}
 	}
 	if !deleted {
+		if requeueAfter > 0 {
+			return ctrl.Result{RequeueAfter: requeueAfter}, false, nil
+		}
 		return ctrl.Result{}, false, nil
 	}
 
@@ -647,10 +675,7 @@ func (r *ExporterSetReconciler) ensureExporterDeployments(
 			caRead = true
 		}
 
-		deployed, err := deployer.IsDeployed(ctx, exp)
-		if err != nil {
-			return waiting, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
-		}
+		_, deployed := deployer.DeployedAt(exp)
 		if deployed {
 			continue
 		}
@@ -969,15 +994,14 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 	es *virtualtargetv1alpha1.ExporterSet,
 	exporters []jumpstarterdevv1alpha1.Exporter,
 	podsByExporter map[string][]corev1.Pod,
-) (bool, error) {
+) (deleted bool, requeueAfter time.Duration, err error) {
 	if es.Spec.RecycleStrategy == virtualtargetv1alpha1.RecycleStrategyInPlaceReuse {
-		return false, nil
+		return false, 0, nil
 	}
 
 	logger := log.FromContext(ctx)
 	deployer, isOffCluster := r.Provisioner.(Deployer)
 
-	deleted := false
 	for i := range exporters {
 		exp := &exporters[i]
 		if exp.Status.LeaseRef != nil {
@@ -987,16 +1011,23 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 		terminal := false
 
 		if isOffCluster {
-			// Off-cluster: terminal means "deployed but went offline". The
-			// Online condition is set to True when the exporter registers
-			// heartbeats, then flipped to False when they stop. If the
-			// condition doesn't exist at all the exporter never registered
-			// so we leave it alone (still starting up).
-			deployed, err := deployer.IsDeployed(ctx, exp)
-			if err != nil {
-				return deleted, fmt.Errorf("check deployment for %s: %w", exp.Name, err)
+			// Off-cluster: terminal means "deployed and offline" — either
+			// seen and since gone offline, or never registered and past the
+			// startup deadline (a wedged deploy). "Never seen" on its own,
+			// while still inside the deadline, is the normal
+			// pre-registration state and must not recycle.
+			ds, deployed := deployer.DeployedAt(exp)
+			if deployed {
+				if isExporterOffline(exp, ds) {
+					terminal = true
+				} else if exp.Status.LastSeen.IsZero() {
+					if remaining := timeToStartupDeadline(exp, ds); remaining > 0 {
+						if requeueAfter == 0 || remaining < requeueAfter {
+							requeueAfter = remaining
+						}
+					}
+				}
 			}
-			terminal = deployed && isExporterOffline(exp)
 		} else {
 			// In-cluster: terminal means all Pods reached Succeeded/Failed.
 			pods := podsByExporter[exp.Name]
@@ -1008,11 +1039,11 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 		}
 
 		if err := r.Provisioner.Cleanup(ctx, es, exp); err != nil {
-			return deleted, fmt.Errorf("unable to cleanup Exporter %s: %w", exp.Name, err)
+			return deleted, 0, fmt.Errorf("unable to cleanup Exporter %s: %w", exp.Name, err)
 		}
 
 		if err := r.Delete(ctx, exp); err != nil && !apierrors.IsNotFound(err) {
-			return deleted, fmt.Errorf("unable to delete Exporter %s: %w", exp.Name, err)
+			return deleted, 0, fmt.Errorf("unable to delete Exporter %s: %w", exp.Name, err)
 		}
 
 		logger.Info("deleted terminal Exporter (ExitAndReplace)",
@@ -1025,19 +1056,85 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 		deleted = true
 	}
 
-	return deleted, nil
+	return deleted, requeueAfter, nil
 }
 
-// isExporterOffline reports whether the exporter's Online condition has been
-// explicitly set to False. Returns false when the condition doesn't exist
-// (exporter never registered) to avoid cleaning up exporters that are still
-// starting.
-func isExporterOffline(exp *jumpstarterdevv1alpha1.Exporter) bool {
+// isExporterOffline reports whether a deployed exporter is done and can be
+// recycled. Normally that means it was seen and has gone offline. An exporter
+// that has never registered is still starting and is not terminal — unless it
+// has outlived exporterStartupDeadline since deployment completed, in which
+// case the deployment is wedged and the slot would otherwise leak. Note that
+// the Exporter reconciler sets Online=False with "Never seen" as soon as the CR
+// exists (LastSeen still zero); that alone must not count as terminal or
+// ExitAndReplace would delete off-cluster exporters before they can register.
+//
+// deployedSince is when the provisioner finished deploying the instance, or
+// zero if it does not record it; see Deployer.DeployedAt.
+func isExporterOffline(exp *jumpstarterdevv1alpha1.Exporter, deployedSince time.Time) bool {
+	// Never seen: the exporter has not registered yet, so it is still starting
+	// until the startup deadline expires.
+	if exp.Status.LastSeen.IsZero() {
+		return isExporterPastStartupDeadline(exp, deployedSince)
+	}
 	cond := meta.FindStatusCondition(
 		exp.Status.Conditions,
 		string(jumpstarterdevv1alpha1.ExporterConditionTypeOnline),
 	)
-	return cond != nil && cond.Status == metav1.ConditionFalse
+	if cond == nil || cond.Status != metav1.ConditionFalse {
+		return false
+	}
+	// An exporter that reports Offline does so as it shuts down
+	// ("Exporter shutting down" right before Unregister). ReportStatus writes
+	// LastSeen, ExporterStatusValue and the Online condition in the same status
+	// patch, so the heartbeat is fresh even though the process is already gone.
+	// Recycling it is unambiguous: do not wait for the heartbeat to go stale, or
+	// a capped pool keeps a dead exporter's slot for up to a minute while leases
+	// wait for its replacement.
+	//
+	// The Status stream clears a stale Offline value to "" when it (re)connects,
+	// in the same patch as the LastSeen update, so a reconnecting exporter never
+	// shows fresh LastSeen together with Offline.
+	if exp.Status.ExporterStatusValue == jumpstarterdevv1alpha1.ExporterStatusOffline {
+		return true
+	}
+	// Otherwise Online=False is only meaningful once the heartbeat is stale: a
+	// recently (re)connected exporter can still carry the old "Never seen"/False
+	// condition until the Exporter controller catches up, and must not be
+	// recycled.
+	return time.Since(exp.Status.LastSeen.Time) > exporterOfflineThreshold
+}
+
+// isExporterPastStartupDeadline reports whether an exporter that has never
+// registered has outlived exporterStartupDeadline. The deadline runs from
+// deployment completion when the provisioner records it, so a deploy that takes
+// longer than the deadline to succeed is not recycled the instant it finishes.
+// It falls back to the creation timestamp for exporters deployed before that
+// time was recorded. A zero timestamp (object not observed by the API server
+// yet) never expires.
+func isExporterPastStartupDeadline(exp *jumpstarterdevv1alpha1.Exporter, deployedSince time.Time) bool {
+	start := deployedSince
+	if start.IsZero() {
+		start = exp.CreationTimestamp.Time
+	}
+	if start.IsZero() {
+		return false
+	}
+	return time.Since(start) > exporterStartupDeadline
+}
+
+// timeToStartupDeadline returns how long until an exporter's startup deadline
+// expires. A non-positive value means it already expired (or could not be
+// computed). The reconciler uses this to schedule a RequeueAfter so it wakes
+// up when the deadline fires, even if no other event triggers reconciliation.
+func timeToStartupDeadline(exp *jumpstarterdevv1alpha1.Exporter, deployedSince time.Time) time.Duration {
+	start := deployedSince
+	if start.IsZero() {
+		start = exp.CreationTimestamp.Time
+	}
+	if start.IsZero() {
+		return 0
+	}
+	return time.Until(start.Add(exporterStartupDeadline))
 }
 
 func allPodsTerminal(pods []corev1.Pod) bool {
@@ -1968,16 +2065,19 @@ func deepMergeParameters(
 		}
 	}
 
-	return deepMerge(base, override), nil
+	return DeepMerge(base, override), nil
 }
 
-func deepMerge(base, override map[string]any) map[string]any {
+// DeepMerge recursively overlays override on base: nested maps are merged,
+// scalars (and non-map values) replace. Exported so the qemu-ssh provisioner
+// can use the same logic in Cleanup (merging class + set parameters).
+func DeepMerge(base, override map[string]any) map[string]any {
 	result := make(map[string]any, len(base)+len(override))
 	maps.Copy(result, base)
 	for k, v := range override {
 		if baseMap, ok := result[k].(map[string]any); ok {
 			if overrideMap, ok := v.(map[string]any); ok {
-				result[k] = deepMerge(baseMap, overrideMap)
+				result[k] = DeepMerge(baseMap, overrideMap)
 				continue
 			}
 		}
