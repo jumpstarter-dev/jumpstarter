@@ -60,6 +60,23 @@ const (
 	netsimPort           = 7681
 	hciPort              = 7300
 
+	// parameters.bluetooth_controller. "local" (the default): the guest's
+	// Bluetooth is the controller simulator of its own Pod. "remote": the Pod
+	// runs no simulator, and the guest's HCI is one TCP stream that Cuttlefish
+	// dials on loopback, for a driver in the exporter to carry to the
+	// simulator of another device (a forward of the lease).
+	bluetoothLocal  = "local"
+	bluetoothRemote = "remote"
+	// Cuttlefish dials the simulator of instance N at hciPort+N-1. Instance 2
+	// never exists in a Pod, so its port is free for the exporter to listen on.
+	remoteRootcanalInstance = 2
+	remoteHCIPort           = hciPort + remoteRootcanalInstance - 1
+	// Preset flag defaults that assemble_cvd reads: of the host tools in the
+	// runtime image, which cvd links over the fetched ones, and of the fetched
+	// ones in case an image does not.
+	runtimePresetGlob = "/usr/lib/cuttlefish-common/etc/cvd_config/cvd_config_*.json"
+	fetchedPresetGlob = fetchPath + "/etc/cvd_config/cvd_config_*.json"
+
 	defaultGPUMode    = "guest_swiftshader"
 	defaultVMCPUs     = 4
 	defaultVMMemoryMB = 8192
@@ -157,6 +174,8 @@ type runtimeConfig struct {
 	// jumpstarter-exec launcher in the runtime container, for drivers that
 	// must run a helper beside the guest's Unix sockets (the Wi-Fi medium).
 	launcher bool
+	// remoteBluetooth is parameters.bluetooth_controller=remote.
+	remoteBluetooth bool
 }
 
 func (r runtimeConfig) exec() bool {
@@ -205,6 +224,13 @@ func resolveBackend(parameters map[string]any) (runtimeConfig, error) {
 			return config, fmt.Errorf("runtime_launcher cannot be false with parameters.backend=%q", backendExec)
 		}
 		config.launcher = value
+	}
+	if raw, exists := parameters["bluetooth_controller"]; exists {
+		value, ok := raw.(string)
+		if !ok || (value != bluetoothLocal && value != bluetoothRemote) {
+			return config, fmt.Errorf("bluetooth_controller must be %q or %q", bluetoothLocal, bluetoothRemote)
+		}
+		config.remoteBluetooth = value == bluetoothRemote
 	}
 	return config, nil
 }
@@ -271,7 +297,16 @@ func applyWebRTCConfig(config map[string]any, parameters map[string]any) ([]int,
 			return nil, fmt.Errorf("%s is managed by the provisioner; set parameters.webrtc_turn=true", key)
 		}
 	}
-	ports := append([]int(nil), healthPorts...)
+	rt, err := resolveBackend(parameters)
+	if err != nil {
+		return nil, err
+	}
+	// Never nil: an empty list is "no simulator to check", not "use the defaults".
+	ports := []int{}
+	if !rt.remoteBluetooth {
+		// With a remote controller the Pod runs neither netsim nor rootcanal.
+		ports = append(ports, healthPorts...)
+	}
 	if webrtc.enabled {
 		config["webui_port"] = webrtc.uiPort
 		config["turn_port"] = webrtc.turnPort
@@ -287,7 +322,7 @@ func applyWebRTCConfig(config map[string]any, parameters map[string]any) ([]int,
 // can be placed on top of one.
 func runtimePortReserved(port int) bool {
 	switch port {
-	case 80, 443, 1080, 1443, 2080, hostOrchestratorPort, 2443, hciPort, 7301, 7302, 7303, netsimPort, 15037, 19531:
+	case 80, 443, 1080, 1443, 2080, hostOrchestratorPort, 2443, hciPort, remoteHCIPort, 7302, 7303, netsimPort, 15037, 19531:
 		return true
 	}
 	return (port >= 6520 && port <= 6620) || (port >= 15550 && port <= 15599) || (port >= turnRelayMin && port <= turnRelayMax)
@@ -712,11 +747,43 @@ stream_launcher_logs ` + fmt.Sprintf("%q", statePath) + ` &
 `
 }
 
+// remoteBluetoothCommand makes every guest of this runtime use the RootCanal of
+// instance remoteRootcanalInstance instead of starting one. `cvd load` has no
+// key for --rootcanal_instance_num, but assemble_cvd takes flag defaults from
+// the preset that the build names (android-info.txt: config=phone), so the
+// flag is added to every preset. The runtime fails to start when there is no
+// preset to carry it: the guest would otherwise quietly get a simulator of its
+// own, on no one's air.
+func remoteBluetoothCommand() string {
+	return remoteBluetoothScript(runtimePresetGlob, fetchedPresetGlob)
+}
+
+func remoteBluetoothScript(globs ...string) string {
+	// Bash alone, so that it does not depend on which sed the image has.
+	return fmt.Sprintf(`presets=0
+for preset in %s; do
+    [[ -f "$preset" ]] || continue
+    content=$(<"$preset")
+    if [[ "$content" != *rootcanal_instance_num* ]]; then
+        printf '%%s\n' "${content/\{/{\"rootcanal_instance_num\": %d,}" > "$preset"
+    fi
+    presets=$((presets + 1))
+done
+if [[ "$presets" == 0 ]]; then
+    echo "bluetooth_controller=remote: no Cuttlefish config preset to set rootcanal_instance_num in" >&2
+    exit 1
+fi
+`, strings.Join(globs, " "), remoteRootcanalInstance)
+}
+
 // runtimeCommand is PID 1 of the runtime container. Both variants write the
 // per-start marker the exporter and probe use to detect a sidecar restart.
 func runtimeCommand(rt runtimeConfig) string {
 	marker := "cat /proc/sys/kernel/random/uuid > " + cvdStatePath + "/runtime-id\n" +
 		"chmod 644 " + cvdStatePath + "/runtime-id\n" + launcherLogsCommand(cvdStatePath)
+	if rt.remoteBluetooth {
+		marker = remoteBluetoothCommand() + marker
+	}
 	if !rt.exec() {
 		if rt.launcher {
 			// Host Orchestrator stays in control of cvd. The launcher runs next
@@ -895,6 +962,11 @@ func (p *Provisioner) EnrichExporterExport(
 // effective guest size the runtime container must budget for.
 func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[string]any) ([]virtualtargetv1alpha1.DriverConfig, guestSpec, error) {
 	var guest guestSpec
+	rt, err := resolveBackend(parameters)
+	if err != nil {
+		return nil, guest, err
+	}
+	remote := rt.remoteBluetooth
 	found := 0
 	result := make([]virtualtargetv1alpha1.DriverConfig, 0, len(drivers))
 	for _, driver := range drivers {
@@ -903,10 +975,16 @@ func enrichDrivers(drivers []virtualtargetv1alpha1.DriverConfig, parameters map[
 		case cuttlefishDriverType:
 			found++
 			driver, guest, err = enrichCuttlefishDriver(driver, parameters)
-		case netsimDriverType:
+		case netsimDriverType, btPeerDriverType:
+			if remote {
+				err = fmt.Errorf("%s needs the controller simulator of its own Pod; parameters.bluetooth_controller=%q runs none", driver.Type, bluetoothRemote)
+				break
+			}
+			if driver.Type == btPeerDriverType {
+				driver, err = pinDriverConfig(driver, map[string]any{"transport": fmt.Sprintf("tcp-client:127.0.0.1:%d", hciPort)}, "bt_peer")
+				break
+			}
 			driver, err = pinDriverConfig(driver, map[string]any{"host": "127.0.0.1", "port": netsimPort}, "netsim")
-		case btPeerDriverType:
-			driver, err = pinDriverConfig(driver, map[string]any{"transport": fmt.Sprintf("tcp-client:127.0.0.1:%d", hciPort)}, "bt_peer")
 		}
 		if err != nil {
 			return nil, guest, err
@@ -969,8 +1047,19 @@ func enrichCuttlefishDriver(driver virtualtargetv1alpha1.DriverConfig, parameter
 	}
 	setDefault(common, "host_package", fetchPath)
 	envConfig["common"] = common
-	// Standalone RootCanal does not propagate the userspace VSOCK flag.
-	if err := pin(envConfig, "netsim_bt", true); err != nil {
+	if rt.remoteBluetooth {
+		// No simulator in this Pod: without netsim for Bluetooth, and with the
+		// preset that names another instance's RootCanal (runtimeCommand),
+		// Cuttlefish only connects the guest's HCI to remoteHCIPort. netsim for
+		// UWB would then start as a connector to that instance's netsim, which
+		// does not exist, and its exit stops the device.
+		for _, key := range []string{"netsim_bt", "netsim_uwb"} {
+			if err := pin(envConfig, key, false); err != nil {
+				return driver, guest, fmt.Errorf("%w with parameters.bluetooth_controller=%q", err, bluetoothRemote)
+			}
+		}
+	} else if err := pin(envConfig, "netsim_bt", true); err != nil {
+		// Standalone RootCanal does not propagate the userspace VSOCK flag.
 		return driver, guest, fmt.Errorf("%w; standalone RootCanal is not supported", err)
 	}
 

@@ -155,6 +155,49 @@ default identical guest CID, verify their generated configuration and private
 in both leases. Stop one guest and verify the other remains usable. Source/unit
 tests cannot establish compatibility of a mutable image tag or guest build.
 
+### A guest that uses the controller simulator of another device
+
+`parameters.bluetooth_controller: remote` makes a class of guests that have no
+Bluetooth simulator in their Pod. The guest's own Bluetooth stack then uses the
+simulator of another Cuttlefish device, as one more of its hosts: the two
+devices are on one simulated air, each with its own address, and pair with each
+other as two real devices do. The default is `local`.
+
+With `remote`, the provisioner:
+
+- pins `env_config.netsim_bt: false` and `env_config.netsim_uwb: false`, so
+  neither netsim nor a standalone RootCanal starts in the Pod (UWB falls back to
+  the stand-alone simulator). The VSOCK concern above does not apply: there is
+  no RootCanal process to configure;
+- adds `rootcanal_instance_num: 2` to the flag presets of the runtime before any
+  guest can be created (`/usr/lib/cuttlefish-common/etc/cvd_config/cvd_config_*.json`
+  and the same files of the fetched build). `cvd load` has no key for that flag,
+  but `assemble_cvd` takes flag defaults from the preset the build names. The
+  runtime fails to start when it finds no preset to carry the flag;
+- leaves the netsim and HCI ports out of the health check, and rejects the
+  `Netsim` and `BtPeer` drivers, which have nothing to talk to.
+
+Cuttlefish then connects the guest's HCI (H4, one TCP stream) to
+`127.0.0.1:7301` and tries once a second until something listens there. A driver
+in the exporter must listen on that port and carry the stream to the other
+device's simulator: `jumpstarter_driver_radio.direct.RemoteController`, whose
+`requires` port a forward of the lease joins to the `provides` port of a
+`RootcanalController` on the other device (see the README of
+`jumpstarter-driver-radio`). Do not point a plain `requires` port at 7301:
+Cuttlefish stops the whole device when that stream is cut.
+
+Android does not finish booting without a controller, so the device with the
+simulator must be powered on first, and `power on` of a `remote` guest fails
+when no controller appears in time.
+
+```yaml
+kind: VirtualTargetClass
+spec:
+  provisioner: cuttlefish.jumpstarter.dev
+  parameters:
+    bluetooth_controller: remote
+```
+
 ## Image PVCs and reproducibility
 
 Exactly one image source is required: set either `fetch_images: true` or
