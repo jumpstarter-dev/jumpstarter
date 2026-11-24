@@ -255,6 +255,9 @@ Notes:
 - `--no-output` cannot be combined with `--output` or `--append`.
 - `--no-output` requires stdin input (piped stdin or `--input`).
 - `--observe` cannot be combined with `--input` or `--no-output`.
+- A read-only `pipe` attaches with `observe`; on an exporter that does not
+  implement it (older exporters) it falls back to `connect` and takes the
+  exclusive write token.
 
 Exit with Ctrl+C.
 
