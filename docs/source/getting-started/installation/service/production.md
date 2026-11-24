@@ -328,6 +328,10 @@ declaratively in GitOps flows.
   deletion/recreation.
 - {term}`Router` replicas are one Deployment per replica; `$(replica)`
   placeholders are substituted per replica.
+- {term}`Router` pods run as the `<name>-router` ServiceAccount, which has no
+  Role bound to it, and get no Kubernetes API token: they read their settings
+  from the `jumpstarter-controller` ConfigMap, mounted as a file. Attach any
+  image pull secret the router image needs to this ServiceAccount.
 
 For the full `Jumpstarter` CRD field reference, see the
 [CRDs](../../../reference/crds/index.md).

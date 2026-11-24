@@ -28,6 +28,7 @@ import (
 	"hash"
 	"maps"
 	"net"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,6 +60,10 @@ import (
 const (
 	// appProtocolH2C is the application protocol for HTTP/2 Cleartext
 	appProtocolH2C = "h2c"
+
+	controllerConfigMapName = "jumpstarter-controller"
+	routerConfigMountPath   = "/etc/jumpstarter"
+	routerConfigFileName    = "config.yaml"
 )
 
 // JumpstarterReconciler reconciles a Jumpstarter object
@@ -1113,19 +1118,30 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 				},
 			},
 		},
+	}
+
+	// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
+	defaultMode := int32(420)
+
+	volumeMounts := []corev1.VolumeMount{
 		{
-			Name: "NAMESPACE",
-			ValueFrom: &corev1.EnvVarSource{
-				FieldRef: &corev1.ObjectFieldSelector{
-					FieldPath:  "metadata.namespace",
-					APIVersion: "v1",
+			Name:      "config",
+			MountPath: routerConfigMountPath,
+			ReadOnly:  true,
+		},
+	}
+	volumes := []corev1.Volume{
+		{
+			Name: "config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: controllerConfigMapName},
+					Items:                []corev1.KeyToPath{{Key: "config", Path: routerConfigFileName}},
+					DefaultMode:          &defaultMode,
 				},
 			},
 		},
 	}
-
-	var volumeMounts []corev1.VolumeMount
-	var volumes []corev1.Volume
 
 	// Add TLS certificate mount when cert-manager is enabled OR when manual cert secret is provided.
 	// Use routerTLSSecretName so the mounted secret matches the hash annotation.
@@ -1141,8 +1157,6 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 			MountPath: "/tls",
 			ReadOnly:  true,
 		})
-		// Set DefaultMode explicitly to avoid reconciliation loop (K8s defaults to 420/0644)
-		defaultMode := int32(420)
 		volumes = append(volumes, corev1.Volume{
 			Name: "tls-certs",
 			VolumeSource: corev1.VolumeSource{
@@ -1191,6 +1205,7 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Command:         []string{"/router"},
 							Args: []string{
 								"-metrics-bind-address=:8080",
+								"-config-file=" + path.Join(routerConfigMountPath, routerConfigFileName),
 							},
 							Env:          envVars,
 							VolumeMounts: volumeMounts,
@@ -1229,8 +1244,9 @@ func (r *JumpstarterReconciler) createRouterDeployment(jumpstarter *operatorv1al
 							Type: corev1.SeccompProfileTypeRuntimeDefault,
 						},
 					},
-					ServiceAccountName:        fmt.Sprintf("%s-controller-manager", jumpstarter.Name),
-					TopologySpreadConstraints: jumpstarter.Spec.Routers.TopologySpreadConstraints,
+					ServiceAccountName:           routerServiceAccountName(jumpstarter),
+					AutomountServiceAccountToken: new(false),
+					TopologySpreadConstraints:    jumpstarter.Spec.Routers.TopologySpreadConstraints,
 				},
 			},
 		},
@@ -1262,7 +1278,7 @@ func (r *JumpstarterReconciler) createConfigMap(ctx context.Context, jumpstarter
 
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "jumpstarter-controller",
+			Name:      controllerConfigMapName,
 			Namespace: jumpstarter.Namespace,
 			Labels: map[string]string{
 				"app":           "jumpstarter-controller",

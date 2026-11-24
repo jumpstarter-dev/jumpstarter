@@ -151,6 +151,33 @@ func (r *JumpstarterReconciler) reconcileRBAC(ctx context.Context, jumpstarter *
 		"namespace", existingRoleBinding.Namespace,
 		"operation", op)
 
+	return r.reconcileRouterServiceAccount(ctx, jumpstarter)
+}
+
+func routerServiceAccountName(jumpstarter *operatorv1alpha1.Jumpstarter) string {
+	return jumpstarter.Name + "-router"
+}
+
+// reconcileRouterServiceAccount gives the router pods an identity of their own
+// that no Role is bound to: the router reads its configuration from a mounted
+// file and needs no Kubernetes API access.
+func (r *JumpstarterReconciler) reconcileRouterServiceAccount(ctx context.Context, jumpstarter *operatorv1alpha1.Jumpstarter) error {
+	serviceAccount := &corev1.ServiceAccount{}
+	serviceAccount.Name = routerServiceAccountName(jumpstarter)
+	serviceAccount.Namespace = jumpstarter.Namespace
+
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, serviceAccount, func() error {
+		serviceAccount.Labels = map[string]string{
+			"component": "router",
+			"router":    jumpstarter.Name,
+		}
+		return controllerutil.SetControllerReference(jumpstarter, serviceAccount, r.Scheme)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile router ServiceAccount: %w", err)
+	}
+
+	logf.FromContext(ctx).V(1).Info("Router ServiceAccount reconciled", "name", serviceAccount.Name, "operation", op)
 	return nil
 }
 
