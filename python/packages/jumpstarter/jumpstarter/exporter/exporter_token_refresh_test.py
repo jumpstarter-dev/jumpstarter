@@ -304,6 +304,31 @@ async def test_controller_advisory_wakes_refresh_once_without_interrupting_lease
 
 
 @pytest.mark.anyio
+async def test_cleared_advisory_stops_denied_out_of_window_retries():
+    now = time.time()
+    token = _make_jwt({"iat": now, "exp": now + 100000})
+    exporter = _exporter_with_token(token)
+    tasks = MagicMock()
+    await exporter._apply_status(jumpstarter_pb2.StatusResponse(token_rotation_advised=True), tasks)
+    with (
+        patch.object(exporter, "rotate_token", side_effect=FakeRpcError(grpc.StatusCode.PERMISSION_DENIED)) as rotate,
+        patch("jumpstarter.exporter.exporter.sleep", new_callable=AsyncMock),
+    ):
+        assert await exporter._rotate_token_with_retry()
+        assert exporter._token_refresh_requested.is_set()
+        await exporter._apply_status(jumpstarter_pb2.StatusResponse(token_rotation_advised=False), tasks)
+        assert not exporter._token_refresh_requested.is_set()
+        with (
+            patch.object(exporter._token_refresh_requested, "wait", side_effect=StopRefreshLoop()) as wait,
+            pytest.raises(StopRefreshLoop),
+        ):
+            await exporter._token_refresh_loop()
+        wait.assert_awaited_once()
+        rotate.assert_awaited_once()
+    assert exporter.token == token
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "token",
     [

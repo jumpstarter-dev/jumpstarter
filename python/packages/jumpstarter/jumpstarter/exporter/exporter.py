@@ -1497,6 +1497,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         if status.token_rotation_advised and not self._token_rotation_advised:
             logger.info("Controller advises exporter token rotation")
             self._token_refresh_requested.set()
+        elif not status.token_rotation_advised and self._token_rotation_advised:
+            self._token_refresh_requested = Event()
         self._token_rotation_advised = status.token_rotation_advised
         previous_state = self._lease_state
         current_leased = status.leased
