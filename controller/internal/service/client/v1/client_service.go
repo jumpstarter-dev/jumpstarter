@@ -354,6 +354,7 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 	if expansion != nil {
 		jlease.Spec.Members = expansion.members
 		jlease.Spec.Constraints = expansion.constraints
+		jlease.Spec.Forwards = expansion.forwards
 		jlease.Spec.TemplateRef = expansion.templateRef
 	}
 	if err := s.validateMemberExporters(ctx, namespace, jlease.Spec.Members); err != nil {
@@ -480,6 +481,20 @@ func validateLeaseTarget(lease *cpb.Lease) error {
 	}
 	hasTemplate := lease.Template != nil
 
+	// Forwards connect the members of a request that gives its members
+	// itself. A template has its own forwards, and a scalar lease has one
+	// exporter.
+	if len(lease.Forwards) > 0 {
+		switch {
+		case hasTemplate:
+			return status.Error(codes.InvalidArgument,
+				"forwards cannot be used with template: the forwards of a template request come from the template")
+		case len(lease.Members) == 0:
+			return status.Error(codes.InvalidArgument,
+				"forwards requires members: only a lease request with members can set forwards")
+		}
+	}
+
 	switch {
 	case hasTemplate && len(scalar)+len(memberForm) > 0:
 		return status.Errorf(codes.InvalidArgument,
@@ -531,6 +546,9 @@ func validateRequestedMembers(lease *cpb.Lease) error {
 	if !slices.ContainsFunc(lease.Members, func(member *cpb.LeaseMember) bool { return !member.GetOptional() }) {
 		return status.Error(codes.InvalidArgument, "members: a lease must have a required member")
 	}
+	if err := validateRequestedForwards(lease, names); err != nil {
+		return err
+	}
 	for i, constraint := range lease.Constraints {
 		if constraint.GetSameLabel() == "" {
 			return status.Errorf(codes.InvalidArgument, "constraints[%d].same_label is required", i)
@@ -545,9 +563,64 @@ func validateRequestedMembers(lease *cpb.Lease) error {
 	return nil
 }
 
+// validateRequestedForwards checks the forwards of a request that gives its
+// members itself: the rules that the API server applies to spec.forwards, with
+// the field names of the request. The ports are not checked here: the
+// controller validates them after it binds the lease.
+func validateRequestedForwards(lease *cpb.Lease, members map[string]struct{}) error {
+	if len(lease.Forwards) > maxLeaseForwards {
+		return status.Errorf(codes.InvalidArgument, "forwards: a lease has at most %d forwards", maxLeaseForwards)
+	}
+	names := make(map[string]struct{}, len(lease.Forwards))
+	for i, forward := range lease.Forwards {
+		name := forward.GetName()
+		if name == "" {
+			return status.Errorf(codes.InvalidArgument, "forwards[%d].name is required", i)
+		}
+		if _, duplicate := names[name]; duplicate {
+			return status.Errorf(codes.InvalidArgument, "forwards: duplicate forward %q", name)
+		}
+		names[name] = struct{}{}
+		if _, role := members[name]; role {
+			return status.Errorf(codes.InvalidArgument,
+				"forwards[%s]: a forward and a member cannot have the same name", name)
+		}
+		if len(forward.Endpoints) < minForwardEndpoints || len(forward.Endpoints) > maxForwardEndpoints {
+			return status.Errorf(codes.InvalidArgument,
+				"forwards[%s].endpoints: a forward has %d to %d endpoints", name, minForwardEndpoints, maxForwardEndpoints)
+		}
+		endpointMembers := make(map[string]struct{}, len(forward.Endpoints))
+		for j, endpoint := range forward.Endpoints {
+			if endpoint.GetMemberName() == "" {
+				return status.Errorf(codes.InvalidArgument, "forwards[%s].endpoints[%d].member_name is required", name, j)
+			}
+			if endpoint.GetPortName() == "" {
+				return status.Errorf(codes.InvalidArgument, "forwards[%s].endpoints[%d].port_name is required", name, j)
+			}
+			if _, declared := members[endpoint.MemberName]; !declared {
+				return status.Errorf(codes.InvalidArgument,
+					"forwards[%s].endpoints: %q is not a member of the lease", name, endpoint.MemberName)
+			}
+			if _, duplicate := endpointMembers[endpoint.MemberName]; duplicate {
+				return status.Errorf(codes.InvalidArgument,
+					"forwards[%s].endpoints: member %q has more than one endpoint", name, endpoint.MemberName)
+			}
+			endpointMembers[endpoint.MemberName] = struct{}{}
+		}
+	}
+	return nil
+}
+
+// The limits of Lease.spec.forwards.
+const (
+	maxLeaseForwards    = 16
+	minForwardEndpoints = 2
+	maxForwardEndpoints = 8
+)
+
 // immutableLeaseFields are the Lease fields of a member-form lease that an
 // update mask cannot name.
-var immutableLeaseFields = []string{"members", "constraints", "template"}
+var immutableLeaseFields = []string{"members", "constraints", "template", "forwards"}
 
 func (s *ClientService) UpdateLease(ctx context.Context, req *cpb.UpdateLeaseRequest) (*cpb.Lease, error) {
 	key, err := utils.ParseLeaseIdentifier(req.Lease.Name)

@@ -59,6 +59,11 @@ type LeaseReconciler struct {
 	// time the process loaded this package.
 	StartedAt time.Time
 
+	// ForwardReportTimeout is the time that the exporter of a forward
+	// endpoint has for its report after a setup instruction (JEP-0016). The
+	// zero value is DefaultForwardReportTimeout.
+	ForwardReportTimeout time.Duration
+
 	// backfilled has the namespaces whose bound leases got their claims
 	// (backfillClaims).
 	backfillMu sync.Mutex
@@ -178,6 +183,8 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 	if lease.Status.Ended {
 		lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = jumpstarterdevv1alpha1.LeaseLabelEndedValue
+		// The reports of the forward ends are of no use after the lease.
+		delete(lease.Annotations, jumpstarterdevv1alpha1.LeaseForwardEndsAnnotation)
 	}
 
 	if err := r.reconcileOwnerReferences(ctx, &lease); err != nil {
@@ -775,6 +782,11 @@ func exporterChangedForPendingLeases() predicate.Funcs {
 			return true
 		}
 		if !labels.Equals(labels.Set(oldExp.Labels), labels.Set(newExp.Labels)) {
+			return true
+		}
+		// The forwards of a lease are validated against the ports that the
+		// exporters of its members report.
+		if !slices.Equal(oldExp.Ports(), newExp.Ports()) {
 			return true
 		}
 		return false

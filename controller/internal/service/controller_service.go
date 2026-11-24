@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -32,12 +31,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"golang.org/x/exp/maps"
-
 	gwruntime "github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 
 	"github.com/go-logr/logr"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
@@ -96,10 +92,14 @@ type ControllerService struct {
 	TelemetryConfig  *config.Telemetry
 	// StatusHeartbeatInterval defaults to 10 seconds.
 	StatusHeartbeatInterval time.Duration
-	listenQueues            sync.Map
-	leaseLocks              sync.Map
-	authOnce                sync.Once
-	auth                    *auth.Auth
+	// ForwardSetupPollInterval is how often Listen looks at an exporter whose
+	// beforeLease hook is not complete, to send its forward setups after the
+	// hook. It defaults to 1 second.
+	ForwardSetupPollInterval time.Duration
+	listenQueues             sync.Map
+	leaseLocks               sync.Map
+	authOnce                 sync.Once
+	auth                     *auth.Auth
 }
 
 type listenQueue struct {
@@ -311,6 +311,14 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 
 	logger.Info("Registering exporter")
 
+	// A registration with a port that the controller cannot accept changes
+	// nothing.
+	devices, err := devicesFromReports(req.Reports)
+	if err != nil {
+		logger.Info("Rejected registration", "reason", err.Error())
+		return nil, err
+	}
+
 	original := client.MergeFrom(exporter.DeepCopy())
 
 	if exporter.Labels == nil {
@@ -336,14 +344,6 @@ func (s *ControllerService) Register(ctx context.Context, req *pb.RegisterReques
 
 	original = client.MergeFrom(exporter.DeepCopy())
 
-	devices := []jumpstarterdevv1alpha1.Device{}
-	for _, device := range req.Reports {
-		devices = append(devices, jumpstarterdevv1alpha1.Device{
-			Uuid:       device.Uuid,
-			ParentUuid: device.ParentUuid,
-			Labels:     device.Labels,
-		})
-	}
 	exporter.Status.Devices = devices
 	// Set on every registration. An exporter replaced by a version that does not
 	// record its lease hooks drops the record: it is not held by it, and a later
@@ -1122,10 +1122,75 @@ func (s *ControllerService) Listen(req *pb.ListenRequest, stream pb.ControllerSe
 		s.listenQueues.CompareAndDelete(queueKey, wrapper)
 		s.releaseLeaseLock(queueKey)
 	}()
+
+	// The forward instructions of the lease (JEP-0016). An exporter that
+	// reports no ports cannot be in a forward: it gets none, and a lease
+	// without forwards has none.
+	var forwards *listenForwards
+	var leaseChanged <-chan struct{}
+	var setupPoll <-chan time.Time
+	if lease.HasForwards() && len(exporter.Ports()) > 0 {
+		forwards = &listenForwards{
+			service:      s,
+			stream:       stream,
+			leaseKey:     client.ObjectKeyFromObject(&lease),
+			leaseUID:     lease.UID,
+			exporterName: exporter.Name,
+			sent:         map[string]bool{},
+		}
+		watchCtx, stopWatch := context.WithCancel(ctx)
+		defer stopWatch()
+		leaseChanged = s.watchLeaseChanges(watchCtx, forwards.leaseKey)
+		// A forward starts after the beforeLease hook of the exporter.
+		if exporterReadyForForwards(exporter) {
+			forwards.ready = true
+			if err := forwards.sync(ctx); err != nil {
+				logger.Error(err, "unable to send forward setups")
+				return err
+			}
+			if forwards.sendErr != nil {
+				return forwards.sendErr
+			}
+		} else {
+			ticker := time.NewTicker(s.forwardSetupPollInterval())
+			defer ticker.Stop()
+			setupPoll = ticker.C
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-setupPoll:
+			var current jumpstarterdevv1alpha1.Exporter
+			if err := s.Client.Get(ctx, client.ObjectKeyFromObject(exporter), &current); err != nil {
+				logger.Error(err, "unable to get exporter for its forward setups")
+				continue
+			}
+			if !exporterReadyForForwards(&current) {
+				continue
+			}
+			setupPoll = nil
+			forwards.ready = true
+			if err := forwards.sync(ctx); err != nil {
+				logger.Error(err, "unable to send forward setups")
+				return err
+			}
+			if forwards.sendErr != nil {
+				return forwards.sendErr
+			}
+		case <-leaseChanged:
+			if !forwards.ready {
+				continue
+			}
+			if err := forwards.sync(ctx); err != nil {
+				// The next change of the lease tries again.
+				logger.Error(err, "unable to update forward instructions")
+			}
+			if forwards.sendErr != nil {
+				return forwards.sendErr
+			}
 		case <-wrapper.done:
 			// We've been superseded by a reconnecting Listen. Drain any
 			// tokens already buffered in our channel so they still get
@@ -1396,32 +1461,20 @@ func (s *ControllerService) Dial(ctx context.Context, req *pb.DialRequest) (*pb.
 		}
 	}
 
-	candidates := maps.Values(s.Router)
-	slices.SortFunc(candidates, func(a config.RouterEntry, b config.RouterEntry) int {
-		return -cmp.Compare(MatchLabels(a.Labels, exporter.Labels), MatchLabels(b.Labels, exporter.Labels))
-	})
-
-	if len(candidates) == 0 {
+	router, ok := s.selectRouter(exporter.Labels)
+	if !ok {
 		err := fmt.Errorf("no router available")
 		logger.Error(err, "no router available")
 		return nil, err
 	}
 
-	logger.Info("selected router", "endpoint", candidates[0].Endpoint, "labels", candidates[0].Labels)
+	logger.Info("selected router", "endpoint", router.Endpoint, "labels", router.Labels)
 
-	endpoint := candidates[0].Endpoint
+	endpoint := router.Endpoint
 
 	stream := k8suuid.NewUUID()
 
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:    "https://jumpstarter.dev/stream",
-		Subject:   string(stream),
-		Audience:  []string{"https://jumpstarter.dev/router"},
-		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute * 30)),
-		NotBefore: jwt.NewNumericDate(time.Now()),
-		IssuedAt:  jwt.NewNumericDate(time.Now()),
-		ID:        string(k8suuid.NewUUID()),
-	}).SignedString([]byte(os.Getenv("ROUTER_KEY")))
+	token, err := signRouterToken(string(stream), dialTokenLifetime)
 
 	if err != nil {
 		logger.Error(err, "unable to sign token")

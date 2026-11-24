@@ -159,6 +159,7 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 	}
 
 	setPendingMembers(lease)
+	setPendingForwards(lease)
 
 	// For scheduled leases: only assign exporter if requested BeginTime has arrived
 	if lease.Spec.BeginTime != nil {
@@ -888,25 +889,36 @@ func (r *LeaseReconciler) reconcileMemberConditions(
 		lease.SetStatusCondition(jumpstarterdevv1alpha1.LeaseConditionTypeDegraded, true,
 			jumpstarterdevv1alpha1.LeaseReasonMemberLost, "%s", message)
 		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonMemberLost, "%s", message)
+		if lease.HasForwards() {
+			return r.reconcileForwards(ctx, result, lease, false)
+		}
 		return nil
 	}
 
 	// A hook that is complete stays complete: the status that an exporter
-	// reports later in the lease does not make the lease wait again.
-	if meta.IsStatusConditionTrue(lease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeReady)) {
-		return nil
+	// reports later in the lease does not make the lease wait again. A lease
+	// that waits only for its forwards has its hooks complete too.
+	membersReady := memberHooksComplete(lease)
+	if !membersReady {
+		switch {
+		case len(failed) > 0:
+			lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHookFailed,
+				"The beforeLease hook failed for roles: %s", quoteRoles(failed))
+		case len(waiting) > 0:
+			lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook,
+				"Waiting for the beforeLease hook of roles: %s", quoteRoles(waiting))
+		case len(offline) > 0:
+			lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook,
+				"Waiting for the exporters of roles: %s", quoteRoles(offline))
+		default:
+			membersReady = true
+		}
 	}
-	switch {
-	case len(failed) > 0:
-		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHookFailed,
-			"The beforeLease hook failed for roles: %s", quoteRoles(failed))
-	case len(waiting) > 0:
-		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook,
-			"Waiting for the beforeLease hook of roles: %s", quoteRoles(waiting))
-	case len(offline) > 0:
-		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook,
-			"Waiting for the exporters of roles: %s", quoteRoles(offline))
-	default:
+	// The forwards of a lease are one more condition for Ready (JEP-0016).
+	if lease.HasForwards() {
+		return r.reconcileForwards(ctx, result, lease, membersReady)
+	}
+	if membersReady && !meta.IsStatusConditionTrue(lease.Status.Conditions, string(jumpstarterdevv1alpha1.LeaseConditionTypeReady)) {
 		lease.SetStatusReady(true, "Ready", "The exporters of all members are ready")
 	}
 	return nil

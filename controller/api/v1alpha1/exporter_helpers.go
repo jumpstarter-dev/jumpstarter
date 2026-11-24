@@ -55,6 +55,13 @@ func (e *Exporter) ToProtobuf() *cpb.Exporter {
 	// get online status from conditions (deprecated, kept for backward compatibility)
 	isOnline := meta.IsStatusConditionTrue(e.Status.Conditions, string(ExporterConditionTypeOnline))
 
+	// The ports that the devices of the exporter declare. An exporter that
+	// reports none has no ports field.
+	var ports []*pb.PortReport
+	for _, port := range e.Ports() {
+		ports = append(ports, port.ToProtobuf())
+	}
+
 	return &cpb.Exporter{
 		Name:          utils.UnparseExporterIdentifier(kclient.ObjectKeyFromObject(e)),
 		Labels:        e.Labels,
@@ -62,6 +69,7 @@ func (e *Exporter) ToProtobuf() *cpb.Exporter {
 		Status:        stringToProtoStatus(e.Status.ExporterStatusValue),
 		StatusMessage: e.Status.StatusMessage,
 		Enabled:       new(e.IsEnabled()),
+		Ports:         ports,
 	}
 }
 

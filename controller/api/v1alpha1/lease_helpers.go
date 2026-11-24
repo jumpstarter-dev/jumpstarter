@@ -261,6 +261,10 @@ func LeaseFromProtobuf(
 	for _, c := range req.Constraints {
 		constraints = append(constraints, LeaseConstraintFromProtobuf(c))
 	}
+	var forwards []LeaseForward
+	for _, f := range req.Forwards {
+		forwards = append(forwards, LeaseForwardFromProtobuf(f))
+	}
 
 	return &Lease{
 		ObjectMeta: metav1.ObjectMeta{
@@ -274,6 +278,7 @@ func LeaseFromProtobuf(
 			Selector:    *selector,
 			Members:     members,
 			Constraints: constraints,
+			Forwards:    forwards,
 			Tags:        specTags,
 			Context:     specContext,
 			ExporterRef: func() *corev1.LocalObjectReference {
@@ -359,6 +364,12 @@ func (l *Lease) ToProtobuf() *cpb.Lease {
 		}
 		for i := range l.Status.Members {
 			lease.MemberStatuses = append(lease.MemberStatuses, l.Status.Members[i].ToProtobuf(l.Namespace))
+		}
+		for i := range l.Spec.Forwards {
+			lease.Forwards = append(lease.Forwards, l.Spec.Forwards[i].ToProtobuf())
+		}
+		for i := range l.Status.Forwards {
+			lease.ForwardStatuses = append(lease.ForwardStatuses, l.Status.Forwards[i].ToProtobuf())
 		}
 	} else if l.Status.ExporterRef != nil {
 		lease.Exporter = new(utils.UnparseExporterIdentifier(kclient.ObjectKey{
@@ -511,6 +522,9 @@ func (t *LeaseTemplate) ToProtobuf() *cpb.LeaseTemplate {
 	}
 	for i := range t.Spec.Constraints {
 		template.Constraints = append(template.Constraints, t.Spec.Constraints[i].ToProtobuf())
+	}
+	for i := range t.Spec.Forwards {
+		template.Forwards = append(template.Forwards, t.Spec.Forwards[i].ToProtobuf())
 	}
 	return template
 }

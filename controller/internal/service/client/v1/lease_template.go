@@ -45,6 +45,10 @@ type templateExpansion struct {
 	request     *cpb.Lease
 	members     []jumpstarterdevv1alpha1.LeaseMember
 	constraints []jumpstarterdevv1alpha1.LeaseConstraint
+	// forwards are the forwards of the template, without changes. A forward
+	// with an endpoint on an excluded role stays: the controller disables it,
+	// or serves its other endpoints.
+	forwards    []jumpstarterdevv1alpha1.LeaseForward
 	templateRef *jumpstarterdevv1alpha1.LeaseTemplateReference
 }
 
@@ -121,10 +125,16 @@ func (s *ClientService) expandLeaseTemplate(
 		constraints = append(constraints, *template.Spec.Constraints[i].DeepCopy())
 	}
 
+	var forwards []jumpstarterdevv1alpha1.LeaseForward
+	for i := range template.Spec.Forwards {
+		forwards = append(forwards, *template.Spec.Forwards[i].DeepCopy())
+	}
+
 	return &templateExpansion{
 		request:     request,
 		members:     members,
 		constraints: constraints,
+		forwards:    forwards,
 		templateRef: &jumpstarterdevv1alpha1.LeaseTemplateReference{
 			Name:       template.Name,
 			Generation: template.Generation,
