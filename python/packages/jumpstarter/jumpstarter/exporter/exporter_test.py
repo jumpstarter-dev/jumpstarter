@@ -71,6 +71,7 @@ def _make_base_exporter(**overrides):
         "_status_drain_active": False,
         "_pending_status_request": None,
         "_status_rpc_event": Event(),
+        "_token_refresh_requested": Event(),
         "_fatal_stream_error": None,
         "_report_status": AsyncMock(),
         "_request_lease_release": AsyncMock(),

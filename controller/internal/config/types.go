@@ -112,6 +112,10 @@ type Internal struct {
 	// TokenLifetime defines how long issued tokens are valid.
 	// Parsed as a Go duration string (e.g., "43800h", "30d").
 	TokenLifetime string `json:"tokenLifetime,omitempty" yaml:"tokenLifetime,omitempty"`
+
+	// DisableLegacyTokenAuthentication turns off the exact-stored-token fallback
+	// used during signing-key migrations. Normal signature verification is unchanged.
+	DisableLegacyTokenAuthentication bool `json:"disableLegacyTokenAuthentication,omitempty" yaml:"disableLegacyTokenAuthentication,omitempty"`
 }
 
 // K8s defines the Kubernetes service account token authentication configuration.
@@ -166,15 +170,16 @@ type Keepalive struct {
 // Using a single struct avoids a long list of return values and makes
 // it easy to add new fields without touching every call site.
 type LoadedConfig struct {
-	Authenticator    authenticator.Token
-	Prefix           string
-	Router           Router
-	ServerOptions    []grpc.ServerOption
-	Provisioning     *Provisioning
-	LeasePolicy      *LeasePolicy
-	HiddenLabels     *HiddenLabels
-	DeprecatedLabels *DeprecatedLabels
-	Telemetry        *Telemetry
+	DisableLegacyTokenAuthentication bool
+	Authenticator                    authenticator.Token
+	Prefix                           string
+	Router                           Router
+	ServerOptions                    []grpc.ServerOption
+	Provisioning                     *Provisioning
+	LeasePolicy                      *LeasePolicy
+	HiddenLabels                     *HiddenLabels
+	DeprecatedLabels                 *DeprecatedLabels
+	Telemetry                        *Telemetry
 }
 
 // Router represents the router configuration mapping.

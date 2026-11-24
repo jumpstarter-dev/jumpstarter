@@ -16,6 +16,75 @@ To use OIDC with your Jumpstarter installation:
 2. Configure your OIDC provider to work with Jumpstarter
 3. Create users with appropriate OIDC usernames
 
+## Migrating credentials after a signing-key change
+
+The controller normally verifies tokens using the current signing key. During
+migration, it can also accept an **exact, unexpired credential already stored in
+Kubernetes**. It does not trust signatures made with the previous signing key.
+
+This fallback is enabled by default. It runs only after normal authentication
+fails. Valid current-key and external OIDC tokens do not cause an additional
+Secret lookup. The fallback reads the credential Secret directly from the API
+server, checks the token's issuer, audience, expiry and internal subject, and
+requires an exact token or SHA-256 hash match. Normal resource authorization,
+including the identity's UID, still applies.
+
+When reconciliation replaces an old-key token in a `<name>-client` or
+`<name>-exporter` Secret, it retains the old token's hash in the Secret's
+`jumpstarter.dev/legacy-token-hash` annotation. Only the credential actually in
+the Secret is retained; tokens supplied in requests are never enrolled. Install
+this migration support together with the signing-key fix: a credential already
+overwritten without retaining its hash cannot be recovered by this mechanism.
+
+Each fallback authentication logs a warning naming the credential Secret, without
+logging the token. Exporters also receive a `CredentialUpdateRequired=True`
+condition and a warning event. Update only the `token` field of the local
+configuration from the regenerated Secret, preserving driver and TLS settings,
+then reconnect. Fresh exporter authentication with the replacement clears the
+condition and removes the old-token allowance; heartbeats alone do not.
+
+The controller also sends `token_rotation_advised: true` on the exporter's
+`Status` stream while the update condition is true. Updated exporters wake
+their existing token-refresh loop immediately, retrieve the replacement through
+`RotateToken` even before the normal renewal window, and persist it through the
+existing token-save callback. Retries return the same replacement. They then
+reconnect only the Status stream with the new token so the controller can clear
+the condition and revoke the retained hash; active leases are not interrupted.
+Repeated advisory updates do not start concurrent rotations. Older exporters
+ignore the added protobuf field and continue their expiry-based refresh (where
+supported), or require the manual token update described above. Updated
+exporters connected to older controllers keep their existing expiry schedule.
+
+Client allowances remain until disabled, expired, or superseded by another
+credential regeneration. Old credentials keep their original expiry; this
+feature never extends it. Deleting the Secret or its retained-hash annotation
+revokes a retained credential. Disabling the fallback affects new authentication;
+it does not retroactively reauthenticate existing streams.
+
+After updating client and exporter configurations, disable the fallback in the
+controller ConfigMap's `config` section:
+
+```yaml
+authentication:
+  internal:
+    disableLegacyTokenAuthentication: true
+```
+
+For operator-managed installations, set the same switch on the `Jumpstarter` CR:
+
+```yaml
+spec:
+  authentication:
+    internal:
+      disableLegacyTokenAuthentication: true
+```
+
+The operator updates the controller configuration and triggers a rolling restart.
+For manually managed deployments, restart the controller after editing its
+configuration. Reconciliation removes retained hashes when the fallback is
+disabled. Telemetry continues to require current-key telemetry tokens; callers
+obtain those through the controller's `GetServiceEndpoints` RPC.
+
 ## Username Collisions
 
 When using OIDC auto provisioning, Jumpstarter derives resource names directly from

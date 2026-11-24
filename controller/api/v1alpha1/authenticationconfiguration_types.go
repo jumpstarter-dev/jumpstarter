@@ -16,7 +16,8 @@ type AuthenticationConfiguration struct {
 }
 
 type Internal struct {
-	Prefix string `json:"prefix"`
+	Prefix                           string `json:"prefix"`
+	DisableLegacyTokenAuthentication bool   `json:"disableLegacyTokenAuthentication,omitempty"`
 }
 
 func init() {

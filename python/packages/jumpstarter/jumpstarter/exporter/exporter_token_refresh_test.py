@@ -5,9 +5,11 @@ import logging
 import stat
 import threading
 import time
+from functools import partial
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import anyio
+import anyio.lowlevel
 import grpc
 import pytest
 import yaml
@@ -151,17 +153,19 @@ async def test_refresh_retries_after_rotation_failure(error, retry_delay):
         exporter.token = next_token
         return next_token
 
-    wait = AsyncMock(side_effect=[None, StopRefreshLoop()])
+    wait = AsyncMock()
     with (
         patch.object(exporter, "rotate_token", side_effect=rotate) as rotate_mock,
         patch("jumpstarter.exporter.exporter.sleep", wait),
+        patch("jumpstarter.exporter.exporter.Event", return_value=exporter._token_refresh_requested),
+        patch.object(exporter._token_refresh_requested, "wait", side_effect=StopRefreshLoop()),
         patch("jumpstarter.exporter.token_refresh.time.time", return_value=now),
         pytest.raises(StopRefreshLoop),
     ):
         await exporter._token_refresh_loop()
     assert rotate_mock.await_count == 2
     assert exporter.token == next_token
-    assert [call.args[0] for call in wait.await_args_list] == [retry_delay, 3600.0]
+    assert [call.args[0] for call in wait.await_args_list] == [retry_delay]
 
 
 @pytest.mark.anyio
@@ -220,13 +224,14 @@ async def test_refresh_rechecks_wall_clock_after_capped_sleep():
     exporter = _exporter_with_token(_make_jwt({"iat": now, "exp": now + lifetime}))
     resumed_at = now + 360 * 86400
     next_token = _make_jwt({"iat": resumed_at, "exp": resumed_at + lifetime})
-    waits = []
+    waits = 0
 
     with patch("jumpstarter.exporter.token_refresh.time.time", return_value=now) as clock:
 
-        async def wait(seconds):
-            waits.append(seconds)
-            if len(waits) == 1:
+        async def wait():
+            nonlocal waits
+            waits += 1
+            if waits == 1:
                 clock.return_value = resumed_at
             else:
                 raise StopRefreshLoop()
@@ -237,13 +242,65 @@ async def test_refresh_rechecks_wall_clock_after_capped_sleep():
 
         with (
             patch.object(exporter, "rotate_token", side_effect=rotate) as rotate_mock,
-            patch("jumpstarter.exporter.exporter.sleep", side_effect=wait),
+            patch("jumpstarter.exporter.exporter.Event", return_value=exporter._token_refresh_requested),
+            patch.object(exporter._token_refresh_requested, "wait", side_effect=wait),
+            patch("jumpstarter.exporter.exporter.move_on_after", wraps=anyio.move_on_after) as timeout,
             pytest.raises(StopRefreshLoop),
         ):
             await exporter._token_refresh_loop()
-    assert waits == [3600.0, 3600.0]
+    assert [call.args[0] for call in timeout.call_args_list] == [3600.0, 3600.0]
     rotate_mock.assert_awaited_once()
     assert exporter.token == next_token
+
+
+@pytest.mark.anyio
+async def test_controller_advisory_wakes_refresh_once_without_interrupting_lease():
+    now = time.time()
+    token = _make_jwt({"iat": now, "exp": now + 100000})
+    replacement = _make_jwt({"iat": now, "exp": now + 200000})
+    persisted = AsyncMock()
+    exporter = _exporter_with_token(token, on_token_rotated=persisted)
+    controller = AsyncMock()
+    controller.RotateToken.return_value = jumpstarter_pb2.RotateTokenResponse(token=replacement)
+    waiting = anyio.Event()
+    original_wait = exporter._token_refresh_requested.wait
+
+    async def wait():
+        waiting.set()
+        await original_wait()
+
+    async def status_stream(_controller):
+        yield jumpstarter_pb2.StatusResponse(leased=True, token_rotation_advised=exporter.token == token)
+        await anyio.sleep_forever()
+
+    tx, rx = anyio.create_memory_object_stream(1)
+    with (
+        patch("jumpstarter.exporter.exporter.jumpstarter_pb2_grpc.ControllerServiceStub", return_value=controller),
+        patch.object(exporter._token_refresh_requested, "wait", side_effect=wait),
+        patch.object(exporter, "_on_lease_update") as lease_update,
+        anyio.fail_after(2),
+    ):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(exporter._token_refresh_loop)
+            tg.start_soon(partial(exporter._retry_stream, "Status", status_stream, tx, backoff=0))
+            await waiting.wait()  # The expiry-based wait has started.
+            advisory = await rx.receive()
+            assert advisory.token_rotation_advised
+            await exporter._apply_status(advisory, tg)
+            # Rotation reconnects only Status, with the replacement credential.
+            acknowledged = await rx.receive()
+            assert not acknowledged.token_rotation_advised
+            assert exporter.token == replacement
+            persisted.assert_awaited_once_with(replacement)
+            assert [call.args[0] for call in exporter.channel_factory.await_args_list] == [token, token, replacement]
+            # Lease/status updates can repeat the advice before acknowledgement.
+            await exporter._apply_status(advisory, tg)
+            assert not exporter._token_refresh_requested.is_set()
+            controller.RotateToken.assert_awaited_once()
+            assert lease_update.call_count == 2
+            assert not tg.cancel_scope.cancel_called
+            await exporter._apply_status(acknowledged, tg)
+            tg.cancel_scope.cancel()
 
 
 @pytest.mark.anyio

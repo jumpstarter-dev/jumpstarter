@@ -101,7 +101,7 @@ func LoadConfiguration(
 	if ok {
 		// backwards compatibility
 		// TODO: remove in 0.7.0
-		auth, prefix, err := oidc.LoadAuthenticationConfiguration(
+		auth, prefix, disableLegacyTokens, err := oidc.LoadAuthenticationConfiguration(
 			ctx,
 			scheme,
 			[]byte(rawAuthenticationConfiguration),
@@ -113,9 +113,10 @@ func LoadConfiguration(
 		}
 
 		return &LoadedConfig{
-			Authenticator: auth,
-			Prefix:        prefix,
-			Router:        router,
+			DisableLegacyTokenAuthentication: disableLegacyTokens,
+			Authenticator:                    auth,
+			Prefix:                           prefix,
+			Router:                           router,
 			ServerOptions: []grpc.ServerOption{
 				grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 					MinTime:             1 * time.Second,
@@ -159,14 +160,15 @@ func LoadConfiguration(
 	}
 
 	return &LoadedConfig{
-		Authenticator:    auth,
-		Prefix:           prefix,
-		Router:           router,
-		ServerOptions:    serverOptions,
-		Provisioning:     &config.Provisioning,
-		LeasePolicy:      &config.LeasePolicy,
-		HiddenLabels:     &config.HiddenLabels,
-		DeprecatedLabels: &config.DeprecatedLabels,
-		Telemetry:        telemetry,
+		DisableLegacyTokenAuthentication: config.Authentication.Internal.DisableLegacyTokenAuthentication,
+		Authenticator:                    auth,
+		Prefix:                           prefix,
+		Router:                           router,
+		ServerOptions:                    serverOptions,
+		Provisioning:                     &config.Provisioning,
+		LeasePolicy:                      &config.LeasePolicy,
+		HiddenLabels:                     &config.HiddenLabels,
+		DeprecatedLabels:                 &config.DeprecatedLabels,
+		Telemetry:                        telemetry,
 	}, nil
 }

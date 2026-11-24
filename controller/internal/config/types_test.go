@@ -12,8 +12,9 @@ func TestConfigRoundTrip(t *testing.T) {
 	original := Config{
 		Authentication: Authentication{
 			Internal: Internal{
-				Prefix:        "internal:",
-				TokenLifetime: "43800h",
+				DisableLegacyTokenAuthentication: true,
+				Prefix:                           "internal:",
+				TokenLifetime:                    "43800h",
 			},
 			K8s: K8s{
 				Enabled: true,
@@ -47,6 +48,9 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 
 	// Verify key fields
+	if !parsed.Authentication.Internal.DisableLegacyTokenAuthentication {
+		t.Fatal("legacy token disable switch did not survive the config round trip")
+	}
 	if parsed.Authentication.Internal.Prefix != original.Authentication.Internal.Prefix {
 		t.Errorf("Internal prefix mismatch: got %s, want %s",
 			parsed.Authentication.Internal.Prefix, original.Authentication.Internal.Prefix)

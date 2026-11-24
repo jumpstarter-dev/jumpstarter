@@ -93,6 +93,7 @@ type ControllerService struct {
 	Recorder         record.EventRecorder
 	Signer           *oidc.Signer
 	TelemetryConfig  *config.Telemetry
+	LegacyTokens     *authentication.StoredTokenAuthenticator
 	// StatusHeartbeatInterval defaults to 10 seconds.
 	StatusHeartbeatInterval time.Duration
 	listenQueues            sync.Map
@@ -474,6 +475,26 @@ func (s *ControllerService) rotateExporterToken(
 		return nil, err
 	}
 	subject, err := s.Signer.ParseSubject(credential)
+	if err != nil && s.LegacyTokens != nil {
+		secret, claims, matchErr := s.LegacyTokens.Match(ctx, credential)
+		if matchErr != nil {
+			return nil, status.Errorf(codes.Unavailable, "read migration credential: %v", matchErr)
+		}
+		if secret != nil && claims.Subject == exporter.InternalSubject() {
+			// A migration can happen before the normal renewal window. Return
+			// the reconciler's replacement without rotating it again on retries.
+			replacement := string(secret.Data[controller.TokenKey])
+			newSubject, validateErr := s.Signer.ParseSubject(replacement)
+			if validateErr != nil || newSubject != exporter.InternalSubject() {
+				return nil, status.Error(codes.Unavailable, "replacement credential is not ready; retry after reconciliation")
+			}
+			expiresAt, expiryErr := s.Signer.TokenExpiry(replacement)
+			if expiryErr != nil {
+				return nil, status.Error(codes.Internal, "invalid replacement credential expiry")
+			}
+			return &pb.RotateTokenResponse{Token: replacement, Expiry: timestamppb.New(expiresAt)}, nil
+		}
+	}
 	if err != nil || subject != exporter.InternalSubject() {
 		return nil, status.Error(codes.PermissionDenied, "only internal exporter tokens can be rotated")
 	}
@@ -1188,6 +1209,8 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 					// Always set, even when empty: its presence tells the exporter
 					// that this controller keeps lease hook records.
 					LeaseHooks: exporter.Status.LeaseHooks.ToProtobuf(),
+					TokenRotationAdvised: meta.IsStatusConditionTrue(exporter.Status.Conditions,
+						string(jumpstarterdevv1alpha1.ExporterConditionTypeCredentialUpdateRequired)),
 				}
 				if proto.Equal(lastPbStatusResponse, &status) {
 					jlog.Verbose(logger, "Not sending status update to exporter, it is the same as the last one")

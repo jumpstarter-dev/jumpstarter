@@ -12,6 +12,14 @@ it; it can't generate the prerequisite/steps/pass-check text.
 
 ## Global prerequisites (`make e2e-run`, non-compat suite)
 
+The separate operator suite (`controller/deploy/operator/test/e2e`, run with
+`make -C controller/deploy/operator test-e2e`) also checks
+`should disable legacy token authentication through the operator`: with the
+operator and its dynamic-ingress test installation running, it changes
+`spec.authentication.internal.disableLegacyTokenAuthentication` to `true`, then
+verifies the controller ConfigMap and a changed Deployment pod-template
+annotation that triggers a rollout. It needs no hardware.
+
 Built by `make e2e-setup` (`e2e/setup-e2e.sh`): kind cluster, dex OIDC provider +
 TLS CA, controller/operator deployed via `make -C controller deploy` with
 telemetry enabled (`OPERATOR_ENABLE_TELEMETRY=true`, which requires the locally

@@ -302,6 +302,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     """
 
     _token_rotation_unsupported: bool = field(init=False, default=False)
+    _token_rotation_advised: bool = field(init=False, default=False)
+    _token_refresh_requested: Event = field(init=False, default_factory=Event)
+    _status_stream_scope: CancelScope | None = field(init=False, default=None)
 
     # Internal State Fields
 
@@ -497,7 +500,8 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         try:
             yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
         finally:
-            await channel.close()
+            with CancelScope(shield=True):
+                await channel.close()
 
     async def _retry_stream(
         self,
@@ -511,12 +515,15 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         delay = backoff
         outage_started = None
         while True:
-            deadline = math.inf
-            if outage_started is not None and outage_budget is not None:
-                deadline = outage_started + outage_budget
+            deadline = (
+                outage_started + outage_budget
+                if outage_started is not None and outage_budget is not None else math.inf
+            )
             scope = CancelScope(deadline=deadline)
             try:
                 with scope:
+                    if stream_name == "Status":
+                        self._status_stream_scope = scope
                     async with self._controller_stub() as controller:
                         async for item in stream_factory(controller):
                             if outage_started is not None:
@@ -718,10 +725,14 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             except Exception:
                 logger.exception("Error in on_token_rotated callback")
 
+        # Reauthenticate Status with the replacement so the controller can
+        # acknowledge migration. This leaves the active lease and Listen alone.
+        if self._status_stream_scope is not None:
+            self._status_stream_scope.cancel()
         return new_token
 
     async def _token_refresh_loop(self) -> None:
-        """Monitor token expiration and request a new token when it is about to expire."""
+        """Refresh on expiry or an explicit controller advisory, using one retry loop."""
         while True:
             # The server also verifies the internal signature, issuer and exporter UID.
             if not is_internal_exporter_token(self.token):
@@ -732,13 +743,17 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.debug("Token does not have an expiry claim; automatic refresh disabled")
                 return
 
-            if sleep_duration > 0:
+            if sleep_duration > 0 and not self._token_refresh_requested.is_set():
                 logger.debug("Token refresh scheduled in %.1f seconds", sleep_duration)
-                await sleep(min(sleep_duration, _TOKEN_REFRESH_CHECK_INTERVAL))
+                with move_on_after(min(sleep_duration, _TOKEN_REFRESH_CHECK_INTERVAL)):
+                    await self._token_refresh_requested.wait()
                 continue
 
+            previous_token = self.token
             if not await self._rotate_token_with_retry():
                 return
+            if self.token != previous_token:
+                self._token_refresh_requested = Event()
 
     async def _rotate_token_with_retry(self) -> bool:
         attempt = 0
@@ -748,7 +763,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.error("Exporter token expired; re-provision the exporter credential")
                 return False
             try:
-                logger.info("Token is about to expire; requesting new token from controller")
+                logger.info("Requesting exporter token renewal from controller")
                 await self.rotate_token()
                 self._token_rotation_unsupported = False
                 logger.info("Successfully refreshed exporter authentication token")
@@ -1479,6 +1494,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         tg: TaskGroup,
     ) -> bool:
         """Process a single status update. Returns True to stop the status loop."""
+        if status.token_rotation_advised and not self._token_rotation_advised:
+            logger.info("Controller advises exporter token rotation")
+            self._token_refresh_requested.set()
+        self._token_rotation_advised = status.token_rotation_advised
         previous_state = self._lease_state
         current_leased = status.leased
 

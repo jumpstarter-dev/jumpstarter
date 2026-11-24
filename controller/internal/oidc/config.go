@@ -21,7 +21,7 @@ func LoadAuthenticationConfiguration(
 	configuration []byte,
 	signer *Signer,
 	certificateAuthority string,
-) (authenticator.Token, string, error) {
+) (authenticator.Token, string, bool, error) {
 	var authenticationConfiguration jumpstarterdevv1alpha1.AuthenticationConfiguration
 	if err := runtime.DecodeInto(
 		serializer.NewCodecFactory(scheme, serializer.EnableStrict).
@@ -29,7 +29,7 @@ func LoadAuthenticationConfiguration(
 		configuration,
 		&authenticationConfiguration,
 	); err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 
 	if authenticationConfiguration.Internal.Prefix == "" {
@@ -56,9 +56,9 @@ func LoadAuthenticationConfiguration(
 		authenticationConfiguration,
 	)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
-	return authn, authenticationConfiguration.Internal.Prefix, nil
+	return authn, authenticationConfiguration.Internal.Prefix, authenticationConfiguration.Internal.DisableLegacyTokenAuthentication, nil
 }
 
 // Reference: https://github.com/kubernetes/kubernetes/blob/v1.32.1/pkg/kubeapiserver/authenticator/config.go#L244

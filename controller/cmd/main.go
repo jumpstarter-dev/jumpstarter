@@ -239,20 +239,31 @@ func main() {
 		os.Exit(1)
 	}
 
+	var legacyTokens *authentication.StoredTokenAuthenticator
+	if !cfg.DisableLegacyTokenAuthentication {
+		legacyTokens = &authentication.StoredTokenAuthenticator{
+			Primary: cfg.Authenticator, Reader: mgr.GetAPIReader(), Namespace: watchNamespace,
+			Issuer: oidcSigner.Issuer(), Audience: oidcSigner.Audience(), Prefix: cfg.Prefix,
+		}
+		cfg.Authenticator = legacyTokens
+	}
+
 	if err = (&controller.ExporterReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Signer:   oidcSigner,
-		Recorder: mgr.GetEventRecorderFor("exporter-controller"),
+		DisableLegacyTokenAuthentication: cfg.DisableLegacyTokenAuthentication,
+		Client:                           mgr.GetClient(),
+		Scheme:                           mgr.GetScheme(),
+		Signer:                           oidcSigner,
+		Recorder:                         mgr.GetEventRecorderFor("exporter-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Exporter")
 		os.Exit(1)
 	}
 	if err = (&controller.ClientReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Signer:   oidcSigner,
-		Recorder: mgr.GetEventRecorderFor("client-controller"),
+		DisableLegacyTokenAuthentication: cfg.DisableLegacyTokenAuthentication,
+		Client:                           mgr.GetClient(),
+		Scheme:                           mgr.GetScheme(),
+		Signer:                           oidcSigner,
+		Recorder:                         mgr.GetEventRecorderFor("client-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Identity")
 		os.Exit(1)
@@ -274,10 +285,11 @@ func main() {
 	}
 
 	if err = (&service.ControllerService{
-		Client: watchClient,
-		Scheme: mgr.GetScheme(),
-		Authn:  authentication.NewBearerTokenAuthenticator(cfg.Authenticator),
-		Authz:  authorization.NewBasicAuthorizer(watchClient, cfg.Prefix, cfg.Provisioning.Enabled),
+		LegacyTokens: legacyTokens,
+		Client:       watchClient,
+		Scheme:       mgr.GetScheme(),
+		Authn:        authentication.NewBearerTokenAuthenticator(cfg.Authenticator),
+		Authz:        authorization.NewBasicAuthorizer(watchClient, cfg.Prefix, cfg.Provisioning.Enabled),
 		Attr: authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
 			NamespaceKey: "jumpstarter-namespace",
 			ResourceKey:  "jumpstarter-kind",

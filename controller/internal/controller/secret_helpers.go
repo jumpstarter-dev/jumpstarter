@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -25,6 +26,8 @@ const PreviousTokenHashAnnotation = "jumpstarter.dev/previous-token-hash"
 
 const expiredTokenAnnotation = "jumpstarter.dev/expired-token-at"
 
+const credentialUpdateAnnotation = "jumpstarter.dev/credential-update-required"
+
 func ensureSecret(
 	ctx context.Context,
 	key client.ObjectKey,
@@ -33,6 +36,7 @@ func ensureSecret(
 	signer *oidc.Signer,
 	subject string,
 	owner metav1.Object,
+	disableLegacyTokens bool,
 	onRegenerate func(secret *corev1.Secret, replaced []byte),
 ) (*corev1.Secret, time.Time, error) {
 	logger := log.FromContext(ctx).WithName("ensureSecret")
@@ -77,6 +81,9 @@ func ensureSecret(
 			return nil, time.Time{}, err
 		}
 		token, ok := secret.Data[TokenKey]
+		if disableLegacyTokens {
+			delete(secret.Annotations, authentication.LegacyTokenHashAnnotation)
+		}
 		if !ok || signer.Validate(string(token)) != nil {
 			// Secret present but invalid
 			logger.Info("secret present but invalid, updating")
@@ -87,6 +94,18 @@ func ensureSecret(
 			}
 			// A regenerated credential starts a new rotation lineage.
 			delete(secret.Annotations, PreviousTokenHashAnnotation)
+			delete(secret.Annotations, authentication.LegacyTokenHashAnnotation)
+			// Trust only a credential already in the Secret, with the expected
+			// identity and valid lifetime. Never enroll a token from a request.
+			if claims, err := authentication.StoredTokenClaims(string(token), signer.Issuer(), signer.Audience()); err == nil && claims.Subject == subject {
+				if secret.Annotations == nil {
+					secret.Annotations = map[string]string{}
+				}
+				secret.Annotations[credentialUpdateAnnotation] = "true"
+				if !disableLegacyTokens {
+					secret.Annotations[authentication.LegacyTokenHashAnnotation] = TokenHash(string(token))
+				}
+			}
 			if onRegenerate != nil {
 				onRegenerate(&secret, token)
 			}
