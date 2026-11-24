@@ -137,41 +137,15 @@ var _ = Describe("Prometheus target health", Ordered, func() {
 			operatorv1alpha1.ConditionTypeServiceMonitorReady,
 			metav1.ConditionTrue, 2*time.Minute)
 
-		By("asserting Prometheus selected both ServiceMonitors without additional scrape config")
+		By("asserting Prometheus selected healthy controller and router targets without extra scrape config")
+		// Both pools must be inside the retry: Prometheus discovers the two
+		// ServiceMonitors independently, so a target set with only the controller
+		// (or only the router) is a wait state, not a result.
 		Eventually(func(g Gomega) {
 			result, err := getPrometheusTargets()
 			g.Expect(err).NotTo(HaveOccurred())
-			targets := activeJumpstarterTargets(result, testNamespace)
-			g.Expect(targets).NotTo(BeEmpty())
-			for _, target := range targets {
-				g.Expect(target.Health).To(Equal("up"))
-				g.Expect(target.LastError).To(BeEmpty())
-				g.Expect(target.LastScrape).NotTo(BeZero())
-				g.Expect(time.Since(target.LastScrape)).To(BeNumerically("<=", prometheusScrapeFreshness))
-			}
+			expectHealthyJumpstarterTargets(g, activeJumpstarterTargets(result, testNamespace))
 		}, prometheusTargetDiscoveryTimeout, 2*time.Second).Should(Succeed())
-
-		targetResult, err := getPrometheusTargets()
-		Expect(err).NotTo(HaveOccurred())
-		targets := activeJumpstarterTargets(targetResult, testNamespace)
-		Expect(targets).NotTo(BeEmpty())
-
-		seen := map[string]bool{}
-		for _, target := range targets {
-			Expect(target.Health).To(Equal("up"))
-			Expect(target.LastError).To(BeEmpty())
-			Expect(target.LastScrape).NotTo(BeZero())
-			Expect(time.Since(target.LastScrape)).To(BeNumerically("<=", prometheusScrapeFreshness))
-			Expect(target.ScrapeURL).To(ContainSubstring("/metrics"))
-			if strings.Contains(target.ScrapePool, "metrics-controller") {
-				seen["controller"] = true
-			}
-			if strings.Contains(target.ScrapePool, "metrics-router") {
-				seen["router"] = true
-			}
-		}
-		Expect(seen).To(HaveKey("controller"))
-		Expect(seen).To(HaveKey("router"))
 
 		By("asserting the Prometheus instance has no manual Jumpstarter scrape config")
 		prom := &unstructured.Unstructured{}
@@ -388,6 +362,31 @@ func getPrometheusTargets() (prometheusTargetsResponse, error) {
 		return result, fmt.Errorf("Prometheus targets status %q", result.Status)
 	}
 	return result, nil
+}
+
+// expectHealthyJumpstarterTargets asserts that every discovered Jumpstarter
+// target is scraping successfully, and that both the controller and router
+// scrape pools are represented. Run it inside Eventually: a single discovered
+// pool is a wait state, so it must not end the retry.
+func expectHealthyJumpstarterTargets(g Gomega, targets []prometheusTarget) {
+	g.Expect(targets).NotTo(BeEmpty())
+
+	seen := map[string]bool{}
+	for _, target := range targets {
+		g.Expect(target.Health).To(Equal("up"))
+		g.Expect(target.LastError).To(BeEmpty())
+		g.Expect(target.LastScrape).NotTo(BeZero())
+		g.Expect(time.Since(target.LastScrape)).To(BeNumerically("<=", prometheusScrapeFreshness))
+		g.Expect(target.ScrapeURL).To(ContainSubstring("/metrics"))
+		if strings.Contains(target.ScrapePool, "metrics-controller") {
+			seen["controller"] = true
+		}
+		if strings.Contains(target.ScrapePool, "metrics-router") {
+			seen["router"] = true
+		}
+	}
+	g.Expect(seen).To(HaveKey("controller"))
+	g.Expect(seen).To(HaveKey("router"))
 }
 
 func activeJumpstarterTargets(result prometheusTargetsResponse, namespace string) []prometheusTarget {
