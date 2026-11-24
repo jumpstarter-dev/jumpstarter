@@ -3,14 +3,13 @@ import sys
 from contextlib import ExitStack, asynccontextmanager, contextmanager
 
 import pytest
-from anyio import Event
 from anyio.from_thread import start_blocking_portal
 
 from .driver import Shell
 from jumpstarter.client import client_from_path
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.utils import serve
-from jumpstarter.exporter.lease_context import LeaseContext
+from jumpstarter.exporter.fsm.lease_context import LeaseContext
 from jumpstarter.exporter.session import Session
 
 
@@ -323,7 +322,7 @@ def test_mixed_format_methods():
 
 @asynccontextmanager
 async def _serve_in_lease_async(root_device, portal, stack):
-    lease = LeaseContext(lease_name="test-lease", before_lease_hook=Event(), client_name="test-client")
+    lease = LeaseContext(lease_name="test-lease", client_name="test-client")
     with Session(root_device=root_device) as session:
         session.lease_context = lease
         session.update_status(ExporterStatus.LEASE_READY)

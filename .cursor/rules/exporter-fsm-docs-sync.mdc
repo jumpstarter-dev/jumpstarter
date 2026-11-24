@@ -1,0 +1,53 @@
+---
+description: keep exporter FSM state docstrings synchronized with lifecycle docs
+globs: python/packages/jumpstarter/jumpstarter/exporter/fsm/**/*.py,docs/source/contributing/jeps/JEP-0016-typed-fsm-exporter-lifecycle.md,docs/source/introduction/exporter-fsm*.md
+alwaysApply: false
+---
+# Exporter FSM Documentation Synchronization
+
+Keep exporter lifecycle **state class docstrings** synchronized with the
+documented lifecycle whenever transitions, admission rules, or failure policy
+change.
+
+## Canonical sources
+
+| Source | Role |
+| --- | --- |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/states.py` | Canonical per-state description (class docstring) |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/input.py` | Input/snapshot types and coalescing publish rules |
+| `python/packages/jumpstarter/jumpstarter/exporter/fsm/lease_context.py` | Live lease references and EndSession request shared across states |
+| `docs/source/contributing/jeps/JEP-0016-typed-fsm-exporter-lifecycle.md` | Design narrative, diagrams, and state bullet summaries |
+| `docs/source/introduction/exporter-fsm*.md` | User-facing lifecycle diagrams, if present |
+
+## When This Rule Applies
+
+Apply whenever changes touch:
+
+- State classes, successors, or helper predicates in `exporter/fsm/states.py`
+- Input types, generation, or merge policy in `exporter/fsm/input.py`
+- Lifecycle tests that encode transition/policy expectations
+- JEP-0016 exporter-state sections or introduction FSM diagrams
+
+## Required Updates
+
+In the same change:
+
+1. Update the affected state class docstring(s) in `states.py` so they still
+   describe purpose, waiting vs activity behavior, and successors/policies.
+2. Update matching bullets/diagrams in JEP-0016 (and introduction diagrams if
+   they exist) so names, transitions, and policies match the code.
+3. Do not leave a state that only exists in docs, or a documented transition
+   that the state `run()` methods cannot take.
+4. Prefer docstring wording that operators/maintainers can trust without reading
+   the full method body; keep JEP text aligned, not duplicated verbatim if the
+   JEP adds rationale the docstring omits.
+
+## Validation Checklist
+
+- Every production state class in `states.py` has a non-empty docstring.
+- New/renamed/removed states appear in JEP-0016 diagrams and bullet lists.
+- Failure-only states (`BeforeLeaseHookFailed`, `AfterLeaseHookFailed`,
+  `ReleasingLease`) remain documented as policy paths, not only the happy path.
+- `ExporterStatus` projections that share a name across states (e.g. both
+  `Available` and `AwaitingLeaseRelease` may report `AVAILABLE`) stay called out
+  where status vs admission differs.
