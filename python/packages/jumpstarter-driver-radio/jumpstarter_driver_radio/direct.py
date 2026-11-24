@@ -37,7 +37,8 @@ _HEADERS = {
     0x04: (2, 1, 1),  # event: code, length
     0x05: (4, 2, 2),  # ISO data: handle, length (14 bits)
 }
-# Read BD_ADDR: what a path is asked first, to know that a controller is at its far end.
+# What a path is asked first, to know that a controller is at its far end: Reset, then Read BD_ADDR.
+_RESET = bytes.fromhex("01030c00")
 _READ_ADDRESS = bytes.fromhex("01091000")
 _GONE = (anyio.EndOfStream, anyio.BrokenResourceError, anyio.ClosedResourceError, OSError)
 
@@ -64,6 +65,15 @@ async def read_packet(stream: ByteStream, buffer: bytearray) -> bytes:
                     del buffer[:total]
                     return packet
         buffer += await stream.receive()
+
+
+async def _ask(stream: ByteStream, buffer: bytearray, command: bytes) -> bytes:
+    """Send a command and give back its Command Complete event."""
+    await stream.send(command)
+    while True:
+        packet = await read_packet(stream, buffer)
+        if packet[:2] == b"\x04\x0e" and packet[4:6] == command[1:3]:
+            return packet
 
 
 @dataclass(kw_only=True)
@@ -275,15 +285,12 @@ class RemoteController(RadioInterface, Driver):
 
     async def _path(self, far: ByteStream, tasks: TaskGroup) -> None:
         """One connection to the forward. The exporter takes it before it knows whether the far end can be
-        reached, so the controller is asked its address first: a path is one when it has answered. Until
+        reached, so the controller is reset and asked its address first: a path is one when it has answered. Until
         then the device is not on it."""
         buffer = bytearray()
-        await far.send(_READ_ADDRESS)
-        while True:
-            packet = await read_packet(far, buffer)
-            if packet[:2] == b"\x04\x0e" and packet[4:6] == _READ_ADDRESS[1:3]:
-                break
-        self._controller = ":".join(f"{byte:02X}" for byte in reversed(packet[7:13]))
+        await _ask(far, buffer, _RESET)  # (rootcanal answers nothing else before a reset)
+        answer = await _ask(far, buffer, _READ_ADDRESS)
+        self._controller = ":".join(f"{byte:02X}" for byte in reversed(answer[7:13]))
         # What the stack had said before this path is what tells whether it has to start again.
         carried, dropped = self._carried, self._dropped
         self._far = far

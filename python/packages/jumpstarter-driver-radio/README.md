@@ -557,7 +557,7 @@ The driver stands between the connector and the forward, and it is there for thr
   stack's own, and stay. A stack that only ever talked to nobody (the far device was not powered on yet) is
   only switched on, in case it gave up.
 
-A connection to the forward counts as a path once the controller at its far end has answered: the driver asks
+A connection to the forward counts as a path once the controller at its far end has answered: the driver resets it and asks
 it its address first (`controller` in `status`). The exporter takes a connection before it knows whether the
 far device is powered on.
 

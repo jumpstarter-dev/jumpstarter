@@ -121,11 +121,13 @@ class Forward:
             self.streams.append(stream)
             buffer = bytearray()
             try:
+                # As rootcanal: a hardware error for anything before a reset. The first two are the driver's.
+                assert await read_packet(stream, buffer) == RESET
+                await stream.send(RESET_DONE)
+                assert await read_packet(stream, buffer) == READ_ADDRESS
+                await stream.send(ADDRESS)
                 while True:
                     packet = await read_packet(stream, buffer)
-                    if packet == READ_ADDRESS:
-                        await stream.send(ADDRESS)
-                        continue
                     self.heard.append(packet)
                     if packet == RESET:
                         await stream.send(RESET_DONE[:3])  # (in two pieces: the driver passes whole packets)
