@@ -118,9 +118,6 @@ func TestReconcileObservabilityDoesNotDeleteServiceMonitorsOnDetectionError(t *t
 	if !strings.Contains(err.Error(), "service monitor CRD detection") {
 		t.Fatalf("unexpected reconcileObservability error: %v", err)
 	}
-	if result.phase != serviceMonitorProbeFailed {
-		t.Fatalf("phase = %v, want serviceMonitorProbeFailed", result.phase)
-	}
 	ready, reason, message := result.condition()
 	if ready || reason != serviceMonitorReasonFailed || message == "" {
 		t.Fatalf("condition = %v/%q/%q, want false/%s with a message", ready, reason, message, serviceMonitorReasonFailed)
@@ -173,9 +170,6 @@ func TestReconcileObservabilityReportsApplyFailureInCondition(t *testing.T) {
 	if !strings.Contains(err.Error(), "injected ServiceMonitor create failure") {
 		t.Fatalf("unexpected reconcileObservability error: %v", err)
 	}
-	if result.phase != serviceMonitorApplyFailed {
-		t.Fatalf("phase = %v, want serviceMonitorApplyFailed", result.phase)
-	}
 	ready, reason, message := result.condition()
 	if ready || reason != serviceMonitorReasonFailed || message == "" {
 		t.Fatalf("condition = %v/%q/%q, want false/%s with a message", ready, reason, message, serviceMonitorReasonFailed)
@@ -191,31 +185,31 @@ func TestServiceMonitorResultCondition(t *testing.T) {
 	}{
 		{
 			name:       "active is ready",
-			result:     serviceMonitorResult{phase: serviceMonitorActive, reason: serviceMonitorReasonCreated},
+			result:     serviceMonitorResult{reason: serviceMonitorReasonCreated},
 			wantReady:  true,
 			wantReason: serviceMonitorReasonCreated,
 		},
 		{
 			name:       "disabled is not ready",
-			result:     serviceMonitorResult{phase: serviceMonitorDisabled, reason: serviceMonitorReasonDisabled},
+			result:     serviceMonitorResult{reason: serviceMonitorReasonDisabled},
 			wantReady:  false,
 			wantReason: serviceMonitorReasonDisabled,
 		},
 		{
 			name:       "waiting for CRD is not ready",
-			result:     serviceMonitorResult{phase: serviceMonitorWaitingForCRD, reason: serviceMonitorReasonCRDNotFound},
+			result:     serviceMonitorResult{reason: serviceMonitorReasonCRDNotFound},
 			wantReady:  false,
 			wantReason: serviceMonitorReasonCRDNotFound,
 		},
 		{
 			name:       "probe failure is not ready",
-			result:     serviceMonitorResult{phase: serviceMonitorProbeFailed, reason: serviceMonitorReasonFailed},
+			result:     serviceMonitorResult{reason: serviceMonitorReasonFailed},
 			wantReady:  false,
 			wantReason: serviceMonitorReasonFailed,
 		},
 		{
 			name:       "apply failure is not ready",
-			result:     serviceMonitorResult{phase: serviceMonitorApplyFailed, reason: serviceMonitorReasonFailed},
+			result:     serviceMonitorResult{reason: serviceMonitorReasonFailed},
 			wantReady:  false,
 			wantReason: serviceMonitorReasonFailed,
 		},

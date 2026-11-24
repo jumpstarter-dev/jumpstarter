@@ -153,9 +153,6 @@ func TestReconcileObservabilityReportsMetricsServiceFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "injected metrics Service create failure") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if result.phase != serviceMonitorApplyFailed {
-		t.Fatalf("phase = %v, want serviceMonitorApplyFailed", result.phase)
-	}
 	ready, reason, message := result.condition()
 	if ready || reason != serviceMonitorReasonFailed {
 		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
@@ -226,8 +223,8 @@ func TestReconcileObservabilityTreatsListNotFoundAsAbsentCRD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcileObservability must not fail when the API is gone: %v", err)
 	}
-	if result.phase != serviceMonitorWaitingForCRD || result.reason != serviceMonitorReasonCRDNotFound {
-		t.Fatalf("result = %v/%q, want %v/%s", result.phase, result.reason, serviceMonitorWaitingForCRD, serviceMonitorReasonCRDNotFound)
+	if result.reason != serviceMonitorReasonCRDNotFound {
+		t.Fatalf("reason = %q, want %s", result.reason, serviceMonitorReasonCRDNotFound)
 	}
 }
 
@@ -380,9 +377,6 @@ func TestReconcileObservabilityReportsMetricsServiceFailureWhenCRDAbsent(t *test
 	if err == nil {
 		t.Fatal("reconcileObservability should report the metrics Service failure for retry")
 	}
-	if result.phase != serviceMonitorApplyFailed {
-		t.Fatalf("phase = %v, want serviceMonitorApplyFailed", result.phase)
-	}
 	ready, reason, message := result.condition()
 	if ready || reason != serviceMonitorReasonFailed {
 		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
@@ -418,9 +412,6 @@ func TestReconcileObservabilityReportsMetricsServiceFailureWhenDisabled(t *testi
 	result, err := r.reconcileObservability(context.Background(), js)
 	if err == nil {
 		t.Fatal("reconcileObservability should report the metrics Service failure for retry")
-	}
-	if result.phase != serviceMonitorApplyFailed {
-		t.Fatalf("phase = %v, want serviceMonitorApplyFailed", result.phase)
 	}
 	ready, reason, message := result.condition()
 	if ready || reason != serviceMonitorReasonFailed {
