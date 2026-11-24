@@ -4,6 +4,7 @@ The manager runs against a fake controller stub and a fake router. The local
 sides are real TCP sockets on the loopback interface.
 """
 
+import logging
 import socket
 import time
 from contextlib import asynccontextmanager
@@ -1112,8 +1113,9 @@ class GrpcRouter(router_pb2_grpc.RouterServiceServicer):
         yield
 
 
-async def test_forward_through_router_stream_frames():
-    listen = free_address()
+@asynccontextmanager
+async def grpc_router():
+    """A RouterService on a port of its own, and what an exporter connects to it with."""
     server = grpc.aio.server()
     router = GrpcRouter()
     router_pb2_grpc.add_RouterServiceServicer_to_server(router, server)
@@ -1131,25 +1133,57 @@ async def test_forward_through_router_stream_frames():
         connect = staticmethod(router_connect)
 
     try:
-        async with running() as (tg, _), local_service() as (service, _connections):
-            requires = End(tg, Connect(), [Port(name="controller", direction="requires", listen=listen)])
-            provides = End(tg, Connect(), [Port(name="rootcanal", direction="provides", connect=service)])
-            requires.controller.peer = provides.manager
-            requires.controller.endpoint = provides.controller.endpoint = f"127.0.0.1:{port}"
-            await provides.setup("rootcanal", PROVIDES)
-            await requires.setup("controller", REQUIRES)
-            await requires.wait_state(READY)
-
-            async with await connect_local(listen) as client:
-                assert await read_exactly(client, 4) == b"hci:"
-                payload = bytes(range(256)) * 64
-                await client.send(payload)
-                assert await read_exactly(client, len(payload)) == payload.upper()
-                await requires.wait_state(CONNECTED)
-                await provides.wait_state(CONNECTED)
-            # The local client closed: the stream and the connection to the service close.
-            await requires.wait_state(READY)
-            await provides.wait_state(READY)
-            assert router.streams == 2
+        yield router, Connect(), port
     finally:
         await server.stop(grace=0)
+
+
+async def test_peer_that_does_not_join_a_router_stream_keeps_the_listener(caplog):
+    # grpc.aio answers the read that the time limit cancels with a cancellation of its own. It must
+    # not end the listener: a peer whose service is not up yet is tried again, and again.
+    listen = free_address()
+    async with grpc_router() as (router, connect, port), running() as (tg, _):
+        requires = End(
+            tg, connect, [Port(name="controller", direction="requires", listen=listen)], peer_join_timeout=0.2
+        )
+        requires.controller.endpoint = f"127.0.0.1:{port}"
+        await requires.setup("controller", REQUIRES)
+        await requires.wait_state(READY)
+
+        with caplog.at_level(logging.WARNING, logger="jumpstarter.exporter.forwards"):
+            for _ in range(2):
+                async with await connect_local(listen) as client:
+                    await expect_closed(client)
+        assert [record.getMessage() for record in caplog.records] == [
+            "Forward bt: no frame from the peer in 0s, closing the connection"
+        ] * 2
+        assert router.streams == 2
+        assert CONNECTED not in requires.controller.states()
+
+
+async def test_forward_through_router_stream_frames():
+    listen = free_address()
+    async with (
+        grpc_router() as (router, connect, port),
+        running() as (tg, _),
+        local_service() as (service, _connections),
+    ):
+        requires = End(tg, connect, [Port(name="controller", direction="requires", listen=listen)])
+        provides = End(tg, connect, [Port(name="rootcanal", direction="provides", connect=service)])
+        requires.controller.peer = provides.manager
+        requires.controller.endpoint = provides.controller.endpoint = f"127.0.0.1:{port}"
+        await provides.setup("rootcanal", PROVIDES)
+        await requires.setup("controller", REQUIRES)
+        await requires.wait_state(READY)
+
+        async with await connect_local(listen) as client:
+            assert await read_exactly(client, 4) == b"hci:"
+            payload = bytes(range(256)) * 64
+            await client.send(payload)
+            assert await read_exactly(client, len(payload)) == payload.upper()
+            await requires.wait_state(CONNECTED)
+            await provides.wait_state(CONNECTED)
+        # The local client closed: the stream and the connection to the service close.
+        await requires.wait_state(READY)
+        await provides.wait_state(READY)
+        assert router.streams == 2

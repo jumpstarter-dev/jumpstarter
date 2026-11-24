@@ -47,6 +47,9 @@ from anyio import (
     create_task_group,
     current_time,
     fail_after,
+    get_cancelled_exc_class,
+    get_current_task,
+    move_on_after,
     sleep,
     sleep_forever,
 )
@@ -526,18 +529,24 @@ class ForwardManager:
         async with self.router_connect(endpoint, token) as remote, open_local as local:
             await remote.send(JOIN_FRAME)
             try:
-                with fail_after(self.peer_join_timeout):
+                with move_on_after(self.peer_join_timeout) as limit:
                     first = await remote.receive()
-            except TimeoutError:
+            except get_cancelled_exc_class():
+                # grpc.aio answers a read that is cancelled with a cancellation of its own, which the
+                # scope of the time limit does not take for its own. Let through, it would end the task
+                # group of the listener without a word: the end would stay READY and take no connection.
+                if not limit.cancel_called or get_current_task().has_pending_cancellation():
+                    raise
+            except (EndOfStream, BrokenResourceError):
+                # The peer closed the stream and sent no frame: its local side did not open.
+                logger.warning("Forward %s: the peer closed the connection before it was open", end.name)
+                return 0.0
+            if limit.cancel_called:
                 logger.warning(
                     "Forward %s: no frame from the peer in %.0fs, closing the connection",
                     end.name,
                     self.peer_join_timeout,
                 )
-                return 0.0
-            except (EndOfStream, BrokenResourceError):
-                # The peer closed the stream and sent no frame: its local side did not open.
-                logger.warning("Forward %s: the peer closed the connection before it was open", end.name)
                 return 0.0
             if first:
                 await local.send(first)
