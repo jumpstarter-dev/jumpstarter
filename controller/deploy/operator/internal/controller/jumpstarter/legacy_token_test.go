@@ -7,12 +7,11 @@ import (
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/config"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 )
 
 func TestStoredTokenFallbackConfig(t *testing.T) {
-	for _, allowed := range []*bool{nil, ptr.To(false), ptr.To(true)} {
+	for _, allowed := range []*bool{nil, new(false), new(true)} {
 		js := &operatorv1alpha1.Jumpstarter{}
 		js.Spec.Authentication.Internal.Enabled = true
 		js.Spec.Authentication.Internal.AllowStoredTokenFallback = allowed

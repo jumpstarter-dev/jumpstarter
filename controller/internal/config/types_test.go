@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 )
 
@@ -13,7 +12,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	original := Config{
 		Authentication: Authentication{
 			Internal: Internal{
-				AllowStoredTokenFallback: ptr.To(false),
+				AllowStoredTokenFallback: new(false),
 				Prefix:                   "internal:",
 				TokenLifetime:            "43800h",
 			},

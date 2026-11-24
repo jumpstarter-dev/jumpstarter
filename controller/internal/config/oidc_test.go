@@ -154,8 +154,7 @@ func TestStoredTokenFallbackDefault(t *testing.T) {
 	for _, format := range []string{"config", "authentication"} {
 		for _, setting := range []string{"", "allowStoredTokenFallback: false", "allowStoredTokenFallback: true"} {
 			t.Run(format+"/"+setting, func(t *testing.T) {
-				ctx, cancel := context.WithCancel(context.Background())
-				defer cancel()
+				ctx := t.Context()
 				raw := fmt.Sprintf("authentication:\n  internal:\n    prefix: 'internal:'\n    %s\n", setting)
 				if format == "authentication" {
 					raw = fmt.Sprintf("apiVersion: %s\nkind: AuthenticationConfiguration\ninternal:\n  prefix: 'internal:'\n  %s\n", api.GroupVersion, setting)
