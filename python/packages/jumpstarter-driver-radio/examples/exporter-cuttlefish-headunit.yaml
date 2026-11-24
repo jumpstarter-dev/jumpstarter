@@ -30,6 +30,7 @@ export:
     config:
       name: Cuttlefish head unit
       class_of_device: 0x200408 # audio/video: a car's audio
+      address: "DA:4C:10:DE:17:01" # the head unit's own: where the half calls it when a phone starts
       port: 7300
   # Port `web` (provides): a TCP service inside the device, where the exporter can reach it. Here that is a
   # port of the exporter's host that is forwarded into the guest (`adb forward tcp:18000 tcp:8000`); the

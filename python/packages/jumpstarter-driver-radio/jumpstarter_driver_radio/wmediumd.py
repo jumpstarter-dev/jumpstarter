@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import anyio
+from anyio import to_thread
 from anyio.abc import ObjectStream, SocketStream
 
 from .driver import RadioInterface, only_port, port_reports
@@ -88,6 +89,9 @@ class WmediumdWifi(RadioInterface, Driver):
     python: str = "python3"
     # Seconds between looks for a bridge that is not up, while a path waits for it.
     retry: float = 1.0
+    # Start with the exporter's session for a lease, so that a forward that is there finds the radio's end
+    # running, and no test has to start it. False: only `start` does.
+    autostart: bool = True
 
     _process: subprocess.Popen | None = field(init=False, default=None, repr=False)
     _state: dict = field(init=False, default_factory=dict, repr=False)
@@ -98,6 +102,16 @@ class WmediumdWifi(RadioInterface, Driver):
             self.ports = [Port(name="hwsim", direction=PortDirection.CONNECTS, protocol=PROTOCOL)]
         super().__post_init__()
         only_port(self, bridged=True)
+
+    @asynccontextmanager
+    async def serving(self):
+        async with super().serving():
+            if self.autostart:
+                try:
+                    await to_thread.run_sync(self.start)
+                except FrameBridgeError as error:
+                    self.logger.warning("The Wi-Fi bridge did not start with the session: %s", error)
+            yield  # (the session closes the driver when it ends, which stops the bridge)
 
     def port_address(self, port: Port) -> tuple[str, int] | None:
         return port.connect_address or (self.host, self.port)

@@ -1,7 +1,11 @@
 # Lease templates that join radios with forwards (JEP-0016). The members are found by their labels; the ports
 # are those the radio drivers declare (see the exporter configurations beside this file).
 #
-#   jmp create lease --template phone-headunit
+#   kubectl apply -f lease-templates.yaml
+#   jmp shell --lease-template phone-headunit
+#
+# The radios start with the lease, so the bridges are set up when it is ready: a suite goes straight to
+# pairing from a device's own settings. No test starts a radio or says who is who.
 #
 # A forward's endpoints may be in any order: the controller takes each port's direction from its exporter.
 ---

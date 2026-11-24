@@ -38,6 +38,9 @@ class GatewayWifi(RadioInterface, Driver):
     waiting: int = 3
     # Seconds before the gateway is tried again after it could not be reached.
     retry: float = 2.0
+    # Start with the exporter's session for a lease, so that a forward that is there finds the radio's end
+    # running, and no test has to start it. False: only `start` does.
+    autostart: bool = True
 
     _tasks: TaskGroup | None = field(init=False, default=None, repr=False)
     _scope: anyio.CancelScope | None = field(init=False, default=None, repr=False)
@@ -61,6 +64,8 @@ class GatewayWifi(RadioInterface, Driver):
         async with super().serving(), anyio.create_task_group() as tasks:
             self._tasks = tasks
             try:
+                if self.autostart:
+                    await self.start()
                 yield
             finally:
                 # The session is over: the driver detaches with it.

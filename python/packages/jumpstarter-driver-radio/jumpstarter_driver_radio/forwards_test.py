@@ -210,10 +210,8 @@ async def test_a_path_between_two_wifi_bridges_puts_two_media_on_one_air(media, 
     phone = WmediumdWifi(api_socket=phones_medium.path, port=free_port(), retry=0.05)
     head_unit = WmediumdWifi(api_socket=head_units_medium.path, port=free_port(), retry=0.05)
     async with lease(phone, head_unit) as (one, two):
-        # The forward is there from the start of the lease, before either bridge is started.
+        # Nobody starts anything: the bridges came up with their sessions, and the forward joins them.
         await forward("wifi", one, two)
-        await to_thread.run_sync(phone.start)
-        await to_thread.run_sync(head_unit.start)
         await until(lambda: phone.status().get("peer") and head_unit.status().get("peer"))
         assert phone.status()["attached"] and head_unit.status()["attached"]
 
@@ -252,8 +250,10 @@ class VirtualRadio(RootcanalBluetooth):
         return await self.air.open_radio()
 
 
-def bluetooth_of(identity: BluetoothIdentity, bridge_address: str) -> VirtualRadio:
-    radio = VirtualRadio(name=identity.name, address=identity.address, class_of_device=identity.class_of_device)
+def bluetooth_of(identity: BluetoothIdentity, bridge_address: str, **config) -> VirtualRadio:
+    radio = VirtualRadio(
+        name=identity.name, address=identity.address, class_of_device=identity.class_of_device, **config
+    )
     radio.air = Air(identity, bridge_address)
     return radio
 
@@ -277,9 +277,9 @@ async def test_a_path_between_two_bluetooth_halves_relays_l2cap_between_two_radi
     head_unit.create_l2cap_server(l2cap.ClassicChannelSpec(psm=PSM), handler=serve)
 
     async with lease(phones, head_units) as (one, two):
+        # Nobody starts anything or says who is who: each half came up with its session, with the identity
+        # of its exporter's configuration.
         await forward("bt", one, two)
-        await phones.start()
-        await head_units.start()
         # Over the path each half learns whose name to carry, and goes on the air under it.
         await until(lambda: phones._half.device is not None and head_units._half.device is not None)
         assert await phones.peer() == HEAD_UNIT.model_dump()
@@ -312,3 +312,17 @@ async def test_a_path_between_two_bluetooth_halves_relays_l2cap_between_two_radi
         await head_units.stop()
         await until(lambda: not head_unit.connections and not phone.connections)
         assert (await phones.status())["peer"] is False
+
+
+async def test_without_autostart_the_path_is_open_but_idle_until_the_radios_are_started():
+    phones = bluetooth_of(PHONE, "F0:F0:F0:F0:F0:AA", autostart=False)
+    head_units = bluetooth_of(HEAD_UNIT, "F0:F0:F0:F0:F0:BB", autostart=False)
+    async with lease(phones, head_units) as (one, two):
+        await forward("bt", one, two)
+        await until(lambda: one.controller.states.get("bt") == CONNECTED)
+        status = await phones.status()
+        assert not status["running"] and not status["peer"] and not status["on_air"]
+        await phones.start()
+        await head_units.start()
+        await until(lambda: phones._half.device is not None and head_units._half.device is not None)
+        assert (await phones.status())["peer"]

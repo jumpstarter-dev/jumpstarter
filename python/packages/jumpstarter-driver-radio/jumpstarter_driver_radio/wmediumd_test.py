@@ -39,7 +39,7 @@ def test_the_port_may_be_renamed_but_is_always_the_bridges_own():
 def test_the_bridge_joins_the_medium_and_its_frame_port_carries_frames(medium, monkeypatch):
     monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
     port = free_port()
-    with serve(WmediumdWifi(api_socket=medium.path, port=port)) as client:
+    with serve(WmediumdWifi(api_socket=medium.path, port=port, autostart=False)) as client:
         assert client.status() == {"running": False}
         status = client.wait_until_attached(timeout=10)
         assert status["running"] and status["attached"] and not status["peer"]
@@ -90,6 +90,20 @@ async def test_a_forwarded_connection_takes_the_frame_port_only_once_it_is_used(
             assert received == [frame_record(2437, probe)]
     finally:
         wifi.close()
+
+
+def test_the_bridge_starts_with_the_session_and_stops_with_it(medium, monkeypatch):
+    monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+    wifi = WmediumdWifi(api_socket=medium.path, port=free_port())
+    with serve(wifi) as client:
+        # nobody called start
+        deadline = time.monotonic() + 10
+        while not client.status().get("attached"):
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        process = wifi._process
+        assert process is not None and process.poll() is None
+    assert process.poll() is not None and wifi.status() == {"running": False}
 
 
 def test_through_a_launcher_the_bridge_is_handed_over_as_source(tmp_path):

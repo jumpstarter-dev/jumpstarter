@@ -32,7 +32,7 @@ def test_the_radio_is_any_hci_port_bumble_can_open():
 
 
 def test_the_identity_of_the_device_is_what_the_far_half_is_told():
-    radio = RootcanalBluetooth(name="Pixel", address="aa:bb:cc:00:11:22", class_of_device=0x5A020C)
+    radio = RootcanalBluetooth(name="Pixel", address="aa:bb:cc:00:11:22", class_of_device=0x5A020C, autostart=False)
     with serve(radio) as client:
         assert client.identity() == BluetoothIdentity(
             name="Pixel", address="AA:BB:CC:00:11:22", class_of_device=0x5A020C
@@ -48,7 +48,7 @@ def test_the_identity_of_the_device_is_what_the_far_half_is_told():
 
 
 def test_a_radio_that_is_not_there_is_looked_for_and_said_so():
-    with serve(RootcanalBluetooth(port=closed_port(), retry=0.05)) as client:
+    with serve(RootcanalBluetooth(port=closed_port(), retry=0.05, autostart=False)) as client:
         status = client.status()
         assert status["running"] is False and status["attached"] is False and status["peer"] is False
         client.start()
@@ -66,3 +66,14 @@ def test_a_radio_that_is_not_there_is_looked_for_and_said_so():
         client.stop()
         assert client.status()["running"] is False
         client.stop()  # (twice does nothing)
+
+
+def test_the_half_starts_with_the_session_and_stops_with_it():
+    radio = RootcanalBluetooth(port=closed_port(), retry=0.05)
+    with serve(radio) as client:
+        assert client.status()["running"] is True  # nobody called start
+        client.stop()  # (stop and start stay, as overrides)
+        assert client.status()["running"] is False
+        client.start()
+        assert client.status()["running"] is True
+    assert radio._half.status()["running"] is False

@@ -32,6 +32,11 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-radio
 
 `status()` has at least `running`, `attached` (the local end has the radio) and `peer` (a far end is joined).
 
+A radio starts by itself with the exporter's session for a lease and stops at the end of it (`autostart`,
+true by default). A lease whose forwards join two radios therefore has the bridges set up before a test does
+anything: a forward that is `Listening` or `Connected` has a running radio at each end. `start` and `stop`
+remain, to take a radio off the air and put it back; with `autostart: false` nothing runs until `start`.
+
 A radio driver declares its port by itself: an exporter configuration needs no `ports` key for it. Give one to
 rename the port (two radios of one kind on one exporter need two names) or to change a local address:
 
@@ -89,18 +94,23 @@ $ jmp create lease --member phone=type=phone --member headunit=type=head-unit \
     --forward wifi=phone.hwsim,headunit.hwsim --forward bluetooth=phone.bluetooth,headunit.bluetooth
 ```
 
-A test then starts each radio's local end and waits for the far one:
-
-```python
-members.phone.wifi.wait_until_attached()  # the bridge has the phone's Wi-Fi medium
-members.headunit.wifi.wait_until_joined()  # ... and the path between the two bridges is open
-```
+That is all of the set-up: publish the template, lease it, and use the devices. Their radios are joined when
+the lease is ready, so a suite goes straight to what a person would do, for example pairing from a device's
+own Bluetooth settings.
 
 ```console
-$ j phone wifi start
-$ j phone wifi status
-$ j phone wifi ports
+$ kubectl apply -f examples/lease-templates.yaml
+$ jmp shell --lease-template phone-headunit
 $ j-forward status
+$ j phone bluetooth status
+$ j phone wifi status
+```
+
+A test that wants to be sure of the radios before it goes on can wait for them; it does not have to:
+
+```python
+members.phone.wifi.wait_until_joined()  # the path between the two Wi-Fi bridges is open
+members.phone.bluetooth.wait_until_joined()  # the far Bluetooth half is there, and this one is on the air
 ```
 
 ## WmediumdWifi
@@ -167,6 +177,7 @@ export:
 | `launcher_socket` | Run the bridge through `jumpstarter-exec` over this launcher socket. Empty runs it in the exporter's own container | str | `$JUMPSTARTER_LAUNCHER_SOCKET` |
 | `python` | The Python of the container the bridge runs in | str | `python3` |
 | `retry` | Seconds between looks for a bridge that is not up, while a path waits for it | float | `1.0` |
+| `autostart` | Start the bridge with the lease's session | bool | `true` |
 
 The defaults are Cuttlefish's. Its devices all have the same built-in access point (`02:00:00:00:…`) and the
 same factory addresses (`02:15:b2:…`), which must not meet on one air; the randomized addresses Android uses
@@ -236,6 +247,7 @@ export:
 | `listen` | Where the exporter listens for the forward: the `listen` address of the driver's port | str | `127.0.0.1:7411` |
 | `waiting` | Connections kept waiting at the gateway: as many devices can connect at the same moment | int | `3` |
 | `retry` | Seconds before a gateway that could not be reached is tried again | float | `2.0` |
+| `autostart` | Attach to the gateway with the lease's session | bool | `true` |
 
 `status()` adds `waiting`, `active` (connections joined right now), `joined` (those there have been) and
 `refused` (a device connected while no forward had the port: its connection was closed).
@@ -298,15 +310,25 @@ What is not a record of this kind closes the path; the exporters open it again.
 
 A half has to be told what the device of its own radio is on the air: its Bluetooth **name**, its **class of
 device** and its own **address**. The far half carries the name and the class; the address is where this half
-calls the device, and is reported to a test by `peer()` on the far side. Give them in the configuration, or
-let a test say them once it has asked the device:
+calls the device, and is reported to a test by `peer()` on the far side.
+
+They come from the exporter's configuration, so that the bridge is whole without a test:
+
+- `name` and `class_of_device` are what the other device shows when it looks for devices to pair with.
+- `address` is needed for a device that is *called*: when the far device is the one a person pairs from, this
+  half has to call its own device, and it can only call an address. Without one the half learns the address
+  the first time its device calls, and until then what the far device says is held. So give the address of
+  every device that is not always the one to start.
+
+The driver cannot ask its radio who the device is. On the HCI port it is a controller of its own, with its own
+address and name; the device beside it is another station on the air, which answers a search only while its
+own pairing screen is open. A test that has asked the device (over ADB, say) may still say what it found:
 
 ```python
 phone.bluetooth.set_identity(name="Pixel 9", address="DA:4C:10:DE:17:00", class_of_device=0x5A020C)
 ```
 
-Without an address a half cannot call its device, and learns the address when the device calls. A persona
-cannot carry the far device's *address*: in a radio, the half has the address of its own controller.
+A persona cannot carry the far device's *address*: in a radio, the half has the address of its own controller.
 
 ### Configuration
 
@@ -317,6 +339,7 @@ export:
     config:
       name: Cuttlefish phone
       class_of_device: 0x5A020C
+      address: "DA:4C:10:DE:17:00"
 ```
 
 | Parameter | Description | Type | Default |
@@ -327,6 +350,7 @@ export:
 | `host`, `port` | The radio's HCI port, H4 over TCP | str, int | `127.0.0.1`, `7300` |
 | `transport` | Any bumble transport instead of `host` and `port`, for example `hci-socket:0` | str | |
 | `retry` | Seconds before a radio that is not there, or went away, is looked for again | float | `2.0` (`5.0` for `ControllerBluetooth`) |
+| `autostart` | Take the HCI port and run the half with the lease's session | bool | `true` |
 
 `RootcanalBluetooth` is for a virtual device: Cuttlefish's `--hci_port` is `7300 + instance_num - 1`. The half
 joins the virtual radio as one more controller. Rootcanal gives every instance the same device address unless
@@ -343,24 +367,24 @@ on), `sent` (what it was told), `held`, `dropped` and `error`.
 
 ### Usage
 
+With a lease whose forward joins the two `bluetooth` ports, there is nothing to do first: pair from either
+device's own settings, as a person would. What a test may want besides:
+
 ```python
-phone, headunit = members.phone.bluetooth, members.headunit.bluetooth
-phone.set_identity(name="Pixel 9", address=phone_address, class_of_device=0x5A020C)
-headunit.set_identity(name="Head Unit", address=headunit_address, class_of_device=0x200408)
-phone.wait_until_joined()  # start; returns once the far half is on the path
-headunit.wait_until_joined()
+phone = members.phone.bluetooth
+phone.wait_until_joined()  # returns once the far half is on the path (the radio is started already)
 phone.peer()  # BluetoothIdentity(name="Head Unit", ...): whose name is carried here
-# ... pair from either device's own settings, as a person would ...
+# ... pair from either device's own settings ...
 phone.status()  # {"linked": True, "encrypted": True, "heard": 212, "sent": 198, ...}
-phone.stop()
+phone.stop()  # out of each other's reach; phone.start() brings it back
 ```
 
 ```console
-$ j phone bluetooth identity --name "Pixel 9" --address DA:4C:10:DE:17:00 --class-of-device 5898764
-$ j phone bluetooth start
 $ j phone bluetooth status
 $ j phone bluetooth peer
+$ j phone bluetooth identity --name "Pixel 9" --address DA:4C:10:DE:17:00
 $ j phone bluetooth stop
+$ j phone bluetooth start
 ```
 
 ### What it does not do
@@ -391,6 +415,8 @@ export:
 | `connects` | One end of a path | Another `connects` mock: `exchange` on either gives back what was said |
 | `provides` | A service that echoes | A `requires` mock |
 | `requires` | The client of one: `exchange` dials the `listen` address | A `provides` mock |
+
+A mock radio is off until it is started:
 
 ```console
 $ j a radio start

@@ -64,7 +64,7 @@ def test_its_port_is_requires_because_connections_start_on_the_wifi():
 
 async def test_a_devices_connection_is_handed_to_the_port_and_another_waits_in_its_place():
     async with accepting() as (attach, waiting), accepting() as (listen, forwarded):
-        driver = GatewayWifi(attach=attach, listen=listen, waiting=2, retry=0.05)
+        driver = GatewayWifi(attach=attach, listen=listen, waiting=2, retry=0.05, autostart=False)
         async with serving(driver):
             assert (await driver.status())["running"] is False
             await driver.start()
@@ -111,7 +111,7 @@ async def test_without_a_forward_a_devices_connection_is_closed():
     async with accepting() as (attach, waiting):
         driver = GatewayWifi(attach=attach, listen=free_address(), waiting=1, retry=0.05)
         async with serving(driver):
-            await driver.start()
+            # (nobody called start: the driver attached with the session)
             with anyio.fail_after(5):
                 device, done = await waiting.receive()
                 await device.send(b"hello?")
@@ -138,3 +138,18 @@ async def test_a_gateway_that_is_not_there_is_looked_for_until_it_is():
         async with TemporaryTcpListener(handler, local_host=host, local_port=int(port)):
             status = await status_when(driver, lambda s: s["attached"])
             assert status["error"] == ""
+
+
+async def test_it_attaches_with_the_session_and_detaches_with_it():
+    async with accepting() as (attach, waiting):
+        driver = GatewayWifi(attach=attach, listen=free_address(), waiting=1, retry=0.05)
+        async with serving(driver):
+            status = await status_when(driver, lambda s: s["attached"])
+            assert status["running"]
+            with anyio.fail_after(5):
+                gateway, done = await waiting.receive()
+        # the session is over: the connection that waited at the gateway is closed
+        with anyio.fail_after(5), pytest.raises((anyio.EndOfStream, anyio.BrokenResourceError)):
+            await gateway.receive()
+        done.set()
+        assert (await driver.status())["running"] is False

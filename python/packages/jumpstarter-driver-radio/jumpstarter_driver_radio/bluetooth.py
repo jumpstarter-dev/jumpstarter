@@ -41,6 +41,9 @@ class BluetoothBridgeRadio(RadioInterface, Driver):
     transport: str | None = None
     # Seconds before a radio that is not there, or went away, is looked for again.
     retry: float = 2.0
+    # Start with the exporter's session for a lease, so that a forward that is there finds the radio's end
+    # running, and no test has to start it. False: only `start` does.
+    autostart: bool = True
 
     _half: BridgeHalf = field(init=False, repr=False)
     _tasks: TaskGroup | None = field(init=False, default=None, repr=False)
@@ -76,6 +79,8 @@ class BluetoothBridgeRadio(RadioInterface, Driver):
         async with super().serving(), anyio.create_task_group() as tasks:
             self._tasks = tasks
             try:
+                if self.autostart:
+                    await self.start()
                 yield
             finally:
                 # The session is over: the half is stopped with it. (This runs cancelled: the half's own
