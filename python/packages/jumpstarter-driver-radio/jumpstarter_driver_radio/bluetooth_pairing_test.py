@@ -351,3 +351,29 @@ async def test_a_device_that_pairs_and_hangs_up_as_an_android_does_is_paired_all
         await until(lambda: beside_phone.paired() and beside_head_unit.paired())
         await bridged.phone_uses_the_service(link)
         assert (phone.dialog.shown, head_unit.dialog.shown) == (1, 1)
+
+
+async def test_the_last_words_of_a_conversation_that_is_over_do_not_call_a_device_again():
+    """A phone's Bluetooth is reset (its pairings forgotten) while the two are connected. Its link goes; what
+    the head unit was still saying arrives after. The phone is not called for that, which would ask its
+    person to pair again out of nowhere, and keep the bridge busy until the phone gave up."""
+    _, phone, head_unit, beside_phone, beside_head_unit = await bridged_and_on_air()
+    async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
+        await until(lambda: beside_phone.device and beside_head_unit.device)
+        link = await phone.pair()
+        await until(lambda: beside_phone.paired() and beside_head_unit.paired())
+        calls = beside_phone.stats["calls"]
+        phone.forget()
+        await link.disconnect()
+        await until(lambda: beside_phone.link is None)
+        beside_phone.say(0x0040, b"what the head unit was still saying")
+        await hung_up(phone, head_unit)
+        await anyio.sleep(0.3)
+        assert beside_phone.stats["calls"] == calls and beside_phone.state == IDLE and not beside_phone.reaching
+        assert (phone.dialog.shown, head_unit.dialog.shown) == (1, 1)
+
+        # When the head unit does come back, the phone is called, and asked: it has forgotten the head unit.
+        link = await head_unit.pair()
+        await until(lambda: beside_phone.paired() and beside_head_unit.paired())
+        assert (phone.dialog.shown, head_unit.dialog.shown) == (2, 1)
+        await link.disconnect()

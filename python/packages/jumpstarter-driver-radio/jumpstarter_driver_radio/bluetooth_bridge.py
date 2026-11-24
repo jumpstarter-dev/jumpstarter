@@ -213,6 +213,9 @@ class BridgeHalf:
         self.link: Connection | None = None
         self.opened_by: str | None = None  # "device" or "bridge": who opened the link
         self._device_asked = False  # the device has asked the radio for a link (it is calling the bridge)
+        # The link here went, and the far half has not said of a new one of its own since: what its device
+        # still says belongs to the conversation that is over, and is no reason to call the device here.
+        self._far_is_behind = False
         self.held: list[tuple[int, bytes]] = []
         self.reaching = False  # the bridge is calling the device
         self.recalling = False  # ... for the second time, after a key the device no longer had
@@ -329,7 +332,7 @@ class BridgeHalf:
     def _far_linked(self, by: str) -> None:
         """The far half has a link to its device. If that device opened it, it is starting something (a
         pairing, a reconnection): the device here is called now, so that both are asked at the same time."""
-        self.far_link, self.far_pairing = by, None
+        self.far_link, self.far_pairing, self._far_is_behind = by, None, False
         self._tell_news()
         if by == "device" and self.link is None and not self.reaching:
             self._call("the far device opened a link")
@@ -464,6 +467,11 @@ class BridgeHalf:
         if len(self.held) >= MAX_HELD:
             self.stats["dropped"] += 1
             return
+        if self.link is None and self._far_is_behind and self.far_version >= 2:
+            # The last words of a conversation that ended when the link here went (the far device had not
+            # heard yet). A device that forgot its pairing must not be called, and asked to pair, for those.
+            self.stats["dropped"] += 1
+            return
         self.held.append((cid, pdu))
         if self.link is None and not self.reaching and not self._call("the far device spoke"):
             self.stats["dropped"] += len(self.held)
@@ -574,6 +582,7 @@ class BridgeHalf:
             self._forget_keys()
         self.link, self.held, self.opened_by = None, [], None  # (a call that is still being placed ends by itself)
         self._device_asked = False
+        self._far_is_behind = self.far_link is not None
         self.fresh = self._told_complete = False
         self._tell_news()
         self._to(CALLING if self.reaching else IDLE, "the link is gone")
