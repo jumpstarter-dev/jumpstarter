@@ -30,6 +30,42 @@ else:
 
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
+class _LeaseForwardState:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _LeaseForwardStateEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_LeaseForwardState.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    LEASE_FORWARD_STATE_UNSPECIFIED: _LeaseForwardState.ValueType  # 0
+    """The state is not known."""
+    LEASE_FORWARD_STATE_PENDING: _LeaseForwardState.ValueType  # 1
+    """The controller did not complete the setup."""
+    LEASE_FORWARD_STATE_DISABLED: _LeaseForwardState.ValueType  # 2
+    """An optional member is omitted, and the forward cannot operate without it."""
+    LEASE_FORWARD_STATE_LISTENING: _LeaseForwardState.ValueType  # 3
+    """The setup is complete. No connection is open."""
+    LEASE_FORWARD_STATE_CONNECTED: _LeaseForwardState.ValueType  # 4
+    """A minimum of one connection is open."""
+    LEASE_FORWARD_STATE_FAILED: _LeaseForwardState.ValueType  # 5
+    """The validation or the setup failed, or a necessary member is lost."""
+
+class LeaseForwardState(_LeaseForwardState, metaclass=_LeaseForwardStateEnumTypeWrapper):
+    """The state of one forward of a lease."""
+
+LEASE_FORWARD_STATE_UNSPECIFIED: LeaseForwardState.ValueType  # 0
+"""The state is not known."""
+LEASE_FORWARD_STATE_PENDING: LeaseForwardState.ValueType  # 1
+"""The controller did not complete the setup."""
+LEASE_FORWARD_STATE_DISABLED: LeaseForwardState.ValueType  # 2
+"""An optional member is omitted, and the forward cannot operate without it."""
+LEASE_FORWARD_STATE_LISTENING: LeaseForwardState.ValueType  # 3
+"""The setup is complete. No connection is open."""
+LEASE_FORWARD_STATE_CONNECTED: LeaseForwardState.ValueType  # 4
+"""A minimum of one connection is open."""
+LEASE_FORWARD_STATE_FAILED: LeaseForwardState.ValueType  # 5
+"""The validation or the setup failed, or a necessary member is lost."""
+Global___LeaseForwardState: typing_extensions.TypeAlias = LeaseForwardState
+
 class _LeaseMemberState:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: typing_extensions.TypeAlias = ValueType
@@ -107,6 +143,7 @@ class Exporter(google.protobuf.message.Message):
     STATUS_MESSAGE_FIELD_NUMBER: builtins.int
     ENABLED_FIELD_NUMBER: builtins.int
     DEPRECATED_LABELS_FIELD_NUMBER: builtins.int
+    PORTS_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the exporter."""
     online: builtins.bool
@@ -129,6 +166,10 @@ class Exporter(google.protobuf.message.Message):
         Keys are the deprecated label names; values are optional human-readable messages.
         """
 
+    @property
+    def ports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.common_pb2.PortReport]:
+        """The ports that the drivers of the exporter declare. A forward of a lease can connect them."""
+
     def __init__(
         self,
         *,
@@ -139,9 +180,10 @@ class Exporter(google.protobuf.message.Message):
         status_message: builtins.str = ...,
         enabled: builtins.bool | None = ...,
         deprecated_labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        ports: collections.abc.Iterable[jumpstarter.v1.common_pb2.PortReport] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_enabled", b"_enabled", "enabled", b"enabled"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_enabled", b"_enabled", "deprecated_labels", b"deprecated_labels", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "status", b"status", "status_message", b"status_message"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_enabled", b"_enabled", "deprecated_labels", b"deprecated_labels", "enabled", b"enabled", "labels", b"labels", "name", b"name", "online", b"online", "ports", b"ports", "status", b"status", "status_message", b"status_message"]) -> None: ...
     def WhichOneof(self, oneof_group: typing.Literal["_enabled", b"_enabled"]) -> typing.Literal["enabled"] | None: ...
 
 Global___Exporter: typing_extensions.TypeAlias = Exporter
@@ -222,6 +264,8 @@ class Lease(google.protobuf.message.Message):
     CONSTRAINTS_FIELD_NUMBER: builtins.int
     TEMPLATE_FIELD_NUMBER: builtins.int
     MEMBER_STATUSES_FIELD_NUMBER: builtins.int
+    FORWARDS_FIELD_NUMBER: builtins.int
+    FORWARD_STATUSES_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the lease."""
     selector: builtins.str
@@ -310,6 +354,14 @@ class Lease(google.protobuf.message.Message):
     def member_statuses(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LeaseMemberStatus]:
         """The state of each member of a member-form lease."""
 
+    @property
+    def forwards(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LeaseForward]:
+        """The forwards of a member-form lease. Each forward connects ports on different members."""
+
+    @property
+    def forward_statuses(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LeaseForwardStatus]:
+        """The state of each forward of the lease."""
+
     def __init__(
         self,
         *,
@@ -335,9 +387,11 @@ class Lease(google.protobuf.message.Message):
         constraints: collections.abc.Iterable[Global___LeaseConstraint] | None = ...,
         template: Global___LeaseTemplateUse | None = ...,
         member_statuses: collections.abc.Iterable[Global___LeaseMemberStatus] | None = ...,
+        forwards: collections.abc.Iterable[Global___LeaseForward] | None = ...,
+        forward_statuses: collections.abc.Iterable[Global___LeaseForwardStatus] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "_template", b"_template", "begin_time", b"begin_time", "client", b"client", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "template", b"template"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "_template", b"_template", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "constraints", b"constraints", "context", b"context", "deprecated_labels", b"deprecated_labels", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "effective_shared_with", b"effective_shared_with", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "member_statuses", b"member_statuses", "members", b"members", "name", b"name", "selector", b"selector", "shared_with", b"shared_with", "tags", b"tags", "template", b"template"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_begin_time", b"_begin_time", "_client", b"_client", "_duration", b"_duration", "_effective_begin_time", b"_effective_begin_time", "_effective_end_time", b"_effective_end_time", "_end_time", b"_end_time", "_exporter", b"_exporter", "_exporter_name", b"_exporter_name", "_template", b"_template", "allow_disabled", b"allow_disabled", "begin_time", b"begin_time", "client", b"client", "conditions", b"conditions", "constraints", b"constraints", "context", b"context", "deprecated_labels", b"deprecated_labels", "duration", b"duration", "effective_begin_time", b"effective_begin_time", "effective_duration", b"effective_duration", "effective_end_time", b"effective_end_time", "effective_shared_with", b"effective_shared_with", "end_time", b"end_time", "exporter", b"exporter", "exporter_name", b"exporter_name", "forward_statuses", b"forward_statuses", "forwards", b"forwards", "member_statuses", b"member_statuses", "members", b"members", "name", b"name", "selector", b"selector", "shared_with", b"shared_with", "tags", b"tags", "template", b"template"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_begin_time", b"_begin_time"]) -> typing.Literal["begin_time"] | None: ...
     @typing.overload
@@ -358,6 +412,80 @@ class Lease(google.protobuf.message.Message):
     def WhichOneof(self, oneof_group: typing.Literal["_template", b"_template"]) -> typing.Literal["template"] | None: ...
 
 Global___Lease: typing_extensions.TypeAlias = Lease
+
+@typing.final
+class ForwardEndpoint(google.protobuf.message.Message):
+    """One end of a forward: a member of the lease and a port of its exporter."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    MEMBER_NAME_FIELD_NUMBER: builtins.int
+    PORT_NAME_FIELD_NUMBER: builtins.int
+    member_name: builtins.str
+    """The role name of the member."""
+    port_name: builtins.str
+    """The name of the port on the exporter of the member."""
+    def __init__(
+        self,
+        *,
+        member_name: builtins.str = ...,
+        port_name: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["member_name", b"member_name", "port_name", b"port_name"]) -> None: ...
+
+Global___ForwardEndpoint: typing_extensions.TypeAlias = ForwardEndpoint
+
+@typing.final
+class LeaseForward(google.protobuf.message.Message):
+    """A forward of a lease: a named set of endpoints that the controller connects through the router."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: builtins.int
+    ENDPOINTS_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    """The name of the forward. It is a DNS label, and no member of the lease has the same name."""
+    @property
+    def endpoints(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___ForwardEndpoint]:
+        """The endpoints of the forward: two to eight, each on a different member."""
+
+    def __init__(
+        self,
+        *,
+        name: builtins.str = ...,
+        endpoints: collections.abc.Iterable[Global___ForwardEndpoint] | None = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["endpoints", b"endpoints", "name", b"name"]) -> None: ...
+
+Global___LeaseForward: typing_extensions.TypeAlias = LeaseForward
+
+@typing.final
+class LeaseForwardStatus(google.protobuf.message.Message):
+    """The state of one forward of a lease."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: builtins.int
+    STATE_FIELD_NUMBER: builtins.int
+    MESSAGE_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    """The name of the forward."""
+    state: Global___LeaseForwardState.ValueType
+    """The state of the forward."""
+    message: builtins.str
+    """A human-readable message for the state, for example the cause of a failure."""
+    def __init__(
+        self,
+        *,
+        name: builtins.str = ...,
+        state: Global___LeaseForwardState.ValueType = ...,
+        message: builtins.str | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["_message", b"_message", "message", b"message"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_message", b"_message", "message", b"message", "name", b"name", "state", b"state"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
+
+Global___LeaseForwardStatus: typing_extensions.TypeAlias = LeaseForwardStatus
 
 @typing.final
 class LeaseMember(google.protobuf.message.Message):
@@ -565,6 +693,7 @@ class LeaseTemplate(google.protobuf.message.Message):
     DEFAULT_DURATION_FIELD_NUMBER: builtins.int
     GENERATION_FIELD_NUMBER: builtins.int
     DEFAULT_SHARED_WITH_FIELD_NUMBER: builtins.int
+    FORWARDS_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The resource name of the lease template."""
     description: builtins.str
@@ -595,6 +724,10 @@ class LeaseTemplate(google.protobuf.message.Message):
     def default_shared_with(self) -> google.protobuf.internal.containers.RepeatedScalarFieldContainer[builtins.str]:
         """The clients that a lease is shared with when its request gives none."""
 
+    @property
+    def forwards(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LeaseForward]:
+        """The forwards of a lease that uses this template."""
+
     def __init__(
         self,
         *,
@@ -608,9 +741,10 @@ class LeaseTemplate(google.protobuf.message.Message):
         default_duration: google.protobuf.duration_pb2.Duration | None = ...,
         generation: builtins.int = ...,
         default_shared_with: collections.abc.Iterable[builtins.str] | None = ...,
+        forwards: collections.abc.Iterable[Global___LeaseForward] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_default_duration", b"_default_duration", "_image", b"_image", "_instructions", b"_instructions", "default_duration", b"default_duration", "image", b"image", "instructions", b"instructions"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_default_duration", b"_default_duration", "_image", b"_image", "_instructions", b"_instructions", "constraints", b"constraints", "default_duration", b"default_duration", "default_shared_with", b"default_shared_with", "description", b"description", "docs", b"docs", "generation", b"generation", "image", b"image", "instructions", b"instructions", "members", b"members", "name", b"name"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_default_duration", b"_default_duration", "_image", b"_image", "_instructions", b"_instructions", "constraints", b"constraints", "default_duration", b"default_duration", "default_shared_with", b"default_shared_with", "description", b"description", "docs", b"docs", "forwards", b"forwards", "generation", b"generation", "image", b"image", "instructions", b"instructions", "members", b"members", "name", b"name"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_default_duration", b"_default_duration"]) -> typing.Literal["default_duration"] | None: ...
     @typing.overload

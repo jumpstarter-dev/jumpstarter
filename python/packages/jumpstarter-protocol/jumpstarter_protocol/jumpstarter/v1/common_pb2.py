@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/common.proto\x12\x0ejumpstarter.v1*\xb6\x02\n\x0e\x45xporterStatus\x12\x1f\n\x1b\x45XPORTER_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n\x17\x45XPORTER_STATUS_OFFLINE\x10\x01\x12\x1d\n\x19\x45XPORTER_STATUS_AVAILABLE\x10\x02\x12%\n!EXPORTER_STATUS_BEFORE_LEASE_HOOK\x10\x03\x12\x1f\n\x1b\x45XPORTER_STATUS_LEASE_READY\x10\x04\x12$\n EXPORTER_STATUS_AFTER_LEASE_HOOK\x10\x05\x12,\n(EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED\x10\x06\x12+\n\'EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED\x10\x07*\x98\x01\n\tLogSource\x12\x1a\n\x16LOG_SOURCE_UNSPECIFIED\x10\x00\x12\x15\n\x11LOG_SOURCE_DRIVER\x10\x01\x12 \n\x1cLOG_SOURCE_BEFORE_LEASE_HOOK\x10\x02\x12\x1f\n\x1bLOG_SOURCE_AFTER_LEASE_HOOK\x10\x03\x12\x15\n\x11LOG_SOURCE_SYSTEM\x10\x04\x42z\n\x12\x63om.jumpstarter.v1B\x0b\x43ommonProtoP\x01\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x1bjumpstarter/v1/common.proto\x12\x0ejumpstarter.v1\"\x88\x02\n\nPortReport\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12;\n\tdirection\x18\x02 \x01(\x0e\x32\x1d.jumpstarter.v1.PortDirectionR\tdirection\x12\x1f\n\x08protocol\x18\x03 \x01(\tH\x00R\x08protocol\x88\x01\x01\x12>\n\nattachment\x18\x04 \x01(\x0e\x32\x1e.jumpstarter.v1.PortAttachmentR\nattachment\x12;\n\ttransport\x18\x05 \x01(\x0e\x32\x1d.jumpstarter.v1.PortTransportR\ttransportB\x0b\n\t_protocol*\xb6\x02\n\x0e\x45xporterStatus\x12\x1f\n\x1b\x45XPORTER_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n\x17\x45XPORTER_STATUS_OFFLINE\x10\x01\x12\x1d\n\x19\x45XPORTER_STATUS_AVAILABLE\x10\x02\x12%\n!EXPORTER_STATUS_BEFORE_LEASE_HOOK\x10\x03\x12\x1f\n\x1b\x45XPORTER_STATUS_LEASE_READY\x10\x04\x12$\n EXPORTER_STATUS_AFTER_LEASE_HOOK\x10\x05\x12,\n(EXPORTER_STATUS_BEFORE_LEASE_HOOK_FAILED\x10\x06\x12+\n\'EXPORTER_STATUS_AFTER_LEASE_HOOK_FAILED\x10\x07*\x98\x01\n\tLogSource\x12\x1a\n\x16LOG_SOURCE_UNSPECIFIED\x10\x00\x12\x15\n\x11LOG_SOURCE_DRIVER\x10\x01\x12 \n\x1cLOG_SOURCE_BEFORE_LEASE_HOOK\x10\x02\x12\x1f\n\x1bLOG_SOURCE_AFTER_LEASE_HOOK\x10\x03\x12\x15\n\x11LOG_SOURCE_SYSTEM\x10\x04*\x86\x01\n\rPortDirection\x12\x1e\n\x1aPORT_DIRECTION_UNSPECIFIED\x10\x00\x12\x1b\n\x17PORT_DIRECTION_PROVIDES\x10\x01\x12\x1b\n\x17PORT_DIRECTION_REQUIRES\x10\x02\x12\x1b\n\x17PORT_DIRECTION_CONNECTS\x10\x03*\x86\x01\n\x0ePortAttachment\x12\x1f\n\x1bPORT_ATTACHMENT_UNSPECIFIED\x10\x00\x12\x1a\n\x16PORT_ATTACHMENT_SOCKET\x10\x01\x12\x19\n\x15PORT_ATTACHMENT_WIRED\x10\x02\x12\x1c\n\x18PORT_ATTACHMENT_WIRELESS\x10\x03*\x81\x01\n\rPortTransport\x12\x1e\n\x1aPORT_TRANSPORT_UNSPECIFIED\x10\x00\x12\x19\n\x15PORT_TRANSPORT_STREAM\x10\x01\x12\x1b\n\x17PORT_TRANSPORT_DATAGRAM\x10\x02\x12\x18\n\x14PORT_TRANSPORT_FRAME\x10\x03\x42z\n\x12\x63om.jumpstarter.v1B\x0b\x43ommonProtoP\x01\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -32,8 +32,16 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'jumpstarter.v1.common_pb2',
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'\n\022com.jumpstarter.v1B\013CommonProtoP\001\242\002\003JXX\252\002\016Jumpstarter.V1\312\002\016Jumpstarter\\V1\342\002\032Jumpstarter\\V1\\GPBMetadata\352\002\017Jumpstarter::V1'
-  _globals['_EXPORTERSTATUS']._serialized_start=48
-  _globals['_EXPORTERSTATUS']._serialized_end=358
-  _globals['_LOGSOURCE']._serialized_start=361
-  _globals['_LOGSOURCE']._serialized_end=513
+  _globals['_EXPORTERSTATUS']._serialized_start=315
+  _globals['_EXPORTERSTATUS']._serialized_end=625
+  _globals['_LOGSOURCE']._serialized_start=628
+  _globals['_LOGSOURCE']._serialized_end=780
+  _globals['_PORTDIRECTION']._serialized_start=783
+  _globals['_PORTDIRECTION']._serialized_end=917
+  _globals['_PORTATTACHMENT']._serialized_start=920
+  _globals['_PORTATTACHMENT']._serialized_end=1054
+  _globals['_PORTTRANSPORT']._serialized_start=1057
+  _globals['_PORTTRANSPORT']._serialized_end=1186
+  _globals['_PORTREPORT']._serialized_start=48
+  _globals['_PORTREPORT']._serialized_end=312
 # @@protoc_insertion_point(module_scope)

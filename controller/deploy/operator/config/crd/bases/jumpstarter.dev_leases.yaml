@@ -142,6 +142,63 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              forwards:
+                description: |-
+                  Forwards connect ports on different members of a member-form lease
+                  through the router. Each endpoint refers to a member of the lease, and
+                  no forward has the name of a member. Immutable after creation.
+                items:
+                  description: |-
+                    LeaseForward is one forward of a member-form lease: a named set of
+                    endpoints. It connects one provides port to one or more requires ports, or
+                    two connects ports. The controller gets the direction of each port from the
+                    exporter reports.
+                  properties:
+                    endpoints:
+                      description: |-
+                        Endpoints are the ends of the forward, in any sequence. The list key
+                        is the member, thus each endpoint is on a different member.
+                      items:
+                        description: |-
+                          ForwardEndpoint is one end of a forward: a member of the lease and a port
+                          that the exporter of that member reports.
+                        properties:
+                          member:
+                            description: Member is the role name of the member.
+                            maxLength: 63
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                            type: string
+                          port:
+                            description: Port is the name of the port on the exporter
+                              of the member.
+                            maxLength: 63
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                            type: string
+                        required:
+                        - member
+                        - port
+                        type: object
+                      maxItems: 8
+                      minItems: 2
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - member
+                      x-kubernetes-list-type: map
+                    name:
+                      description: Name of the forward. It is a DNS label, as a role
+                        name is.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                  required:
+                  - endpoints
+                  - name
+                  type: object
+                maxItems: 16
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               members:
                 description: |-
                   Members makes this a member-form lease: each member has a role name and
@@ -366,6 +423,15 @@ spec:
             - message: constraints are immutable after creation
               rule: has(self.constraints) == has(oldSelf.constraints) && (!has(self.constraints)
                 || self.constraints == oldSelf.constraints)
+            - message: forward endpoints must reference declared members
+              rule: '!has(self.forwards) || (has(self.members) && self.forwards.all(f,
+                f.endpoints.all(e, self.members.exists(m, m.name == e.member))))'
+            - message: a forward and a member cannot have the same name
+              rule: '!has(self.forwards) || !has(self.members) || self.forwards.all(f,
+                !self.members.exists(m, m.name == f.name))'
+            - message: forwards are immutable after creation
+              rule: has(self.forwards) == has(oldSelf.forwards) && (!has(self.forwards)
+                || self.forwards == oldSelf.forwards)
             - message: templateRef is immutable after creation
               rule: has(self.templateRef) == has(oldSelf.templateRef) && (!has(self.templateRef)
                 || self.templateRef == oldSelf.templateRef)
@@ -477,6 +543,38 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              forwards:
+                description: Forwards is the state of each forward of the lease, in
+                  spec order.
+                items:
+                  description: LeaseForwardStatus is the observed state of one forward
+                    of a lease.
+                  properties:
+                    message:
+                      description: |-
+                        Message is a human-readable message for the state: the role of the
+                        Omitted member of a Disabled forward, or the cause of a failure.
+                      type: string
+                    name:
+                      description: Name of the forward.
+                      type: string
+                    state:
+                      description: State of the forward.
+                      enum:
+                      - Pending
+                      - Disabled
+                      - Listening
+                      - Connected
+                      - Failed
+                      type: string
+                  required:
+                  - name
+                  - state
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               members:
                 description: Members is the state of each member of a member-form
                   lease, in spec order.

@@ -27,6 +27,59 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// State of one end of a forward, as its exporter reports it.
+type ForwardEndState int32
+
+const (
+	ForwardEndState_FORWARD_END_STATE_UNSPECIFIED ForwardEndState = 0 // Unspecified state.
+	ForwardEndState_FORWARD_END_STATE_READY       ForwardEndState = 1 // The listener is open, or the forward is recorded.
+	ForwardEndState_FORWARD_END_STATE_CONNECTED   ForwardEndState = 2 // A minimum of one connection is open.
+	ForwardEndState_FORWARD_END_STATE_FAILED      ForwardEndState = 3 // The setup failed, for example the listen address is in use.
+)
+
+// Enum value maps for ForwardEndState.
+var (
+	ForwardEndState_name = map[int32]string{
+		0: "FORWARD_END_STATE_UNSPECIFIED",
+		1: "FORWARD_END_STATE_READY",
+		2: "FORWARD_END_STATE_CONNECTED",
+		3: "FORWARD_END_STATE_FAILED",
+	}
+	ForwardEndState_value = map[string]int32{
+		"FORWARD_END_STATE_UNSPECIFIED": 0,
+		"FORWARD_END_STATE_READY":       1,
+		"FORWARD_END_STATE_CONNECTED":   2,
+		"FORWARD_END_STATE_FAILED":      3,
+	}
+)
+
+func (x ForwardEndState) Enum() *ForwardEndState {
+	p := new(ForwardEndState)
+	*p = x
+	return p
+}
+
+func (x ForwardEndState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ForwardEndState) Descriptor() protoreflect.EnumDescriptor {
+	return file_jumpstarter_v1_jumpstarter_proto_enumTypes[0].Descriptor()
+}
+
+func (ForwardEndState) Type() protoreflect.EnumType {
+	return &file_jumpstarter_v1_jumpstarter_proto_enumTypes[0]
+}
+
+func (x ForwardEndState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ForwardEndState.Descriptor instead.
+func (ForwardEndState) EnumDescriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{0}
+}
+
 // Phase of a lease lifecycle hook.
 type LeaseHookPhase int32
 
@@ -67,11 +120,11 @@ func (x LeaseHookPhase) String() string {
 }
 
 func (LeaseHookPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_jumpstarter_v1_jumpstarter_proto_enumTypes[0].Descriptor()
+	return file_jumpstarter_v1_jumpstarter_proto_enumTypes[1].Descriptor()
 }
 
 func (LeaseHookPhase) Type() protoreflect.EnumType {
-	return &file_jumpstarter_v1_jumpstarter_proto_enumTypes[0]
+	return &file_jumpstarter_v1_jumpstarter_proto_enumTypes[1]
 }
 
 func (x LeaseHookPhase) Number() protoreflect.EnumNumber {
@@ -80,7 +133,7 @@ func (x LeaseHookPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LeaseHookPhase.Descriptor instead.
 func (LeaseHookPhase) EnumDescriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{0}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{1}
 }
 
 // Failure action configured for a lease lifecycle hook (onFailure).
@@ -120,11 +173,11 @@ func (x LeaseHookFailureAction) String() string {
 }
 
 func (LeaseHookFailureAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_jumpstarter_v1_jumpstarter_proto_enumTypes[1].Descriptor()
+	return file_jumpstarter_v1_jumpstarter_proto_enumTypes[2].Descriptor()
 }
 
 func (LeaseHookFailureAction) Type() protoreflect.EnumType {
-	return &file_jumpstarter_v1_jumpstarter_proto_enumTypes[1]
+	return &file_jumpstarter_v1_jumpstarter_proto_enumTypes[2]
 }
 
 func (x LeaseHookFailureAction) Number() protoreflect.EnumNumber {
@@ -133,7 +186,7 @@ func (x LeaseHookFailureAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LeaseHookFailureAction.Descriptor instead.
 func (LeaseHookFailureAction) EnumDescriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{1}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{2}
 }
 
 // Registration request sent by an exporter to the controller.
@@ -205,8 +258,10 @@ type DriverInstanceReport struct {
 	Labels             map[string]string      `protobuf:"bytes,3,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`                                                   // Key-value metadata labels.
 	Description        *string                `protobuf:"bytes,4,opt,name=description,proto3,oneof" json:"description,omitempty"`                                                                                                             // Custom driver description for CLI display.
 	MethodsDescription map[string]string      `protobuf:"bytes,5,rep,name=methods_description,json=methodsDescription,proto3" json:"methods_description,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // Method name to help text mapping for CLI.
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Fields 6 and 7 are kept for JEP-0011 and the native gRPC proposal.
+	Ports         []*PortReport `protobuf:"bytes,8,rep,name=ports,proto3" json:"ports,omitempty"` // Ports of this driver instance that a forward of a lease can connect. Optional.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DriverInstanceReport) Reset() {
@@ -270,6 +325,13 @@ func (x *DriverInstanceReport) GetDescription() string {
 func (x *DriverInstanceReport) GetMethodsDescription() map[string]string {
 	if x != nil {
 		return x.MethodsDescription
+	}
+	return nil
+}
+
+func (x *DriverInstanceReport) GetPorts() []*PortReport {
+	if x != nil {
+		return x.Ports
 	}
 	return nil
 }
@@ -446,13 +508,22 @@ func (x *ListenRequest) GetLeaseName() string {
 	return ""
 }
 
-// Response containing router connection details for an incoming client.
+// Response containing router connection details for an incoming client, or
+// one forward instruction. It never contains the two together.
 type ListenResponse struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	RouterEndpoint string                 `protobuf:"bytes,1,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"` // The router gRPC endpoint URL.
-	RouterToken    string                 `protobuf:"bytes,2,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`          // Authentication token for the router.
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	RouterEndpoint string                 `protobuf:"bytes,1,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"` // The router gRPC endpoint URL. Not set for a forward instruction.
+	RouterToken    string                 `protobuf:"bytes,2,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`          // Authentication token for the router. Not set for a forward instruction.
+	// A forward instruction. Not set for a client connection.
+	//
+	// Types that are valid to be assigned to Forward:
+	//
+	//	*ListenResponse_ForwardSetup
+	//	*ListenResponse_ForwardTeardown
+	//	*ListenResponse_ForwardConnect
+	Forward       isListenResponse_Forward `protobuf_oneof:"forward"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListenResponse) Reset() {
@@ -499,6 +570,584 @@ func (x *ListenResponse) GetRouterToken() string {
 	return ""
 }
 
+func (x *ListenResponse) GetForward() isListenResponse_Forward {
+	if x != nil {
+		return x.Forward
+	}
+	return nil
+}
+
+func (x *ListenResponse) GetForwardSetup() *ForwardSetup {
+	if x != nil {
+		if x, ok := x.Forward.(*ListenResponse_ForwardSetup); ok {
+			return x.ForwardSetup
+		}
+	}
+	return nil
+}
+
+func (x *ListenResponse) GetForwardTeardown() *ForwardTeardown {
+	if x != nil {
+		if x, ok := x.Forward.(*ListenResponse_ForwardTeardown); ok {
+			return x.ForwardTeardown
+		}
+	}
+	return nil
+}
+
+func (x *ListenResponse) GetForwardConnect() *ForwardConnect {
+	if x != nil {
+		if x, ok := x.Forward.(*ListenResponse_ForwardConnect); ok {
+			return x.ForwardConnect
+		}
+	}
+	return nil
+}
+
+type isListenResponse_Forward interface {
+	isListenResponse_Forward()
+}
+
+type ListenResponse_ForwardSetup struct {
+	ForwardSetup *ForwardSetup `protobuf:"bytes,3,opt,name=forward_setup,json=forwardSetup,proto3,oneof"` // Set up the local end of a forward. Sent one time for each forward, and again each time the exporter opens Listen.
+}
+
+type ListenResponse_ForwardTeardown struct {
+	ForwardTeardown *ForwardTeardown `protobuf:"bytes,4,opt,name=forward_teardown,json=forwardTeardown,proto3,oneof"` // Close the local end of a forward.
+}
+
+type ListenResponse_ForwardConnect struct {
+	ForwardConnect *ForwardConnect `protobuf:"bytes,5,opt,name=forward_connect,json=forwardConnect,proto3,oneof"` // Open one connection of a forward. Sent one time for each connection.
+}
+
+func (*ListenResponse_ForwardSetup) isListenResponse_Forward() {}
+
+func (*ListenResponse_ForwardTeardown) isListenResponse_Forward() {}
+
+func (*ListenResponse_ForwardConnect) isListenResponse_Forward() {}
+
+// An endpoint of a forward on a different member of the lease.
+type ForwardPeer struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	MemberName    string                 `protobuf:"bytes,1,opt,name=member_name,json=memberName,proto3" json:"member_name,omitempty"` // Role name of the member.
+	PortName      string                 `protobuf:"bytes,2,opt,name=port_name,json=portName,proto3" json:"port_name,omitempty"`       // Name of the port on the exporter of that member.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForwardPeer) Reset() {
+	*x = ForwardPeer{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForwardPeer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForwardPeer) ProtoMessage() {}
+
+func (x *ForwardPeer) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForwardPeer.ProtoReflect.Descriptor instead.
+func (*ForwardPeer) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ForwardPeer) GetMemberName() string {
+	if x != nil {
+		return x.MemberName
+	}
+	return ""
+}
+
+func (x *ForwardPeer) GetPortName() string {
+	if x != nil {
+		return x.PortName
+	}
+	return ""
+}
+
+// Instruction to set up the local end of a forward. The controller can send
+// the same setup again. The key is (lease_uid, forward_name, member_name).
+type ForwardSetup struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	LeaseUid    string                 `protobuf:"bytes,1,opt,name=lease_uid,json=leaseUid,proto3" json:"lease_uid,omitempty"`          // UID of the lease.
+	ForwardName string                 `protobuf:"bytes,2,opt,name=forward_name,json=forwardName,proto3" json:"forward_name,omitempty"` // Name of the forward in the lease.
+	MemberName  string                 `protobuf:"bytes,3,opt,name=member_name,json=memberName,proto3" json:"member_name,omitempty"`    // Role name of the member that the receiving exporter is bound to.
+	// The other ends of the forward. REQUIRES: the PROVIDES endpoint.
+	// PROVIDES: each bound REQUIRES endpoint. CONNECTS: the other end.
+	Peers         []*ForwardPeer `protobuf:"bytes,4,rep,name=peers,proto3" json:"peers,omitempty"`
+	Direction     PortDirection  `protobuf:"varint,5,opt,name=direction,proto3,enum=jumpstarter.v1.PortDirection" json:"direction,omitempty"` // Direction of the local port.
+	LocalPortName string         `protobuf:"bytes,6,opt,name=local_port_name,json=localPortName,proto3" json:"local_port_name,omitempty"`     // Name of the local port.
+	Initiator     bool           `protobuf:"varint,7,opt,name=initiator,proto3" json:"initiator,omitempty"`                                   // CONNECTS only: this end opens the path with DialPeer.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForwardSetup) Reset() {
+	*x = ForwardSetup{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForwardSetup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForwardSetup) ProtoMessage() {}
+
+func (x *ForwardSetup) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForwardSetup.ProtoReflect.Descriptor instead.
+func (*ForwardSetup) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ForwardSetup) GetLeaseUid() string {
+	if x != nil {
+		return x.LeaseUid
+	}
+	return ""
+}
+
+func (x *ForwardSetup) GetForwardName() string {
+	if x != nil {
+		return x.ForwardName
+	}
+	return ""
+}
+
+func (x *ForwardSetup) GetMemberName() string {
+	if x != nil {
+		return x.MemberName
+	}
+	return ""
+}
+
+func (x *ForwardSetup) GetPeers() []*ForwardPeer {
+	if x != nil {
+		return x.Peers
+	}
+	return nil
+}
+
+func (x *ForwardSetup) GetDirection() PortDirection {
+	if x != nil {
+		return x.Direction
+	}
+	return PortDirection_PORT_DIRECTION_UNSPECIFIED
+}
+
+func (x *ForwardSetup) GetLocalPortName() string {
+	if x != nil {
+		return x.LocalPortName
+	}
+	return ""
+}
+
+func (x *ForwardSetup) GetInitiator() bool {
+	if x != nil {
+		return x.Initiator
+	}
+	return false
+}
+
+// Instruction to close the listener and the streams of a forward.
+type ForwardTeardown struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaseUid      string                 `protobuf:"bytes,1,opt,name=lease_uid,json=leaseUid,proto3" json:"lease_uid,omitempty"`          // UID of the lease.
+	ForwardName   string                 `protobuf:"bytes,2,opt,name=forward_name,json=forwardName,proto3" json:"forward_name,omitempty"` // Name of the forward in the lease.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForwardTeardown) Reset() {
+	*x = ForwardTeardown{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForwardTeardown) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForwardTeardown) ProtoMessage() {}
+
+func (x *ForwardTeardown) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForwardTeardown.ProtoReflect.Descriptor instead.
+func (*ForwardTeardown) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ForwardTeardown) GetLeaseUid() string {
+	if x != nil {
+		return x.LeaseUid
+	}
+	return ""
+}
+
+func (x *ForwardTeardown) GetForwardName() string {
+	if x != nil {
+		return x.ForwardName
+	}
+	return ""
+}
+
+// Instruction to open one connection of a forward. The PROVIDES side, or the
+// second end of a path, gets it.
+type ForwardConnect struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	LeaseUid       string                 `protobuf:"bytes,1,opt,name=lease_uid,json=leaseUid,proto3" json:"lease_uid,omitempty"`                     // UID of the lease.
+	ForwardName    string                 `protobuf:"bytes,2,opt,name=forward_name,json=forwardName,proto3" json:"forward_name,omitempty"`            // Name of the forward in the lease.
+	ConnectionId   string                 `protobuf:"bytes,3,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`         // The stream ID of the connection.
+	PeerMemberName string                 `protobuf:"bytes,4,opt,name=peer_member_name,json=peerMemberName,proto3" json:"peer_member_name,omitempty"` // Role name of the member that opens the connection.
+	RouterEndpoint string                 `protobuf:"bytes,5,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"`   // The router gRPC endpoint URL.
+	RouterToken    string                 `protobuf:"bytes,6,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`            // Authentication token for the router: the token that DialPeer returns.
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ForwardConnect) Reset() {
+	*x = ForwardConnect{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForwardConnect) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForwardConnect) ProtoMessage() {}
+
+func (x *ForwardConnect) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForwardConnect.ProtoReflect.Descriptor instead.
+func (*ForwardConnect) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ForwardConnect) GetLeaseUid() string {
+	if x != nil {
+		return x.LeaseUid
+	}
+	return ""
+}
+
+func (x *ForwardConnect) GetForwardName() string {
+	if x != nil {
+		return x.ForwardName
+	}
+	return ""
+}
+
+func (x *ForwardConnect) GetConnectionId() string {
+	if x != nil {
+		return x.ConnectionId
+	}
+	return ""
+}
+
+func (x *ForwardConnect) GetPeerMemberName() string {
+	if x != nil {
+		return x.PeerMemberName
+	}
+	return ""
+}
+
+func (x *ForwardConnect) GetRouterEndpoint() string {
+	if x != nil {
+		return x.RouterEndpoint
+	}
+	return ""
+}
+
+func (x *ForwardConnect) GetRouterToken() string {
+	if x != nil {
+		return x.RouterToken
+	}
+	return ""
+}
+
+// Request to open one connection of a forward. The controller finds the
+// member from the identity of the caller.
+type DialPeerRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	LeaseUid      string                 `protobuf:"bytes,1,opt,name=lease_uid,json=leaseUid,proto3" json:"lease_uid,omitempty"`          // UID of the lease.
+	ForwardName   string                 `protobuf:"bytes,2,opt,name=forward_name,json=forwardName,proto3" json:"forward_name,omitempty"` // Name of the forward in the lease.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DialPeerRequest) Reset() {
+	*x = DialPeerRequest{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DialPeerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DialPeerRequest) ProtoMessage() {}
+
+func (x *DialPeerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DialPeerRequest.ProtoReflect.Descriptor instead.
+func (*DialPeerRequest) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *DialPeerRequest) GetLeaseUid() string {
+	if x != nil {
+		return x.LeaseUid
+	}
+	return ""
+}
+
+func (x *DialPeerRequest) GetForwardName() string {
+	if x != nil {
+		return x.ForwardName
+	}
+	return ""
+}
+
+// Response containing router connection details for one forwarded connection.
+type DialPeerResponse struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RouterEndpoint string                 `protobuf:"bytes,1,opt,name=router_endpoint,json=routerEndpoint,proto3" json:"router_endpoint,omitempty"` // The router gRPC endpoint URL.
+	RouterToken    string                 `protobuf:"bytes,2,opt,name=router_token,json=routerToken,proto3" json:"router_token,omitempty"`          // Authentication token for the router. Its subject is the new stream ID, as in Dial.
+	ConnectionId   string                 `protobuf:"bytes,3,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`       // The stream ID of the connection.
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DialPeerResponse) Reset() {
+	*x = DialPeerResponse{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DialPeerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DialPeerResponse) ProtoMessage() {}
+
+func (x *DialPeerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DialPeerResponse.ProtoReflect.Descriptor instead.
+func (*DialPeerResponse) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *DialPeerResponse) GetRouterEndpoint() string {
+	if x != nil {
+		return x.RouterEndpoint
+	}
+	return ""
+}
+
+func (x *DialPeerResponse) GetRouterToken() string {
+	if x != nil {
+		return x.RouterToken
+	}
+	return ""
+}
+
+func (x *DialPeerResponse) GetConnectionId() string {
+	if x != nil {
+		return x.ConnectionId
+	}
+	return ""
+}
+
+// Request to report a change of the state of the caller's end of a forward.
+// An exporter does not report each connection.
+type ReportForwardRequest struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	LeaseUid    string                 `protobuf:"bytes,1,opt,name=lease_uid,json=leaseUid,proto3" json:"lease_uid,omitempty"`                // UID of the lease.
+	ForwardName string                 `protobuf:"bytes,2,opt,name=forward_name,json=forwardName,proto3" json:"forward_name,omitempty"`       // Name of the forward in the lease.
+	State       ForwardEndState        `protobuf:"varint,3,opt,name=state,proto3,enum=jumpstarter.v1.ForwardEndState" json:"state,omitempty"` // New state of this end.
+	Message     *string                `protobuf:"bytes,4,opt,name=message,proto3,oneof" json:"message,omitempty"`                            // The cause of a failure.
+	// Increases with each new state of this end. The first number of an
+	// exporter process is its start time in milliseconds. The controller
+	// ignores a report with a number that is not larger than the last one it
+	// accepted for this end.
+	Sequence      uint64 `protobuf:"varint,5,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportForwardRequest) Reset() {
+	*x = ReportForwardRequest{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportForwardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportForwardRequest) ProtoMessage() {}
+
+func (x *ReportForwardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportForwardRequest.ProtoReflect.Descriptor instead.
+func (*ReportForwardRequest) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ReportForwardRequest) GetLeaseUid() string {
+	if x != nil {
+		return x.LeaseUid
+	}
+	return ""
+}
+
+func (x *ReportForwardRequest) GetForwardName() string {
+	if x != nil {
+		return x.ForwardName
+	}
+	return ""
+}
+
+func (x *ReportForwardRequest) GetState() ForwardEndState {
+	if x != nil {
+		return x.State
+	}
+	return ForwardEndState_FORWARD_END_STATE_UNSPECIFIED
+}
+
+func (x *ReportForwardRequest) GetMessage() string {
+	if x != nil && x.Message != nil {
+		return *x.Message
+	}
+	return ""
+}
+
+func (x *ReportForwardRequest) GetSequence() uint64 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+// Response to a forward report.
+type ReportForwardResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportForwardResponse) Reset() {
+	*x = ReportForwardResponse{}
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportForwardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportForwardResponse) ProtoMessage() {}
+
+func (x *ReportForwardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportForwardResponse.ProtoReflect.Descriptor instead.
+func (*ReportForwardResponse) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{14}
+}
+
 // Request to subscribe to exporter lease status updates.
 type StatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -508,7 +1157,7 @@ type StatusRequest struct {
 
 func (x *StatusRequest) Reset() {
 	*x = StatusRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[7]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -520,7 +1169,7 @@ func (x *StatusRequest) String() string {
 func (*StatusRequest) ProtoMessage() {}
 
 func (x *StatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[7]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -533,7 +1182,7 @@ func (x *StatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
 func (*StatusRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{7}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{15}
 }
 
 // Lease status update for an exporter.
@@ -551,7 +1200,7 @@ type StatusResponse struct {
 
 func (x *StatusResponse) Reset() {
 	*x = StatusResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[8]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -563,7 +1212,7 @@ func (x *StatusResponse) String() string {
 func (*StatusResponse) ProtoMessage() {}
 
 func (x *StatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[8]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -576,7 +1225,7 @@ func (x *StatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusResponse.ProtoReflect.Descriptor instead.
 func (*StatusResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{8}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StatusResponse) GetLeased() bool {
@@ -634,7 +1283,7 @@ type LeaseHookState struct {
 
 func (x *LeaseHookState) Reset() {
 	*x = LeaseHookState{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[9]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +1295,7 @@ func (x *LeaseHookState) String() string {
 func (*LeaseHookState) ProtoMessage() {}
 
 func (x *LeaseHookState) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[9]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -659,7 +1308,7 @@ func (x *LeaseHookState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseHookState.ProtoReflect.Descriptor instead.
 func (*LeaseHookState) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{9}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *LeaseHookState) GetPhase() LeaseHookPhase {
@@ -704,7 +1353,7 @@ type LeaseHooks struct {
 
 func (x *LeaseHooks) Reset() {
 	*x = LeaseHooks{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[10]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -716,7 +1365,7 @@ func (x *LeaseHooks) String() string {
 func (*LeaseHooks) ProtoMessage() {}
 
 func (x *LeaseHooks) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[10]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -729,7 +1378,7 @@ func (x *LeaseHooks) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseHooks.ProtoReflect.Descriptor instead.
 func (*LeaseHooks) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{10}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LeaseHooks) GetLeaseName() string {
@@ -783,7 +1432,7 @@ type UpdateLeaseHooksRequest struct {
 
 func (x *UpdateLeaseHooksRequest) Reset() {
 	*x = UpdateLeaseHooksRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[11]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +1444,7 @@ func (x *UpdateLeaseHooksRequest) String() string {
 func (*UpdateLeaseHooksRequest) ProtoMessage() {}
 
 func (x *UpdateLeaseHooksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[11]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +1457,7 @@ func (x *UpdateLeaseHooksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateLeaseHooksRequest.ProtoReflect.Descriptor instead.
 func (*UpdateLeaseHooksRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{11}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UpdateLeaseHooksRequest) GetLeaseName() string {
@@ -877,7 +1526,7 @@ type DialRequest struct {
 
 func (x *DialRequest) Reset() {
 	*x = DialRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[12]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -889,7 +1538,7 @@ func (x *DialRequest) String() string {
 func (*DialRequest) ProtoMessage() {}
 
 func (x *DialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[12]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -902,7 +1551,7 @@ func (x *DialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DialRequest.ProtoReflect.Descriptor instead.
 func (*DialRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{12}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DialRequest) GetLeaseName() string {
@@ -930,7 +1579,7 @@ type DialResponse struct {
 
 func (x *DialResponse) Reset() {
 	*x = DialResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[13]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -942,7 +1591,7 @@ func (x *DialResponse) String() string {
 func (*DialResponse) ProtoMessage() {}
 
 func (x *DialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[13]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -955,7 +1604,7 @@ func (x *DialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DialResponse.ProtoReflect.Descriptor instead.
 func (*DialResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{13}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DialResponse) GetRouterEndpoint() string {
@@ -984,7 +1633,7 @@ type ReportStatusRequest struct {
 
 func (x *ReportStatusRequest) Reset() {
 	*x = ReportStatusRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[14]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -996,7 +1645,7 @@ func (x *ReportStatusRequest) String() string {
 func (*ReportStatusRequest) ProtoMessage() {}
 
 func (x *ReportStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[14]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1009,7 +1658,7 @@ func (x *ReportStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportStatusRequest.ProtoReflect.Descriptor instead.
 func (*ReportStatusRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{14}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ReportStatusRequest) GetStatus() ExporterStatus {
@@ -1042,7 +1691,7 @@ type ReportStatusResponse struct {
 
 func (x *ReportStatusResponse) Reset() {
 	*x = ReportStatusResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[15]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1054,7 +1703,7 @@ func (x *ReportStatusResponse) String() string {
 func (*ReportStatusResponse) ProtoMessage() {}
 
 func (x *ReportStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[15]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1067,7 +1716,7 @@ func (x *ReportStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportStatusResponse.ProtoReflect.Descriptor instead.
 func (*ReportStatusResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{15}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{23}
 }
 
 // Response containing the exporter driver report.
@@ -1084,7 +1733,7 @@ type GetReportResponse struct {
 
 func (x *GetReportResponse) Reset() {
 	*x = GetReportResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[16]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1096,7 +1745,7 @@ func (x *GetReportResponse) String() string {
 func (*GetReportResponse) ProtoMessage() {}
 
 func (x *GetReportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[16]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1109,7 +1758,7 @@ func (x *GetReportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetReportResponse.ProtoReflect.Descriptor instead.
 func (*GetReportResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{16}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetReportResponse) GetUuid() string {
@@ -1160,7 +1809,7 @@ type Endpoint struct {
 
 func (x *Endpoint) Reset() {
 	*x = Endpoint{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[17]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1172,7 +1821,7 @@ func (x *Endpoint) String() string {
 func (*Endpoint) ProtoMessage() {}
 
 func (x *Endpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[17]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1185,7 +1834,7 @@ func (x *Endpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Endpoint.ProtoReflect.Descriptor instead.
 func (*Endpoint) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{17}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Endpoint) GetEndpoint() string {
@@ -1228,7 +1877,7 @@ type DriverCallRequest struct {
 
 func (x *DriverCallRequest) Reset() {
 	*x = DriverCallRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[18]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1240,7 +1889,7 @@ func (x *DriverCallRequest) String() string {
 func (*DriverCallRequest) ProtoMessage() {}
 
 func (x *DriverCallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[18]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1253,7 +1902,7 @@ func (x *DriverCallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DriverCallRequest.ProtoReflect.Descriptor instead.
 func (*DriverCallRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{18}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *DriverCallRequest) GetUuid() string {
@@ -1288,7 +1937,7 @@ type DriverCallResponse struct {
 
 func (x *DriverCallResponse) Reset() {
 	*x = DriverCallResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[19]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1300,7 +1949,7 @@ func (x *DriverCallResponse) String() string {
 func (*DriverCallResponse) ProtoMessage() {}
 
 func (x *DriverCallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[19]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1313,7 +1962,7 @@ func (x *DriverCallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DriverCallResponse.ProtoReflect.Descriptor instead.
 func (*DriverCallResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{19}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *DriverCallResponse) GetUuid() string {
@@ -1342,7 +1991,7 @@ type StreamingDriverCallRequest struct {
 
 func (x *StreamingDriverCallRequest) Reset() {
 	*x = StreamingDriverCallRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[20]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1354,7 +2003,7 @@ func (x *StreamingDriverCallRequest) String() string {
 func (*StreamingDriverCallRequest) ProtoMessage() {}
 
 func (x *StreamingDriverCallRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[20]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1367,7 +2016,7 @@ func (x *StreamingDriverCallRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamingDriverCallRequest.ProtoReflect.Descriptor instead.
 func (*StreamingDriverCallRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{20}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *StreamingDriverCallRequest) GetUuid() string {
@@ -1402,7 +2051,7 @@ type StreamingDriverCallResponse struct {
 
 func (x *StreamingDriverCallResponse) Reset() {
 	*x = StreamingDriverCallResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[21]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1414,7 +2063,7 @@ func (x *StreamingDriverCallResponse) String() string {
 func (*StreamingDriverCallResponse) ProtoMessage() {}
 
 func (x *StreamingDriverCallResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[21]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1427,7 +2076,7 @@ func (x *StreamingDriverCallResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamingDriverCallResponse.ProtoReflect.Descriptor instead.
 func (*StreamingDriverCallResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{21}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *StreamingDriverCallResponse) GetUuid() string {
@@ -1461,7 +2110,7 @@ type LogStreamResponse struct {
 
 func (x *LogStreamResponse) Reset() {
 	*x = LogStreamResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[22]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1473,7 +2122,7 @@ func (x *LogStreamResponse) String() string {
 func (*LogStreamResponse) ProtoMessage() {}
 
 func (x *LogStreamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[22]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1486,7 +2135,7 @@ func (x *LogStreamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogStreamResponse.ProtoReflect.Descriptor instead.
 func (*LogStreamResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{22}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *LogStreamResponse) GetUuid() string {
@@ -1554,7 +2203,7 @@ type ResetRequest struct {
 
 func (x *ResetRequest) Reset() {
 	*x = ResetRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[23]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1566,7 +2215,7 @@ func (x *ResetRequest) String() string {
 func (*ResetRequest) ProtoMessage() {}
 
 func (x *ResetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[23]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1579,7 +2228,7 @@ func (x *ResetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetRequest.ProtoReflect.Descriptor instead.
 func (*ResetRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{23}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{31}
 }
 
 // Response to a reset request.
@@ -1591,7 +2240,7 @@ type ResetResponse struct {
 
 func (x *ResetResponse) Reset() {
 	*x = ResetResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[24]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1603,7 +2252,7 @@ func (x *ResetResponse) String() string {
 func (*ResetResponse) ProtoMessage() {}
 
 func (x *ResetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[24]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1616,7 +2265,7 @@ func (x *ResetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResetResponse.ProtoReflect.Descriptor instead.
 func (*ResetResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{24}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{32}
 }
 
 // Request to retrieve a lease by name.
@@ -1629,7 +2278,7 @@ type GetLeaseRequest struct {
 
 func (x *GetLeaseRequest) Reset() {
 	*x = GetLeaseRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[25]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1641,7 +2290,7 @@ func (x *GetLeaseRequest) String() string {
 func (*GetLeaseRequest) ProtoMessage() {}
 
 func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[25]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1654,7 +2303,7 @@ func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLeaseRequest.ProtoReflect.Descriptor instead.
 func (*GetLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{25}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetLeaseRequest) GetName() string {
@@ -1679,7 +2328,7 @@ type GetLeaseResponse struct {
 
 func (x *GetLeaseResponse) Reset() {
 	*x = GetLeaseResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[26]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1691,7 +2340,7 @@ func (x *GetLeaseResponse) String() string {
 func (*GetLeaseResponse) ProtoMessage() {}
 
 func (x *GetLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[26]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1704,7 +2353,7 @@ func (x *GetLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLeaseResponse.ProtoReflect.Descriptor instead.
 func (*GetLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{26}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetLeaseResponse) GetDuration() *durationpb.Duration {
@@ -1760,7 +2409,7 @@ type RequestLeaseRequest struct {
 
 func (x *RequestLeaseRequest) Reset() {
 	*x = RequestLeaseRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[27]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1772,7 +2421,7 @@ func (x *RequestLeaseRequest) String() string {
 func (*RequestLeaseRequest) ProtoMessage() {}
 
 func (x *RequestLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[27]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1785,7 +2434,7 @@ func (x *RequestLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RequestLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{27}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *RequestLeaseRequest) GetDuration() *durationpb.Duration {
@@ -1812,7 +2461,7 @@ type RequestLeaseResponse struct {
 
 func (x *RequestLeaseResponse) Reset() {
 	*x = RequestLeaseResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[28]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1824,7 +2473,7 @@ func (x *RequestLeaseResponse) String() string {
 func (*RequestLeaseResponse) ProtoMessage() {}
 
 func (x *RequestLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[28]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1837,7 +2486,7 @@ func (x *RequestLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RequestLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{28}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *RequestLeaseResponse) GetName() string {
@@ -1857,7 +2506,7 @@ type ReleaseLeaseRequest struct {
 
 func (x *ReleaseLeaseRequest) Reset() {
 	*x = ReleaseLeaseRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[29]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1869,7 +2518,7 @@ func (x *ReleaseLeaseRequest) String() string {
 func (*ReleaseLeaseRequest) ProtoMessage() {}
 
 func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[29]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1882,7 +2531,7 @@ func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{29}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ReleaseLeaseRequest) GetName() string {
@@ -1901,7 +2550,7 @@ type ReleaseLeaseResponse struct {
 
 func (x *ReleaseLeaseResponse) Reset() {
 	*x = ReleaseLeaseResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[30]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1913,7 +2562,7 @@ func (x *ReleaseLeaseResponse) String() string {
 func (*ReleaseLeaseResponse) ProtoMessage() {}
 
 func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[30]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1926,7 +2575,7 @@ func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{30}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{38}
 }
 
 // Request to list all leases.
@@ -1938,7 +2587,7 @@ type ListLeasesRequest struct {
 
 func (x *ListLeasesRequest) Reset() {
 	*x = ListLeasesRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[31]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1950,7 +2599,7 @@ func (x *ListLeasesRequest) String() string {
 func (*ListLeasesRequest) ProtoMessage() {}
 
 func (x *ListLeasesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[31]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1963,7 +2612,7 @@ func (x *ListLeasesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLeasesRequest.ProtoReflect.Descriptor instead.
 func (*ListLeasesRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{31}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{39}
 }
 
 // Response containing the list of lease names.
@@ -1976,7 +2625,7 @@ type ListLeasesResponse struct {
 
 func (x *ListLeasesResponse) Reset() {
 	*x = ListLeasesResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[32]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1988,7 +2637,7 @@ func (x *ListLeasesResponse) String() string {
 func (*ListLeasesResponse) ProtoMessage() {}
 
 func (x *ListLeasesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[32]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2001,7 +2650,7 @@ func (x *ListLeasesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLeasesResponse.ProtoReflect.Descriptor instead.
 func (*ListLeasesResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{32}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ListLeasesResponse) GetNames() []string {
@@ -2020,7 +2669,7 @@ type GetStatusRequest struct {
 
 func (x *GetStatusRequest) Reset() {
 	*x = GetStatusRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[33]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2032,7 +2681,7 @@ func (x *GetStatusRequest) String() string {
 func (*GetStatusRequest) ProtoMessage() {}
 
 func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[33]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2045,7 +2694,7 @@ func (x *GetStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetStatusRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{33}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{41}
 }
 
 // Response containing the current exporter status.
@@ -2061,7 +2710,7 @@ type GetStatusResponse struct {
 
 func (x *GetStatusResponse) Reset() {
 	*x = GetStatusResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[34]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2073,7 +2722,7 @@ func (x *GetStatusResponse) String() string {
 func (*GetStatusResponse) ProtoMessage() {}
 
 func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[34]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2086,7 +2735,7 @@ func (x *GetStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetStatusResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{34}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *GetStatusResponse) GetStatus() ExporterStatus {
@@ -2126,7 +2775,7 @@ type EndSessionRequest struct {
 
 func (x *EndSessionRequest) Reset() {
 	*x = EndSessionRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[35]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2138,7 +2787,7 @@ func (x *EndSessionRequest) String() string {
 func (*EndSessionRequest) ProtoMessage() {}
 
 func (x *EndSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[35]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2151,7 +2800,7 @@ func (x *EndSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndSessionRequest.ProtoReflect.Descriptor instead.
 func (*EndSessionRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{35}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{43}
 }
 
 // Response to an end session request.
@@ -2165,7 +2814,7 @@ type EndSessionResponse struct {
 
 func (x *EndSessionResponse) Reset() {
 	*x = EndSessionResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[36]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2177,7 +2826,7 @@ func (x *EndSessionResponse) String() string {
 func (*EndSessionResponse) ProtoMessage() {}
 
 func (x *EndSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[36]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2190,7 +2839,7 @@ func (x *EndSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EndSessionResponse.ProtoReflect.Descriptor instead.
 func (*EndSessionResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{36}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *EndSessionResponse) GetSuccess() bool {
@@ -2216,7 +2865,7 @@ type GetServiceEndpointsRequest struct {
 
 func (x *GetServiceEndpointsRequest) Reset() {
 	*x = GetServiceEndpointsRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[37]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2228,7 +2877,7 @@ func (x *GetServiceEndpointsRequest) String() string {
 func (*GetServiceEndpointsRequest) ProtoMessage() {}
 
 func (x *GetServiceEndpointsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[37]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2241,7 +2890,7 @@ func (x *GetServiceEndpointsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServiceEndpointsRequest.ProtoReflect.Descriptor instead.
 func (*GetServiceEndpointsRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{37}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{45}
 }
 
 // Response containing optional service endpoint addresses.
@@ -2255,7 +2904,7 @@ type GetServiceEndpointsResponse struct {
 
 func (x *GetServiceEndpointsResponse) Reset() {
 	*x = GetServiceEndpointsResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[38]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2267,7 +2916,7 @@ func (x *GetServiceEndpointsResponse) String() string {
 func (*GetServiceEndpointsResponse) ProtoMessage() {}
 
 func (x *GetServiceEndpointsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[38]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2280,7 +2929,7 @@ func (x *GetServiceEndpointsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetServiceEndpointsResponse.ProtoReflect.Descriptor instead.
 func (*GetServiceEndpointsResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{38}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *GetServiceEndpointsResponse) GetTelemetryEndpoints() []*TelemetryEndpoint {
@@ -2308,7 +2957,7 @@ type TelemetryEndpoint struct {
 
 func (x *TelemetryEndpoint) Reset() {
 	*x = TelemetryEndpoint{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[39]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2320,7 +2969,7 @@ func (x *TelemetryEndpoint) String() string {
 func (*TelemetryEndpoint) ProtoMessage() {}
 
 func (x *TelemetryEndpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[39]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2333,7 +2982,7 @@ func (x *TelemetryEndpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryEndpoint.ProtoReflect.Descriptor instead.
 func (*TelemetryEndpoint) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{39}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *TelemetryEndpoint) GetEndpoint() string {
@@ -2380,7 +3029,7 @@ type RotateTokenRequest struct {
 
 func (x *RotateTokenRequest) Reset() {
 	*x = RotateTokenRequest{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[40]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2392,7 +3041,7 @@ func (x *RotateTokenRequest) String() string {
 func (*RotateTokenRequest) ProtoMessage() {}
 
 func (x *RotateTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[40]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2405,7 +3054,7 @@ func (x *RotateTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateTokenRequest.ProtoReflect.Descriptor instead.
 func (*RotateTokenRequest) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{40}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{48}
 }
 
 // Response containing the newly rotated token.
@@ -2419,7 +3068,7 @@ type RotateTokenResponse struct {
 
 func (x *RotateTokenResponse) Reset() {
 	*x = RotateTokenResponse{}
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[41]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2431,7 +3080,7 @@ func (x *RotateTokenResponse) String() string {
 func (*RotateTokenResponse) ProtoMessage() {}
 
 func (x *RotateTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[41]
+	mi := &file_jumpstarter_v1_jumpstarter_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2444,7 +3093,7 @@ func (x *RotateTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RotateTokenResponse.ProtoReflect.Descriptor instead.
 func (*RotateTokenResponse) Descriptor() ([]byte, []int) {
-	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{41}
+	return file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *RotateTokenResponse) GetToken() string {
@@ -2472,14 +3121,15 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\x13records_lease_hooks\x18\x03 \x01(\bR\x11recordsLeaseHooks\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xd2\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x84\x04\n" +
 	"\x14DriverInstanceReport\x12\x12\n" +
 	"\x04uuid\x18\x01 \x01(\tR\x04uuid\x12$\n" +
 	"\vparent_uuid\x18\x02 \x01(\tH\x00R\n" +
 	"parentUuid\x88\x01\x01\x12H\n" +
 	"\x06labels\x18\x03 \x03(\v20.jumpstarter.v1.DriverInstanceReport.LabelsEntryR\x06labels\x12%\n" +
 	"\vdescription\x18\x04 \x01(\tH\x01R\vdescription\x88\x01\x01\x12m\n" +
-	"\x13methods_description\x18\x05 \x03(\v2<.jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntryR\x12methodsDescription\x1a9\n" +
+	"\x13methods_description\x18\x05 \x03(\v2<.jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntryR\x12methodsDescription\x120\n" +
+	"\x05ports\x18\b \x03(\v2\x1a.jumpstarter.v1.PortReportR\x05ports\x1a9\n" +
 	"\vLabelsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1aE\n" +
@@ -2495,10 +3145,53 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\x12UnregisterResponse\".\n" +
 	"\rListenRequest\x12\x1d\n" +
 	"\n" +
-	"lease_name\x18\x01 \x01(\tR\tleaseName\"\\\n" +
+	"lease_name\x18\x01 \x01(\tR\tleaseName\"\xc5\x02\n" +
 	"\x0eListenResponse\x12'\n" +
 	"\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n" +
-	"\frouter_token\x18\x02 \x01(\tR\vrouterToken\"\x0f\n" +
+	"\frouter_token\x18\x02 \x01(\tR\vrouterToken\x12C\n" +
+	"\rforward_setup\x18\x03 \x01(\v2\x1c.jumpstarter.v1.ForwardSetupH\x00R\fforwardSetup\x12L\n" +
+	"\x10forward_teardown\x18\x04 \x01(\v2\x1f.jumpstarter.v1.ForwardTeardownH\x00R\x0fforwardTeardown\x12I\n" +
+	"\x0fforward_connect\x18\x05 \x01(\v2\x1e.jumpstarter.v1.ForwardConnectH\x00R\x0eforwardConnectB\t\n" +
+	"\aforward\"K\n" +
+	"\vForwardPeer\x12\x1f\n" +
+	"\vmember_name\x18\x01 \x01(\tR\n" +
+	"memberName\x12\x1b\n" +
+	"\tport_name\x18\x02 \x01(\tR\bportName\"\xa5\x02\n" +
+	"\fForwardSetup\x12\x1b\n" +
+	"\tlease_uid\x18\x01 \x01(\tR\bleaseUid\x12!\n" +
+	"\fforward_name\x18\x02 \x01(\tR\vforwardName\x12\x1f\n" +
+	"\vmember_name\x18\x03 \x01(\tR\n" +
+	"memberName\x121\n" +
+	"\x05peers\x18\x04 \x03(\v2\x1b.jumpstarter.v1.ForwardPeerR\x05peers\x12;\n" +
+	"\tdirection\x18\x05 \x01(\x0e2\x1d.jumpstarter.v1.PortDirectionR\tdirection\x12&\n" +
+	"\x0flocal_port_name\x18\x06 \x01(\tR\rlocalPortName\x12\x1c\n" +
+	"\tinitiator\x18\a \x01(\bR\tinitiator\"Q\n" +
+	"\x0fForwardTeardown\x12\x1b\n" +
+	"\tlease_uid\x18\x01 \x01(\tR\bleaseUid\x12!\n" +
+	"\fforward_name\x18\x02 \x01(\tR\vforwardName\"\xeb\x01\n" +
+	"\x0eForwardConnect\x12\x1b\n" +
+	"\tlease_uid\x18\x01 \x01(\tR\bleaseUid\x12!\n" +
+	"\fforward_name\x18\x02 \x01(\tR\vforwardName\x12#\n" +
+	"\rconnection_id\x18\x03 \x01(\tR\fconnectionId\x12(\n" +
+	"\x10peer_member_name\x18\x04 \x01(\tR\x0epeerMemberName\x12'\n" +
+	"\x0frouter_endpoint\x18\x05 \x01(\tR\x0erouterEndpoint\x12!\n" +
+	"\frouter_token\x18\x06 \x01(\tR\vrouterToken\"Q\n" +
+	"\x0fDialPeerRequest\x12\x1b\n" +
+	"\tlease_uid\x18\x01 \x01(\tR\bleaseUid\x12!\n" +
+	"\fforward_name\x18\x02 \x01(\tR\vforwardName\"\x83\x01\n" +
+	"\x10DialPeerResponse\x12'\n" +
+	"\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n" +
+	"\frouter_token\x18\x02 \x01(\tR\vrouterToken\x12#\n" +
+	"\rconnection_id\x18\x03 \x01(\tR\fconnectionId\"\xd4\x01\n" +
+	"\x14ReportForwardRequest\x12\x1b\n" +
+	"\tlease_uid\x18\x01 \x01(\tR\bleaseUid\x12!\n" +
+	"\fforward_name\x18\x02 \x01(\tR\vforwardName\x125\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x1f.jumpstarter.v1.ForwardEndStateR\x05state\x12\x1d\n" +
+	"\amessage\x18\x04 \x01(\tH\x00R\amessage\x88\x01\x01\x12\x1a\n" +
+	"\bsequence\x18\x05 \x01(\x04R\bsequenceB\n" +
+	"\n" +
+	"\b_message\"\x17\n" +
+	"\x15ReportForwardResponse\"\x0f\n" +
 	"\rStatusRequest\"\x81\x03\n" +
 	"\x0eStatusResponse\x12\x16\n" +
 	"\x06leased\x18\x01 \x01(\bR\x06leased\x12\"\n" +
@@ -2660,7 +3353,12 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\x12RotateTokenRequest\"_\n" +
 	"\x13RotateTokenResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x122\n" +
-	"\x06expiry\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06expiry*\xab\x01\n" +
+	"\x06expiry\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x06expiry*\x90\x01\n" +
+	"\x0fForwardEndState\x12!\n" +
+	"\x1dFORWARD_END_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17FORWARD_END_STATE_READY\x10\x01\x12\x1f\n" +
+	"\x1bFORWARD_END_STATE_CONNECTED\x10\x02\x12\x1c\n" +
+	"\x18FORWARD_END_STATE_FAILED\x10\x03*\xab\x01\n" +
 	"\x0eLeaseHookPhase\x12 \n" +
 	"\x1cLEASE_HOOK_PHASE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18LEASE_HOOK_PHASE_RUNNING\x10\x01\x12\x1e\n" +
@@ -2671,7 +3369,8 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"%LEASE_HOOK_FAILURE_ACTION_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eLEASE_HOOK_FAILURE_ACTION_WARN\x10\x01\x12'\n" +
 	"#LEASE_HOOK_FAILURE_ACTION_END_LEASE\x10\x02\x12\"\n" +
-	"\x1eLEASE_HOOK_FAILURE_ACTION_EXIT\x10\x032\xe6\b\n" +
+	"\x1eLEASE_HOOK_FAILURE_ACTION_EXIT\x10\x032\x93\n" +
+	"\n" +
 	"\x11ControllerService\x12M\n" +
 	"\bRegister\x12\x1f.jumpstarter.v1.RegisterRequest\x1a .jumpstarter.v1.RegisterResponse\x12S\n" +
 	"\n" +
@@ -2687,7 +3386,9 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"ListLeases\x12!.jumpstarter.v1.ListLeasesRequest\x1a\".jumpstarter.v1.ListLeasesResponse\x12n\n" +
 	"\x13GetServiceEndpoints\x12*.jumpstarter.v1.GetServiceEndpointsRequest\x1a+.jumpstarter.v1.GetServiceEndpointsResponse\x12W\n" +
 	"\x10UpdateLeaseHooks\x12'.jumpstarter.v1.UpdateLeaseHooksRequest\x1a\x1a.jumpstarter.v1.LeaseHooks\x12V\n" +
-	"\vRotateToken\x12\".jumpstarter.v1.RotateTokenRequest\x1a#.jumpstarter.v1.RotateTokenResponse2\xd7\x04\n" +
+	"\vRotateToken\x12\".jumpstarter.v1.RotateTokenRequest\x1a#.jumpstarter.v1.RotateTokenResponse\x12M\n" +
+	"\bDialPeer\x12\x1f.jumpstarter.v1.DialPeerRequest\x1a .jumpstarter.v1.DialPeerResponse\x12\\\n" +
+	"\rReportForward\x12$.jumpstarter.v1.ReportForwardRequest\x1a%.jumpstarter.v1.ReportForwardResponse2\xd7\x04\n" +
 	"\x0fExporterService\x12F\n" +
 	"\tGetReport\x12\x16.google.protobuf.Empty\x1a!.jumpstarter.v1.GetReportResponse\x12S\n" +
 	"\n" +
@@ -2712,149 +3413,171 @@ func file_jumpstarter_v1_jumpstarter_proto_rawDescGZIP() []byte {
 	return file_jumpstarter_v1_jumpstarter_proto_rawDescData
 }
 
-var file_jumpstarter_v1_jumpstarter_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_jumpstarter_v1_jumpstarter_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_jumpstarter_v1_jumpstarter_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_jumpstarter_v1_jumpstarter_proto_msgTypes = make([]protoimpl.MessageInfo, 56)
 var file_jumpstarter_v1_jumpstarter_proto_goTypes = []any{
-	(LeaseHookPhase)(0),                 // 0: jumpstarter.v1.LeaseHookPhase
-	(LeaseHookFailureAction)(0),         // 1: jumpstarter.v1.LeaseHookFailureAction
-	(*RegisterRequest)(nil),             // 2: jumpstarter.v1.RegisterRequest
-	(*DriverInstanceReport)(nil),        // 3: jumpstarter.v1.DriverInstanceReport
-	(*RegisterResponse)(nil),            // 4: jumpstarter.v1.RegisterResponse
-	(*UnregisterRequest)(nil),           // 5: jumpstarter.v1.UnregisterRequest
-	(*UnregisterResponse)(nil),          // 6: jumpstarter.v1.UnregisterResponse
-	(*ListenRequest)(nil),               // 7: jumpstarter.v1.ListenRequest
-	(*ListenResponse)(nil),              // 8: jumpstarter.v1.ListenResponse
-	(*StatusRequest)(nil),               // 9: jumpstarter.v1.StatusRequest
-	(*StatusResponse)(nil),              // 10: jumpstarter.v1.StatusResponse
-	(*LeaseHookState)(nil),              // 11: jumpstarter.v1.LeaseHookState
-	(*LeaseHooks)(nil),                  // 12: jumpstarter.v1.LeaseHooks
-	(*UpdateLeaseHooksRequest)(nil),     // 13: jumpstarter.v1.UpdateLeaseHooksRequest
-	(*DialRequest)(nil),                 // 14: jumpstarter.v1.DialRequest
-	(*DialResponse)(nil),                // 15: jumpstarter.v1.DialResponse
-	(*ReportStatusRequest)(nil),         // 16: jumpstarter.v1.ReportStatusRequest
-	(*ReportStatusResponse)(nil),        // 17: jumpstarter.v1.ReportStatusResponse
-	(*GetReportResponse)(nil),           // 18: jumpstarter.v1.GetReportResponse
-	(*Endpoint)(nil),                    // 19: jumpstarter.v1.Endpoint
-	(*DriverCallRequest)(nil),           // 20: jumpstarter.v1.DriverCallRequest
-	(*DriverCallResponse)(nil),          // 21: jumpstarter.v1.DriverCallResponse
-	(*StreamingDriverCallRequest)(nil),  // 22: jumpstarter.v1.StreamingDriverCallRequest
-	(*StreamingDriverCallResponse)(nil), // 23: jumpstarter.v1.StreamingDriverCallResponse
-	(*LogStreamResponse)(nil),           // 24: jumpstarter.v1.LogStreamResponse
-	(*ResetRequest)(nil),                // 25: jumpstarter.v1.ResetRequest
-	(*ResetResponse)(nil),               // 26: jumpstarter.v1.ResetResponse
-	(*GetLeaseRequest)(nil),             // 27: jumpstarter.v1.GetLeaseRequest
-	(*GetLeaseResponse)(nil),            // 28: jumpstarter.v1.GetLeaseResponse
-	(*RequestLeaseRequest)(nil),         // 29: jumpstarter.v1.RequestLeaseRequest
-	(*RequestLeaseResponse)(nil),        // 30: jumpstarter.v1.RequestLeaseResponse
-	(*ReleaseLeaseRequest)(nil),         // 31: jumpstarter.v1.ReleaseLeaseRequest
-	(*ReleaseLeaseResponse)(nil),        // 32: jumpstarter.v1.ReleaseLeaseResponse
-	(*ListLeasesRequest)(nil),           // 33: jumpstarter.v1.ListLeasesRequest
-	(*ListLeasesResponse)(nil),          // 34: jumpstarter.v1.ListLeasesResponse
-	(*GetStatusRequest)(nil),            // 35: jumpstarter.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),           // 36: jumpstarter.v1.GetStatusResponse
-	(*EndSessionRequest)(nil),           // 37: jumpstarter.v1.EndSessionRequest
-	(*EndSessionResponse)(nil),          // 38: jumpstarter.v1.EndSessionResponse
-	(*GetServiceEndpointsRequest)(nil),  // 39: jumpstarter.v1.GetServiceEndpointsRequest
-	(*GetServiceEndpointsResponse)(nil), // 40: jumpstarter.v1.GetServiceEndpointsResponse
-	(*TelemetryEndpoint)(nil),           // 41: jumpstarter.v1.TelemetryEndpoint
-	(*RotateTokenRequest)(nil),          // 42: jumpstarter.v1.RotateTokenRequest
-	(*RotateTokenResponse)(nil),         // 43: jumpstarter.v1.RotateTokenResponse
-	nil,                                 // 44: jumpstarter.v1.RegisterRequest.LabelsEntry
-	nil,                                 // 45: jumpstarter.v1.DriverInstanceReport.LabelsEntry
-	nil,                                 // 46: jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntry
-	nil,                                 // 47: jumpstarter.v1.StatusResponse.ContextEntry
-	nil,                                 // 48: jumpstarter.v1.GetReportResponse.LabelsEntry
-	nil,                                 // 49: jumpstarter.v1.LogStreamResponse.StructuredFieldsEntry
-	(ExporterStatus)(0),                 // 50: jumpstarter.v1.ExporterStatus
-	(*structpb.Value)(nil),              // 51: google.protobuf.Value
-	(LogSource)(0),                      // 52: jumpstarter.v1.LogSource
-	(*timestamppb.Timestamp)(nil),       // 53: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),         // 54: google.protobuf.Duration
-	(*LabelSelector)(nil),               // 55: jumpstarter.v1.LabelSelector
-	(*Condition)(nil),                   // 56: jumpstarter.v1.Condition
-	(*emptypb.Empty)(nil),               // 57: google.protobuf.Empty
+	(ForwardEndState)(0),                // 0: jumpstarter.v1.ForwardEndState
+	(LeaseHookPhase)(0),                 // 1: jumpstarter.v1.LeaseHookPhase
+	(LeaseHookFailureAction)(0),         // 2: jumpstarter.v1.LeaseHookFailureAction
+	(*RegisterRequest)(nil),             // 3: jumpstarter.v1.RegisterRequest
+	(*DriverInstanceReport)(nil),        // 4: jumpstarter.v1.DriverInstanceReport
+	(*RegisterResponse)(nil),            // 5: jumpstarter.v1.RegisterResponse
+	(*UnregisterRequest)(nil),           // 6: jumpstarter.v1.UnregisterRequest
+	(*UnregisterResponse)(nil),          // 7: jumpstarter.v1.UnregisterResponse
+	(*ListenRequest)(nil),               // 8: jumpstarter.v1.ListenRequest
+	(*ListenResponse)(nil),              // 9: jumpstarter.v1.ListenResponse
+	(*ForwardPeer)(nil),                 // 10: jumpstarter.v1.ForwardPeer
+	(*ForwardSetup)(nil),                // 11: jumpstarter.v1.ForwardSetup
+	(*ForwardTeardown)(nil),             // 12: jumpstarter.v1.ForwardTeardown
+	(*ForwardConnect)(nil),              // 13: jumpstarter.v1.ForwardConnect
+	(*DialPeerRequest)(nil),             // 14: jumpstarter.v1.DialPeerRequest
+	(*DialPeerResponse)(nil),            // 15: jumpstarter.v1.DialPeerResponse
+	(*ReportForwardRequest)(nil),        // 16: jumpstarter.v1.ReportForwardRequest
+	(*ReportForwardResponse)(nil),       // 17: jumpstarter.v1.ReportForwardResponse
+	(*StatusRequest)(nil),               // 18: jumpstarter.v1.StatusRequest
+	(*StatusResponse)(nil),              // 19: jumpstarter.v1.StatusResponse
+	(*LeaseHookState)(nil),              // 20: jumpstarter.v1.LeaseHookState
+	(*LeaseHooks)(nil),                  // 21: jumpstarter.v1.LeaseHooks
+	(*UpdateLeaseHooksRequest)(nil),     // 22: jumpstarter.v1.UpdateLeaseHooksRequest
+	(*DialRequest)(nil),                 // 23: jumpstarter.v1.DialRequest
+	(*DialResponse)(nil),                // 24: jumpstarter.v1.DialResponse
+	(*ReportStatusRequest)(nil),         // 25: jumpstarter.v1.ReportStatusRequest
+	(*ReportStatusResponse)(nil),        // 26: jumpstarter.v1.ReportStatusResponse
+	(*GetReportResponse)(nil),           // 27: jumpstarter.v1.GetReportResponse
+	(*Endpoint)(nil),                    // 28: jumpstarter.v1.Endpoint
+	(*DriverCallRequest)(nil),           // 29: jumpstarter.v1.DriverCallRequest
+	(*DriverCallResponse)(nil),          // 30: jumpstarter.v1.DriverCallResponse
+	(*StreamingDriverCallRequest)(nil),  // 31: jumpstarter.v1.StreamingDriverCallRequest
+	(*StreamingDriverCallResponse)(nil), // 32: jumpstarter.v1.StreamingDriverCallResponse
+	(*LogStreamResponse)(nil),           // 33: jumpstarter.v1.LogStreamResponse
+	(*ResetRequest)(nil),                // 34: jumpstarter.v1.ResetRequest
+	(*ResetResponse)(nil),               // 35: jumpstarter.v1.ResetResponse
+	(*GetLeaseRequest)(nil),             // 36: jumpstarter.v1.GetLeaseRequest
+	(*GetLeaseResponse)(nil),            // 37: jumpstarter.v1.GetLeaseResponse
+	(*RequestLeaseRequest)(nil),         // 38: jumpstarter.v1.RequestLeaseRequest
+	(*RequestLeaseResponse)(nil),        // 39: jumpstarter.v1.RequestLeaseResponse
+	(*ReleaseLeaseRequest)(nil),         // 40: jumpstarter.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),        // 41: jumpstarter.v1.ReleaseLeaseResponse
+	(*ListLeasesRequest)(nil),           // 42: jumpstarter.v1.ListLeasesRequest
+	(*ListLeasesResponse)(nil),          // 43: jumpstarter.v1.ListLeasesResponse
+	(*GetStatusRequest)(nil),            // 44: jumpstarter.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),           // 45: jumpstarter.v1.GetStatusResponse
+	(*EndSessionRequest)(nil),           // 46: jumpstarter.v1.EndSessionRequest
+	(*EndSessionResponse)(nil),          // 47: jumpstarter.v1.EndSessionResponse
+	(*GetServiceEndpointsRequest)(nil),  // 48: jumpstarter.v1.GetServiceEndpointsRequest
+	(*GetServiceEndpointsResponse)(nil), // 49: jumpstarter.v1.GetServiceEndpointsResponse
+	(*TelemetryEndpoint)(nil),           // 50: jumpstarter.v1.TelemetryEndpoint
+	(*RotateTokenRequest)(nil),          // 51: jumpstarter.v1.RotateTokenRequest
+	(*RotateTokenResponse)(nil),         // 52: jumpstarter.v1.RotateTokenResponse
+	nil,                                 // 53: jumpstarter.v1.RegisterRequest.LabelsEntry
+	nil,                                 // 54: jumpstarter.v1.DriverInstanceReport.LabelsEntry
+	nil,                                 // 55: jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntry
+	nil,                                 // 56: jumpstarter.v1.StatusResponse.ContextEntry
+	nil,                                 // 57: jumpstarter.v1.GetReportResponse.LabelsEntry
+	nil,                                 // 58: jumpstarter.v1.LogStreamResponse.StructuredFieldsEntry
+	(*PortReport)(nil),                  // 59: jumpstarter.v1.PortReport
+	(PortDirection)(0),                  // 60: jumpstarter.v1.PortDirection
+	(ExporterStatus)(0),                 // 61: jumpstarter.v1.ExporterStatus
+	(*structpb.Value)(nil),              // 62: google.protobuf.Value
+	(LogSource)(0),                      // 63: jumpstarter.v1.LogSource
+	(*timestamppb.Timestamp)(nil),       // 64: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),         // 65: google.protobuf.Duration
+	(*LabelSelector)(nil),               // 66: jumpstarter.v1.LabelSelector
+	(*Condition)(nil),                   // 67: jumpstarter.v1.Condition
+	(*emptypb.Empty)(nil),               // 68: google.protobuf.Empty
 }
 var file_jumpstarter_v1_jumpstarter_proto_depIdxs = []int32{
-	44, // 0: jumpstarter.v1.RegisterRequest.labels:type_name -> jumpstarter.v1.RegisterRequest.LabelsEntry
-	3,  // 1: jumpstarter.v1.RegisterRequest.reports:type_name -> jumpstarter.v1.DriverInstanceReport
-	45, // 2: jumpstarter.v1.DriverInstanceReport.labels:type_name -> jumpstarter.v1.DriverInstanceReport.LabelsEntry
-	46, // 3: jumpstarter.v1.DriverInstanceReport.methods_description:type_name -> jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntry
-	47, // 4: jumpstarter.v1.StatusResponse.context:type_name -> jumpstarter.v1.StatusResponse.ContextEntry
-	12, // 5: jumpstarter.v1.StatusResponse.lease_hooks:type_name -> jumpstarter.v1.LeaseHooks
-	0,  // 6: jumpstarter.v1.LeaseHookState.phase:type_name -> jumpstarter.v1.LeaseHookPhase
-	1,  // 7: jumpstarter.v1.LeaseHookState.on_failure:type_name -> jumpstarter.v1.LeaseHookFailureAction
-	11, // 8: jumpstarter.v1.LeaseHooks.before_lease:type_name -> jumpstarter.v1.LeaseHookState
-	11, // 9: jumpstarter.v1.LeaseHooks.after_lease:type_name -> jumpstarter.v1.LeaseHookState
-	11, // 10: jumpstarter.v1.UpdateLeaseHooksRequest.before_lease:type_name -> jumpstarter.v1.LeaseHookState
-	11, // 11: jumpstarter.v1.UpdateLeaseHooksRequest.after_lease:type_name -> jumpstarter.v1.LeaseHookState
-	50, // 12: jumpstarter.v1.ReportStatusRequest.status:type_name -> jumpstarter.v1.ExporterStatus
-	48, // 13: jumpstarter.v1.GetReportResponse.labels:type_name -> jumpstarter.v1.GetReportResponse.LabelsEntry
-	3,  // 14: jumpstarter.v1.GetReportResponse.reports:type_name -> jumpstarter.v1.DriverInstanceReport
-	19, // 15: jumpstarter.v1.GetReportResponse.alternative_endpoints:type_name -> jumpstarter.v1.Endpoint
-	51, // 16: jumpstarter.v1.DriverCallRequest.args:type_name -> google.protobuf.Value
-	51, // 17: jumpstarter.v1.DriverCallResponse.result:type_name -> google.protobuf.Value
-	51, // 18: jumpstarter.v1.StreamingDriverCallRequest.args:type_name -> google.protobuf.Value
-	51, // 19: jumpstarter.v1.StreamingDriverCallResponse.result:type_name -> google.protobuf.Value
-	52, // 20: jumpstarter.v1.LogStreamResponse.source:type_name -> jumpstarter.v1.LogSource
-	53, // 21: jumpstarter.v1.LogStreamResponse.timestamp:type_name -> google.protobuf.Timestamp
-	49, // 22: jumpstarter.v1.LogStreamResponse.structured_fields:type_name -> jumpstarter.v1.LogStreamResponse.StructuredFieldsEntry
-	54, // 23: jumpstarter.v1.GetLeaseResponse.duration:type_name -> google.protobuf.Duration
-	55, // 24: jumpstarter.v1.GetLeaseResponse.selector:type_name -> jumpstarter.v1.LabelSelector
-	53, // 25: jumpstarter.v1.GetLeaseResponse.begin_time:type_name -> google.protobuf.Timestamp
-	53, // 26: jumpstarter.v1.GetLeaseResponse.end_time:type_name -> google.protobuf.Timestamp
-	56, // 27: jumpstarter.v1.GetLeaseResponse.conditions:type_name -> jumpstarter.v1.Condition
-	54, // 28: jumpstarter.v1.RequestLeaseRequest.duration:type_name -> google.protobuf.Duration
-	55, // 29: jumpstarter.v1.RequestLeaseRequest.selector:type_name -> jumpstarter.v1.LabelSelector
-	50, // 30: jumpstarter.v1.GetStatusResponse.status:type_name -> jumpstarter.v1.ExporterStatus
-	50, // 31: jumpstarter.v1.GetStatusResponse.previous_status:type_name -> jumpstarter.v1.ExporterStatus
-	41, // 32: jumpstarter.v1.GetServiceEndpointsResponse.telemetry_endpoints:type_name -> jumpstarter.v1.TelemetryEndpoint
-	53, // 33: jumpstarter.v1.TelemetryEndpoint.token_expiry:type_name -> google.protobuf.Timestamp
-	53, // 34: jumpstarter.v1.RotateTokenResponse.expiry:type_name -> google.protobuf.Timestamp
-	2,  // 35: jumpstarter.v1.ControllerService.Register:input_type -> jumpstarter.v1.RegisterRequest
-	5,  // 36: jumpstarter.v1.ControllerService.Unregister:input_type -> jumpstarter.v1.UnregisterRequest
-	16, // 37: jumpstarter.v1.ControllerService.ReportStatus:input_type -> jumpstarter.v1.ReportStatusRequest
-	7,  // 38: jumpstarter.v1.ControllerService.Listen:input_type -> jumpstarter.v1.ListenRequest
-	9,  // 39: jumpstarter.v1.ControllerService.Status:input_type -> jumpstarter.v1.StatusRequest
-	14, // 40: jumpstarter.v1.ControllerService.Dial:input_type -> jumpstarter.v1.DialRequest
-	27, // 41: jumpstarter.v1.ControllerService.GetLease:input_type -> jumpstarter.v1.GetLeaseRequest
-	29, // 42: jumpstarter.v1.ControllerService.RequestLease:input_type -> jumpstarter.v1.RequestLeaseRequest
-	31, // 43: jumpstarter.v1.ControllerService.ReleaseLease:input_type -> jumpstarter.v1.ReleaseLeaseRequest
-	33, // 44: jumpstarter.v1.ControllerService.ListLeases:input_type -> jumpstarter.v1.ListLeasesRequest
-	39, // 45: jumpstarter.v1.ControllerService.GetServiceEndpoints:input_type -> jumpstarter.v1.GetServiceEndpointsRequest
-	13, // 46: jumpstarter.v1.ControllerService.UpdateLeaseHooks:input_type -> jumpstarter.v1.UpdateLeaseHooksRequest
-	42, // 47: jumpstarter.v1.ControllerService.RotateToken:input_type -> jumpstarter.v1.RotateTokenRequest
-	57, // 48: jumpstarter.v1.ExporterService.GetReport:input_type -> google.protobuf.Empty
-	20, // 49: jumpstarter.v1.ExporterService.DriverCall:input_type -> jumpstarter.v1.DriverCallRequest
-	22, // 50: jumpstarter.v1.ExporterService.StreamingDriverCall:input_type -> jumpstarter.v1.StreamingDriverCallRequest
-	57, // 51: jumpstarter.v1.ExporterService.LogStream:input_type -> google.protobuf.Empty
-	25, // 52: jumpstarter.v1.ExporterService.Reset:input_type -> jumpstarter.v1.ResetRequest
-	35, // 53: jumpstarter.v1.ExporterService.GetStatus:input_type -> jumpstarter.v1.GetStatusRequest
-	37, // 54: jumpstarter.v1.ExporterService.EndSession:input_type -> jumpstarter.v1.EndSessionRequest
-	4,  // 55: jumpstarter.v1.ControllerService.Register:output_type -> jumpstarter.v1.RegisterResponse
-	6,  // 56: jumpstarter.v1.ControllerService.Unregister:output_type -> jumpstarter.v1.UnregisterResponse
-	17, // 57: jumpstarter.v1.ControllerService.ReportStatus:output_type -> jumpstarter.v1.ReportStatusResponse
-	8,  // 58: jumpstarter.v1.ControllerService.Listen:output_type -> jumpstarter.v1.ListenResponse
-	10, // 59: jumpstarter.v1.ControllerService.Status:output_type -> jumpstarter.v1.StatusResponse
-	15, // 60: jumpstarter.v1.ControllerService.Dial:output_type -> jumpstarter.v1.DialResponse
-	28, // 61: jumpstarter.v1.ControllerService.GetLease:output_type -> jumpstarter.v1.GetLeaseResponse
-	30, // 62: jumpstarter.v1.ControllerService.RequestLease:output_type -> jumpstarter.v1.RequestLeaseResponse
-	32, // 63: jumpstarter.v1.ControllerService.ReleaseLease:output_type -> jumpstarter.v1.ReleaseLeaseResponse
-	34, // 64: jumpstarter.v1.ControllerService.ListLeases:output_type -> jumpstarter.v1.ListLeasesResponse
-	40, // 65: jumpstarter.v1.ControllerService.GetServiceEndpoints:output_type -> jumpstarter.v1.GetServiceEndpointsResponse
-	12, // 66: jumpstarter.v1.ControllerService.UpdateLeaseHooks:output_type -> jumpstarter.v1.LeaseHooks
-	43, // 67: jumpstarter.v1.ControllerService.RotateToken:output_type -> jumpstarter.v1.RotateTokenResponse
-	18, // 68: jumpstarter.v1.ExporterService.GetReport:output_type -> jumpstarter.v1.GetReportResponse
-	21, // 69: jumpstarter.v1.ExporterService.DriverCall:output_type -> jumpstarter.v1.DriverCallResponse
-	23, // 70: jumpstarter.v1.ExporterService.StreamingDriverCall:output_type -> jumpstarter.v1.StreamingDriverCallResponse
-	24, // 71: jumpstarter.v1.ExporterService.LogStream:output_type -> jumpstarter.v1.LogStreamResponse
-	26, // 72: jumpstarter.v1.ExporterService.Reset:output_type -> jumpstarter.v1.ResetResponse
-	36, // 73: jumpstarter.v1.ExporterService.GetStatus:output_type -> jumpstarter.v1.GetStatusResponse
-	38, // 74: jumpstarter.v1.ExporterService.EndSession:output_type -> jumpstarter.v1.EndSessionResponse
-	55, // [55:75] is the sub-list for method output_type
-	35, // [35:55] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	53, // 0: jumpstarter.v1.RegisterRequest.labels:type_name -> jumpstarter.v1.RegisterRequest.LabelsEntry
+	4,  // 1: jumpstarter.v1.RegisterRequest.reports:type_name -> jumpstarter.v1.DriverInstanceReport
+	54, // 2: jumpstarter.v1.DriverInstanceReport.labels:type_name -> jumpstarter.v1.DriverInstanceReport.LabelsEntry
+	55, // 3: jumpstarter.v1.DriverInstanceReport.methods_description:type_name -> jumpstarter.v1.DriverInstanceReport.MethodsDescriptionEntry
+	59, // 4: jumpstarter.v1.DriverInstanceReport.ports:type_name -> jumpstarter.v1.PortReport
+	11, // 5: jumpstarter.v1.ListenResponse.forward_setup:type_name -> jumpstarter.v1.ForwardSetup
+	12, // 6: jumpstarter.v1.ListenResponse.forward_teardown:type_name -> jumpstarter.v1.ForwardTeardown
+	13, // 7: jumpstarter.v1.ListenResponse.forward_connect:type_name -> jumpstarter.v1.ForwardConnect
+	10, // 8: jumpstarter.v1.ForwardSetup.peers:type_name -> jumpstarter.v1.ForwardPeer
+	60, // 9: jumpstarter.v1.ForwardSetup.direction:type_name -> jumpstarter.v1.PortDirection
+	0,  // 10: jumpstarter.v1.ReportForwardRequest.state:type_name -> jumpstarter.v1.ForwardEndState
+	56, // 11: jumpstarter.v1.StatusResponse.context:type_name -> jumpstarter.v1.StatusResponse.ContextEntry
+	21, // 12: jumpstarter.v1.StatusResponse.lease_hooks:type_name -> jumpstarter.v1.LeaseHooks
+	1,  // 13: jumpstarter.v1.LeaseHookState.phase:type_name -> jumpstarter.v1.LeaseHookPhase
+	2,  // 14: jumpstarter.v1.LeaseHookState.on_failure:type_name -> jumpstarter.v1.LeaseHookFailureAction
+	20, // 15: jumpstarter.v1.LeaseHooks.before_lease:type_name -> jumpstarter.v1.LeaseHookState
+	20, // 16: jumpstarter.v1.LeaseHooks.after_lease:type_name -> jumpstarter.v1.LeaseHookState
+	20, // 17: jumpstarter.v1.UpdateLeaseHooksRequest.before_lease:type_name -> jumpstarter.v1.LeaseHookState
+	20, // 18: jumpstarter.v1.UpdateLeaseHooksRequest.after_lease:type_name -> jumpstarter.v1.LeaseHookState
+	61, // 19: jumpstarter.v1.ReportStatusRequest.status:type_name -> jumpstarter.v1.ExporterStatus
+	57, // 20: jumpstarter.v1.GetReportResponse.labels:type_name -> jumpstarter.v1.GetReportResponse.LabelsEntry
+	4,  // 21: jumpstarter.v1.GetReportResponse.reports:type_name -> jumpstarter.v1.DriverInstanceReport
+	28, // 22: jumpstarter.v1.GetReportResponse.alternative_endpoints:type_name -> jumpstarter.v1.Endpoint
+	62, // 23: jumpstarter.v1.DriverCallRequest.args:type_name -> google.protobuf.Value
+	62, // 24: jumpstarter.v1.DriverCallResponse.result:type_name -> google.protobuf.Value
+	62, // 25: jumpstarter.v1.StreamingDriverCallRequest.args:type_name -> google.protobuf.Value
+	62, // 26: jumpstarter.v1.StreamingDriverCallResponse.result:type_name -> google.protobuf.Value
+	63, // 27: jumpstarter.v1.LogStreamResponse.source:type_name -> jumpstarter.v1.LogSource
+	64, // 28: jumpstarter.v1.LogStreamResponse.timestamp:type_name -> google.protobuf.Timestamp
+	58, // 29: jumpstarter.v1.LogStreamResponse.structured_fields:type_name -> jumpstarter.v1.LogStreamResponse.StructuredFieldsEntry
+	65, // 30: jumpstarter.v1.GetLeaseResponse.duration:type_name -> google.protobuf.Duration
+	66, // 31: jumpstarter.v1.GetLeaseResponse.selector:type_name -> jumpstarter.v1.LabelSelector
+	64, // 32: jumpstarter.v1.GetLeaseResponse.begin_time:type_name -> google.protobuf.Timestamp
+	64, // 33: jumpstarter.v1.GetLeaseResponse.end_time:type_name -> google.protobuf.Timestamp
+	67, // 34: jumpstarter.v1.GetLeaseResponse.conditions:type_name -> jumpstarter.v1.Condition
+	65, // 35: jumpstarter.v1.RequestLeaseRequest.duration:type_name -> google.protobuf.Duration
+	66, // 36: jumpstarter.v1.RequestLeaseRequest.selector:type_name -> jumpstarter.v1.LabelSelector
+	61, // 37: jumpstarter.v1.GetStatusResponse.status:type_name -> jumpstarter.v1.ExporterStatus
+	61, // 38: jumpstarter.v1.GetStatusResponse.previous_status:type_name -> jumpstarter.v1.ExporterStatus
+	50, // 39: jumpstarter.v1.GetServiceEndpointsResponse.telemetry_endpoints:type_name -> jumpstarter.v1.TelemetryEndpoint
+	64, // 40: jumpstarter.v1.TelemetryEndpoint.token_expiry:type_name -> google.protobuf.Timestamp
+	64, // 41: jumpstarter.v1.RotateTokenResponse.expiry:type_name -> google.protobuf.Timestamp
+	3,  // 42: jumpstarter.v1.ControllerService.Register:input_type -> jumpstarter.v1.RegisterRequest
+	6,  // 43: jumpstarter.v1.ControllerService.Unregister:input_type -> jumpstarter.v1.UnregisterRequest
+	25, // 44: jumpstarter.v1.ControllerService.ReportStatus:input_type -> jumpstarter.v1.ReportStatusRequest
+	8,  // 45: jumpstarter.v1.ControllerService.Listen:input_type -> jumpstarter.v1.ListenRequest
+	18, // 46: jumpstarter.v1.ControllerService.Status:input_type -> jumpstarter.v1.StatusRequest
+	23, // 47: jumpstarter.v1.ControllerService.Dial:input_type -> jumpstarter.v1.DialRequest
+	36, // 48: jumpstarter.v1.ControllerService.GetLease:input_type -> jumpstarter.v1.GetLeaseRequest
+	38, // 49: jumpstarter.v1.ControllerService.RequestLease:input_type -> jumpstarter.v1.RequestLeaseRequest
+	40, // 50: jumpstarter.v1.ControllerService.ReleaseLease:input_type -> jumpstarter.v1.ReleaseLeaseRequest
+	42, // 51: jumpstarter.v1.ControllerService.ListLeases:input_type -> jumpstarter.v1.ListLeasesRequest
+	48, // 52: jumpstarter.v1.ControllerService.GetServiceEndpoints:input_type -> jumpstarter.v1.GetServiceEndpointsRequest
+	22, // 53: jumpstarter.v1.ControllerService.UpdateLeaseHooks:input_type -> jumpstarter.v1.UpdateLeaseHooksRequest
+	51, // 54: jumpstarter.v1.ControllerService.RotateToken:input_type -> jumpstarter.v1.RotateTokenRequest
+	14, // 55: jumpstarter.v1.ControllerService.DialPeer:input_type -> jumpstarter.v1.DialPeerRequest
+	16, // 56: jumpstarter.v1.ControllerService.ReportForward:input_type -> jumpstarter.v1.ReportForwardRequest
+	68, // 57: jumpstarter.v1.ExporterService.GetReport:input_type -> google.protobuf.Empty
+	29, // 58: jumpstarter.v1.ExporterService.DriverCall:input_type -> jumpstarter.v1.DriverCallRequest
+	31, // 59: jumpstarter.v1.ExporterService.StreamingDriverCall:input_type -> jumpstarter.v1.StreamingDriverCallRequest
+	68, // 60: jumpstarter.v1.ExporterService.LogStream:input_type -> google.protobuf.Empty
+	34, // 61: jumpstarter.v1.ExporterService.Reset:input_type -> jumpstarter.v1.ResetRequest
+	44, // 62: jumpstarter.v1.ExporterService.GetStatus:input_type -> jumpstarter.v1.GetStatusRequest
+	46, // 63: jumpstarter.v1.ExporterService.EndSession:input_type -> jumpstarter.v1.EndSessionRequest
+	5,  // 64: jumpstarter.v1.ControllerService.Register:output_type -> jumpstarter.v1.RegisterResponse
+	7,  // 65: jumpstarter.v1.ControllerService.Unregister:output_type -> jumpstarter.v1.UnregisterResponse
+	26, // 66: jumpstarter.v1.ControllerService.ReportStatus:output_type -> jumpstarter.v1.ReportStatusResponse
+	9,  // 67: jumpstarter.v1.ControllerService.Listen:output_type -> jumpstarter.v1.ListenResponse
+	19, // 68: jumpstarter.v1.ControllerService.Status:output_type -> jumpstarter.v1.StatusResponse
+	24, // 69: jumpstarter.v1.ControllerService.Dial:output_type -> jumpstarter.v1.DialResponse
+	37, // 70: jumpstarter.v1.ControllerService.GetLease:output_type -> jumpstarter.v1.GetLeaseResponse
+	39, // 71: jumpstarter.v1.ControllerService.RequestLease:output_type -> jumpstarter.v1.RequestLeaseResponse
+	41, // 72: jumpstarter.v1.ControllerService.ReleaseLease:output_type -> jumpstarter.v1.ReleaseLeaseResponse
+	43, // 73: jumpstarter.v1.ControllerService.ListLeases:output_type -> jumpstarter.v1.ListLeasesResponse
+	49, // 74: jumpstarter.v1.ControllerService.GetServiceEndpoints:output_type -> jumpstarter.v1.GetServiceEndpointsResponse
+	21, // 75: jumpstarter.v1.ControllerService.UpdateLeaseHooks:output_type -> jumpstarter.v1.LeaseHooks
+	52, // 76: jumpstarter.v1.ControllerService.RotateToken:output_type -> jumpstarter.v1.RotateTokenResponse
+	15, // 77: jumpstarter.v1.ControllerService.DialPeer:output_type -> jumpstarter.v1.DialPeerResponse
+	17, // 78: jumpstarter.v1.ControllerService.ReportForward:output_type -> jumpstarter.v1.ReportForwardResponse
+	27, // 79: jumpstarter.v1.ExporterService.GetReport:output_type -> jumpstarter.v1.GetReportResponse
+	30, // 80: jumpstarter.v1.ExporterService.DriverCall:output_type -> jumpstarter.v1.DriverCallResponse
+	32, // 81: jumpstarter.v1.ExporterService.StreamingDriverCall:output_type -> jumpstarter.v1.StreamingDriverCallResponse
+	33, // 82: jumpstarter.v1.ExporterService.LogStream:output_type -> jumpstarter.v1.LogStreamResponse
+	35, // 83: jumpstarter.v1.ExporterService.Reset:output_type -> jumpstarter.v1.ResetResponse
+	45, // 84: jumpstarter.v1.ExporterService.GetStatus:output_type -> jumpstarter.v1.GetStatusResponse
+	47, // 85: jumpstarter.v1.ExporterService.EndSession:output_type -> jumpstarter.v1.EndSessionResponse
+	64, // [64:86] is the sub-list for method output_type
+	42, // [42:64] is the sub-list for method input_type
+	42, // [42:42] is the sub-list for extension type_name
+	42, // [42:42] is the sub-list for extension extendee
+	0,  // [0:42] is the sub-list for field type_name
 }
 
 func init() { file_jumpstarter_v1_jumpstarter_proto_init() }
@@ -2865,24 +3588,30 @@ func file_jumpstarter_v1_jumpstarter_proto_init() {
 	file_jumpstarter_v1_kubernetes_proto_init()
 	file_jumpstarter_v1_common_proto_init()
 	file_jumpstarter_v1_jumpstarter_proto_msgTypes[1].OneofWrappers = []any{}
-	file_jumpstarter_v1_jumpstarter_proto_msgTypes[8].OneofWrappers = []any{}
-	file_jumpstarter_v1_jumpstarter_proto_msgTypes[11].OneofWrappers = []any{
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[6].OneofWrappers = []any{
+		(*ListenResponse_ForwardSetup)(nil),
+		(*ListenResponse_ForwardTeardown)(nil),
+		(*ListenResponse_ForwardConnect)(nil),
+	}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[13].OneofWrappers = []any{}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[16].OneofWrappers = []any{}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[19].OneofWrappers = []any{
 		(*UpdateLeaseHooksRequest_BeforeLease)(nil),
 		(*UpdateLeaseHooksRequest_AfterLease)(nil),
 	}
-	file_jumpstarter_v1_jumpstarter_proto_msgTypes[12].OneofWrappers = []any{}
-	file_jumpstarter_v1_jumpstarter_proto_msgTypes[14].OneofWrappers = []any{}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[20].OneofWrappers = []any{}
 	file_jumpstarter_v1_jumpstarter_proto_msgTypes[22].OneofWrappers = []any{}
-	file_jumpstarter_v1_jumpstarter_proto_msgTypes[26].OneofWrappers = []any{}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[30].OneofWrappers = []any{}
 	file_jumpstarter_v1_jumpstarter_proto_msgTypes[34].OneofWrappers = []any{}
-	file_jumpstarter_v1_jumpstarter_proto_msgTypes[36].OneofWrappers = []any{}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[42].OneofWrappers = []any{}
+	file_jumpstarter_v1_jumpstarter_proto_msgTypes[44].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpstarter_v1_jumpstarter_proto_rawDesc), len(file_jumpstarter_v1_jumpstarter_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   48,
+			NumEnums:      3,
+			NumMessages:   56,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

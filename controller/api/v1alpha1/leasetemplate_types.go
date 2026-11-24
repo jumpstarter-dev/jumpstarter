@@ -26,6 +26,8 @@ import (
 // +kubebuilder:validation:XValidation:rule="self.members.all(m, !has(m.excluded) || !m.excluded)",message="a template member cannot set excluded"
 // +kubebuilder:validation:XValidation:rule="self.members.exists(m, !has(m.optional) || !m.optional)",message="a template must have a required member"
 // +kubebuilder:validation:XValidation:rule="!has(self.constraints) || self.constraints.all(c, c.members.all(n, self.members.exists(m, m.name == n)))",message="constraints must reference declared members"
+// +kubebuilder:validation:XValidation:rule="!has(self.forwards) || (has(self.members) && self.forwards.all(f, f.endpoints.all(e, self.members.exists(m, m.name == e.member))))",message="forward endpoints must reference declared members"
+// +kubebuilder:validation:XValidation:rule="!has(self.forwards) || !has(self.members) || self.forwards.all(f, !self.members.exists(m, m.name == f.name))",message="a forward and a member cannot have the same name"
 type LeaseTemplateSpec struct {
 	// Description is a short description for persons.
 	// +kubebuilder:validation:MaxLength=1024
@@ -50,6 +52,12 @@ type LeaseTemplateSpec struct {
 	// Constraints are rules for sets of members.
 	// +kubebuilder:validation:MaxItems=4
 	Constraints []LeaseConstraint `json:"constraints,omitempty"`
+	// Forwards are the forwards of a lease that uses this template. Template
+	// expansion copies them without changes.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=16
+	Forwards []LeaseForward `json:"forwards,omitempty"`
 
 	// Defaults are the values that the controller uses when a request does
 	// not give them.

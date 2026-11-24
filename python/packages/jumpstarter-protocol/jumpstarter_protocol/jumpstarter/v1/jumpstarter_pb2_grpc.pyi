@@ -75,6 +75,14 @@ class ControllerServiceStub:
     """
     RotateToken: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.RotateTokenRequest, _jumpstarter_pb2.RotateTokenResponse]
     """Rotate the authentication token for the exporter."""
+    DialPeer: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.DialPeerRequest, _jumpstarter_pb2.DialPeerResponse]
+    """Open one connection of a forward of a lease through the router.
+    The exporter of the REQUIRES endpoint, or the initiator of a path, calls
+    it for each connection. The controller sends the same token to the peer
+    exporter in a ForwardConnect instruction on its Listen stream.
+    """
+    ReportForward: _grpc.UnaryUnaryMultiCallable[_jumpstarter_pb2.ReportForwardRequest, _jumpstarter_pb2.ReportForwardResponse]
+    """Report the state of the caller's end of a forward of a lease."""
 
 @_typing.type_check_only
 class ControllerServiceAsyncStub(ControllerServiceStub):
@@ -122,6 +130,14 @@ class ControllerServiceAsyncStub(ControllerServiceStub):
     """
     RotateToken: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.RotateTokenRequest, _jumpstarter_pb2.RotateTokenResponse]  # type: ignore[assignment]
     """Rotate the authentication token for the exporter."""
+    DialPeer: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.DialPeerRequest, _jumpstarter_pb2.DialPeerResponse]  # type: ignore[assignment]
+    """Open one connection of a forward of a lease through the router.
+    The exporter of the REQUIRES endpoint, or the initiator of a path, calls
+    it for each connection. The controller sends the same token to the peer
+    exporter in a ForwardConnect instruction on its Listen stream.
+    """
+    ReportForward: _aio.UnaryUnaryMultiCallable[_jumpstarter_pb2.ReportForwardRequest, _jumpstarter_pb2.ReportForwardResponse]  # type: ignore[assignment]
+    """Report the state of the caller's end of a forward of a lease."""
 
 class ControllerServiceServicer:
     """A service where an exporter can connect to make itself available."""
@@ -231,6 +247,24 @@ class ControllerServiceServicer:
         context: _ServicerContext,
     ) -> _typing.Union[_jumpstarter_pb2.RotateTokenResponse, _abc.Awaitable[_jumpstarter_pb2.RotateTokenResponse]]:
         """Rotate the authentication token for the exporter."""
+
+    def DialPeer(
+        self,
+        request: _jumpstarter_pb2.DialPeerRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_jumpstarter_pb2.DialPeerResponse, _abc.Awaitable[_jumpstarter_pb2.DialPeerResponse]]:
+        """Open one connection of a forward of a lease through the router.
+        The exporter of the REQUIRES endpoint, or the initiator of a path, calls
+        it for each connection. The controller sends the same token to the peer
+        exporter in a ForwardConnect instruction on its Listen stream.
+        """
+
+    def ReportForward(
+        self,
+        request: _jumpstarter_pb2.ReportForwardRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[_jumpstarter_pb2.ReportForwardResponse, _abc.Awaitable[_jumpstarter_pb2.ReportForwardResponse]]:
+        """Report the state of the caller's end of a forward of a lease."""
 
 def add_ControllerServiceServicer_to_server(servicer: ControllerServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
 

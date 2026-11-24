@@ -24,6 +24,34 @@ else:
 
 DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
 
+class _ForwardEndState:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _ForwardEndStateEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_ForwardEndState.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    FORWARD_END_STATE_UNSPECIFIED: _ForwardEndState.ValueType  # 0
+    """Unspecified state."""
+    FORWARD_END_STATE_READY: _ForwardEndState.ValueType  # 1
+    """The listener is open, or the forward is recorded."""
+    FORWARD_END_STATE_CONNECTED: _ForwardEndState.ValueType  # 2
+    """A minimum of one connection is open."""
+    FORWARD_END_STATE_FAILED: _ForwardEndState.ValueType  # 3
+    """The setup failed, for example the listen address is in use."""
+
+class ForwardEndState(_ForwardEndState, metaclass=_ForwardEndStateEnumTypeWrapper):
+    """State of one end of a forward, as its exporter reports it."""
+
+FORWARD_END_STATE_UNSPECIFIED: ForwardEndState.ValueType  # 0
+"""Unspecified state."""
+FORWARD_END_STATE_READY: ForwardEndState.ValueType  # 1
+"""The listener is open, or the forward is recorded."""
+FORWARD_END_STATE_CONNECTED: ForwardEndState.ValueType  # 2
+"""A minimum of one connection is open."""
+FORWARD_END_STATE_FAILED: ForwardEndState.ValueType  # 3
+"""The setup failed, for example the listen address is in use."""
+Global___ForwardEndState: typing_extensions.TypeAlias = ForwardEndState
+
 class _LeaseHookPhase:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: typing_extensions.TypeAlias = ValueType
@@ -171,6 +199,7 @@ class DriverInstanceReport(google.protobuf.message.Message):
     LABELS_FIELD_NUMBER: builtins.int
     DESCRIPTION_FIELD_NUMBER: builtins.int
     METHODS_DESCRIPTION_FIELD_NUMBER: builtins.int
+    PORTS_FIELD_NUMBER: builtins.int
     uuid: builtins.str
     """Unique identifier within the exporter."""
     parent_uuid: builtins.str
@@ -185,6 +214,12 @@ class DriverInstanceReport(google.protobuf.message.Message):
     def methods_description(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
         """Method name to help text mapping for CLI."""
 
+    @property
+    def ports(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[jumpstarter.v1.common_pb2.PortReport]:
+        """Fields 6 and 7 are kept for JEP-0011 and the native gRPC proposal.
+        Ports of this driver instance that a forward of a lease can connect. Optional.
+        """
+
     def __init__(
         self,
         *,
@@ -193,9 +228,10 @@ class DriverInstanceReport(google.protobuf.message.Message):
         labels: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
         description: builtins.str | None = ...,
         methods_description: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
+        ports: collections.abc.Iterable[jumpstarter.v1.common_pb2.PortReport] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "parent_uuid", b"parent_uuid"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "labels", b"labels", "methods_description", b"methods_description", "parent_uuid", b"parent_uuid", "uuid", b"uuid"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_description", b"_description", "_parent_uuid", b"_parent_uuid", "description", b"description", "labels", b"labels", "methods_description", b"methods_description", "parent_uuid", b"parent_uuid", "ports", b"ports", "uuid", b"uuid"]) -> None: ...
     @typing.overload
     def WhichOneof(self, oneof_group: typing.Literal["_description", b"_description"]) -> typing.Literal["description"] | None: ...
     @typing.overload
@@ -271,25 +307,283 @@ Global___ListenRequest: typing_extensions.TypeAlias = ListenRequest
 
 @typing.final
 class ListenResponse(google.protobuf.message.Message):
-    """Response containing router connection details for an incoming client."""
+    """Response containing router connection details for an incoming client, or
+    one forward instruction. It never contains the two together.
+    """
 
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
     ROUTER_ENDPOINT_FIELD_NUMBER: builtins.int
     ROUTER_TOKEN_FIELD_NUMBER: builtins.int
+    FORWARD_SETUP_FIELD_NUMBER: builtins.int
+    FORWARD_TEARDOWN_FIELD_NUMBER: builtins.int
+    FORWARD_CONNECT_FIELD_NUMBER: builtins.int
     router_endpoint: builtins.str
-    """The router gRPC endpoint URL."""
+    """The router gRPC endpoint URL. Not set for a forward instruction."""
     router_token: builtins.str
-    """Authentication token for the router."""
+    """Authentication token for the router. Not set for a forward instruction."""
+    @property
+    def forward_setup(self) -> Global___ForwardSetup:
+        """Set up the local end of a forward. Sent one time for each forward, and again each time the exporter opens Listen."""
+
+    @property
+    def forward_teardown(self) -> Global___ForwardTeardown:
+        """Close the local end of a forward."""
+
+    @property
+    def forward_connect(self) -> Global___ForwardConnect:
+        """Open one connection of a forward. Sent one time for each connection."""
+
     def __init__(
         self,
         *,
         router_endpoint: builtins.str = ...,
         router_token: builtins.str = ...,
+        forward_setup: Global___ForwardSetup | None = ...,
+        forward_teardown: Global___ForwardTeardown | None = ...,
+        forward_connect: Global___ForwardConnect | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["router_endpoint", b"router_endpoint", "router_token", b"router_token"]) -> None: ...
+    def HasField(self, field_name: typing.Literal["forward", b"forward", "forward_connect", b"forward_connect", "forward_setup", b"forward_setup", "forward_teardown", b"forward_teardown"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["forward", b"forward", "forward_connect", b"forward_connect", "forward_setup", b"forward_setup", "forward_teardown", b"forward_teardown", "router_endpoint", b"router_endpoint", "router_token", b"router_token"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["forward", b"forward"]) -> typing.Literal["forward_setup", "forward_teardown", "forward_connect"] | None: ...
 
 Global___ListenResponse: typing_extensions.TypeAlias = ListenResponse
+
+@typing.final
+class ForwardPeer(google.protobuf.message.Message):
+    """An endpoint of a forward on a different member of the lease."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    MEMBER_NAME_FIELD_NUMBER: builtins.int
+    PORT_NAME_FIELD_NUMBER: builtins.int
+    member_name: builtins.str
+    """Role name of the member."""
+    port_name: builtins.str
+    """Name of the port on the exporter of that member."""
+    def __init__(
+        self,
+        *,
+        member_name: builtins.str = ...,
+        port_name: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["member_name", b"member_name", "port_name", b"port_name"]) -> None: ...
+
+Global___ForwardPeer: typing_extensions.TypeAlias = ForwardPeer
+
+@typing.final
+class ForwardSetup(google.protobuf.message.Message):
+    """Instruction to set up the local end of a forward. The controller can send
+    the same setup again. The key is (lease_uid, forward_name, member_name).
+    """
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LEASE_UID_FIELD_NUMBER: builtins.int
+    FORWARD_NAME_FIELD_NUMBER: builtins.int
+    MEMBER_NAME_FIELD_NUMBER: builtins.int
+    PEERS_FIELD_NUMBER: builtins.int
+    DIRECTION_FIELD_NUMBER: builtins.int
+    LOCAL_PORT_NAME_FIELD_NUMBER: builtins.int
+    INITIATOR_FIELD_NUMBER: builtins.int
+    lease_uid: builtins.str
+    """UID of the lease."""
+    forward_name: builtins.str
+    """Name of the forward in the lease."""
+    member_name: builtins.str
+    """Role name of the member that the receiving exporter is bound to."""
+    direction: jumpstarter.v1.common_pb2.PortDirection.ValueType
+    """Direction of the local port."""
+    local_port_name: builtins.str
+    """Name of the local port."""
+    initiator: builtins.bool
+    """CONNECTS only: this end opens the path with DialPeer."""
+    @property
+    def peers(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___ForwardPeer]:
+        """The other ends of the forward. REQUIRES: the PROVIDES endpoint.
+        PROVIDES: each bound REQUIRES endpoint. CONNECTS: the other end.
+        """
+
+    def __init__(
+        self,
+        *,
+        lease_uid: builtins.str = ...,
+        forward_name: builtins.str = ...,
+        member_name: builtins.str = ...,
+        peers: collections.abc.Iterable[Global___ForwardPeer] | None = ...,
+        direction: jumpstarter.v1.common_pb2.PortDirection.ValueType = ...,
+        local_port_name: builtins.str = ...,
+        initiator: builtins.bool = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["direction", b"direction", "forward_name", b"forward_name", "initiator", b"initiator", "lease_uid", b"lease_uid", "local_port_name", b"local_port_name", "member_name", b"member_name", "peers", b"peers"]) -> None: ...
+
+Global___ForwardSetup: typing_extensions.TypeAlias = ForwardSetup
+
+@typing.final
+class ForwardTeardown(google.protobuf.message.Message):
+    """Instruction to close the listener and the streams of a forward."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LEASE_UID_FIELD_NUMBER: builtins.int
+    FORWARD_NAME_FIELD_NUMBER: builtins.int
+    lease_uid: builtins.str
+    """UID of the lease."""
+    forward_name: builtins.str
+    """Name of the forward in the lease."""
+    def __init__(
+        self,
+        *,
+        lease_uid: builtins.str = ...,
+        forward_name: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["forward_name", b"forward_name", "lease_uid", b"lease_uid"]) -> None: ...
+
+Global___ForwardTeardown: typing_extensions.TypeAlias = ForwardTeardown
+
+@typing.final
+class ForwardConnect(google.protobuf.message.Message):
+    """Instruction to open one connection of a forward. The PROVIDES side, or the
+    second end of a path, gets it.
+    """
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LEASE_UID_FIELD_NUMBER: builtins.int
+    FORWARD_NAME_FIELD_NUMBER: builtins.int
+    CONNECTION_ID_FIELD_NUMBER: builtins.int
+    PEER_MEMBER_NAME_FIELD_NUMBER: builtins.int
+    ROUTER_ENDPOINT_FIELD_NUMBER: builtins.int
+    ROUTER_TOKEN_FIELD_NUMBER: builtins.int
+    lease_uid: builtins.str
+    """UID of the lease."""
+    forward_name: builtins.str
+    """Name of the forward in the lease."""
+    connection_id: builtins.str
+    """The stream ID of the connection."""
+    peer_member_name: builtins.str
+    """Role name of the member that opens the connection."""
+    router_endpoint: builtins.str
+    """The router gRPC endpoint URL."""
+    router_token: builtins.str
+    """Authentication token for the router: the token that DialPeer returns."""
+    def __init__(
+        self,
+        *,
+        lease_uid: builtins.str = ...,
+        forward_name: builtins.str = ...,
+        connection_id: builtins.str = ...,
+        peer_member_name: builtins.str = ...,
+        router_endpoint: builtins.str = ...,
+        router_token: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["connection_id", b"connection_id", "forward_name", b"forward_name", "lease_uid", b"lease_uid", "peer_member_name", b"peer_member_name", "router_endpoint", b"router_endpoint", "router_token", b"router_token"]) -> None: ...
+
+Global___ForwardConnect: typing_extensions.TypeAlias = ForwardConnect
+
+@typing.final
+class DialPeerRequest(google.protobuf.message.Message):
+    """Request to open one connection of a forward. The controller finds the
+    member from the identity of the caller.
+    """
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LEASE_UID_FIELD_NUMBER: builtins.int
+    FORWARD_NAME_FIELD_NUMBER: builtins.int
+    lease_uid: builtins.str
+    """UID of the lease."""
+    forward_name: builtins.str
+    """Name of the forward in the lease."""
+    def __init__(
+        self,
+        *,
+        lease_uid: builtins.str = ...,
+        forward_name: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["forward_name", b"forward_name", "lease_uid", b"lease_uid"]) -> None: ...
+
+Global___DialPeerRequest: typing_extensions.TypeAlias = DialPeerRequest
+
+@typing.final
+class DialPeerResponse(google.protobuf.message.Message):
+    """Response containing router connection details for one forwarded connection."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    ROUTER_ENDPOINT_FIELD_NUMBER: builtins.int
+    ROUTER_TOKEN_FIELD_NUMBER: builtins.int
+    CONNECTION_ID_FIELD_NUMBER: builtins.int
+    router_endpoint: builtins.str
+    """The router gRPC endpoint URL."""
+    router_token: builtins.str
+    """Authentication token for the router. Its subject is the new stream ID, as in Dial."""
+    connection_id: builtins.str
+    """The stream ID of the connection."""
+    def __init__(
+        self,
+        *,
+        router_endpoint: builtins.str = ...,
+        router_token: builtins.str = ...,
+        connection_id: builtins.str = ...,
+    ) -> None: ...
+    def ClearField(self, field_name: typing.Literal["connection_id", b"connection_id", "router_endpoint", b"router_endpoint", "router_token", b"router_token"]) -> None: ...
+
+Global___DialPeerResponse: typing_extensions.TypeAlias = DialPeerResponse
+
+@typing.final
+class ReportForwardRequest(google.protobuf.message.Message):
+    """Request to report a change of the state of the caller's end of a forward.
+    An exporter does not report each connection.
+    """
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    LEASE_UID_FIELD_NUMBER: builtins.int
+    FORWARD_NAME_FIELD_NUMBER: builtins.int
+    STATE_FIELD_NUMBER: builtins.int
+    MESSAGE_FIELD_NUMBER: builtins.int
+    SEQUENCE_FIELD_NUMBER: builtins.int
+    lease_uid: builtins.str
+    """UID of the lease."""
+    forward_name: builtins.str
+    """Name of the forward in the lease."""
+    state: Global___ForwardEndState.ValueType
+    """New state of this end."""
+    message: builtins.str
+    """The cause of a failure."""
+    sequence: builtins.int
+    """Increases with each new state of this end. The first number of an
+    exporter process is its start time in milliseconds. The controller
+    ignores a report with a number that is not larger than the last one it
+    accepted for this end.
+    """
+    def __init__(
+        self,
+        *,
+        lease_uid: builtins.str = ...,
+        forward_name: builtins.str = ...,
+        state: Global___ForwardEndState.ValueType = ...,
+        message: builtins.str | None = ...,
+        sequence: builtins.int = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["_message", b"_message", "message", b"message"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_message", b"_message", "forward_name", b"forward_name", "lease_uid", b"lease_uid", "message", b"message", "sequence", b"sequence", "state", b"state"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
+
+Global___ReportForwardRequest: typing_extensions.TypeAlias = ReportForwardRequest
+
+@typing.final
+class ReportForwardResponse(google.protobuf.message.Message):
+    """Response to a forward report."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    def __init__(
+        self,
+    ) -> None: ...
+
+Global___ReportForwardResponse: typing_extensions.TypeAlias = ReportForwardResponse
 
 @typing.final
 class StatusRequest(google.protobuf.message.Message):

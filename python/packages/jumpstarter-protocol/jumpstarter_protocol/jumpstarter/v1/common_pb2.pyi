@@ -6,6 +6,7 @@ Copyright 2024 The Jumpstarter Authors"""
 import builtins
 import google.protobuf.descriptor
 import google.protobuf.internal.enum_type_wrapper
+import google.protobuf.message
 import sys
 import typing
 
@@ -94,3 +95,128 @@ LOG_SOURCE_AFTER_LEASE_HOOK: LogSource.ValueType  # 3
 LOG_SOURCE_SYSTEM: LogSource.ValueType  # 4
 """System/exporter logs."""
 Global___LogSource: typing_extensions.TypeAlias = LogSource
+
+class _PortDirection:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _PortDirectionEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_PortDirection.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    PORT_DIRECTION_UNSPECIFIED: _PortDirection.ValueType  # 0
+    """Unspecified direction. The controller rejects such a port."""
+    PORT_DIRECTION_PROVIDES: _PortDirection.ValueType  # 1
+    """A local service listens. The exporter connects to it for each forwarded connection."""
+    PORT_DIRECTION_REQUIRES: _PortDirection.ValueType  # 2
+    """A local driver uses a service on a different member. The exporter opens a local listener for it."""
+    PORT_DIRECTION_CONNECTS: _PortDirection.ValueType  # 3
+    """The port connects to a port of its own type. Two such ports make one path."""
+
+class PortDirection(_PortDirection, metaclass=_PortDirectionEnumTypeWrapper):
+    """The direction of a driver port. It shows the end that has the service, not
+    the direction of the data: each forward is a two-way stream.
+    """
+
+PORT_DIRECTION_UNSPECIFIED: PortDirection.ValueType  # 0
+"""Unspecified direction. The controller rejects such a port."""
+PORT_DIRECTION_PROVIDES: PortDirection.ValueType  # 1
+"""A local service listens. The exporter connects to it for each forwarded connection."""
+PORT_DIRECTION_REQUIRES: PortDirection.ValueType  # 2
+"""A local driver uses a service on a different member. The exporter opens a local listener for it."""
+PORT_DIRECTION_CONNECTS: PortDirection.ValueType  # 3
+"""The port connects to a port of its own type. Two such ports make one path."""
+Global___PortDirection: typing_extensions.TypeAlias = PortDirection
+
+class _PortAttachment:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _PortAttachmentEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_PortAttachment.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    PORT_ATTACHMENT_UNSPECIFIED: _PortAttachment.ValueType  # 0
+    """Unspecified attachment. It means PORT_ATTACHMENT_SOCKET."""
+    PORT_ATTACHMENT_SOCKET: _PortAttachment.ValueType  # 1
+    """A local socket."""
+    PORT_ATTACHMENT_WIRED: _PortAttachment.ValueType  # 2
+    """A cable or a bus. A forward cannot use it."""
+    PORT_ATTACHMENT_WIRELESS: _PortAttachment.ValueType  # 3
+    """A radio medium. A forward cannot use it."""
+
+class PortAttachment(_PortAttachment, metaclass=_PortAttachmentEnumTypeWrapper):
+    """How a driver port is attached to its device."""
+
+PORT_ATTACHMENT_UNSPECIFIED: PortAttachment.ValueType  # 0
+"""Unspecified attachment. It means PORT_ATTACHMENT_SOCKET."""
+PORT_ATTACHMENT_SOCKET: PortAttachment.ValueType  # 1
+"""A local socket."""
+PORT_ATTACHMENT_WIRED: PortAttachment.ValueType  # 2
+"""A cable or a bus. A forward cannot use it."""
+PORT_ATTACHMENT_WIRELESS: PortAttachment.ValueType  # 3
+"""A radio medium. A forward cannot use it."""
+Global___PortAttachment: typing_extensions.TypeAlias = PortAttachment
+
+class _PortTransport:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _PortTransportEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_PortTransport.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    PORT_TRANSPORT_UNSPECIFIED: _PortTransport.ValueType  # 0
+    """Unspecified transport. It means PORT_TRANSPORT_STREAM."""
+    PORT_TRANSPORT_STREAM: _PortTransport.ValueType  # 1
+    """A TCP byte stream."""
+    PORT_TRANSPORT_DATAGRAM: _PortTransport.ValueType  # 2
+    """UDP. A forward cannot use it."""
+    PORT_TRANSPORT_FRAME: _PortTransport.ValueType  # 3
+    """Link-layer frames. A forward cannot use it."""
+
+class PortTransport(_PortTransport, metaclass=_PortTransportEnumTypeWrapper):
+    """The transport of a driver port."""
+
+PORT_TRANSPORT_UNSPECIFIED: PortTransport.ValueType  # 0
+"""Unspecified transport. It means PORT_TRANSPORT_STREAM."""
+PORT_TRANSPORT_STREAM: PortTransport.ValueType  # 1
+"""A TCP byte stream."""
+PORT_TRANSPORT_DATAGRAM: PortTransport.ValueType  # 2
+"""UDP. A forward cannot use it."""
+PORT_TRANSPORT_FRAME: PortTransport.ValueType  # 3
+"""Link-layer frames. A forward cannot use it."""
+Global___PortTransport: typing_extensions.TypeAlias = PortTransport
+
+@typing.final
+class PortReport(google.protobuf.message.Message):
+    """A named connection point on a driver, where a forward of a lease can
+    connect it to a port of a different exporter. It is not a TCP port number,
+    and the report does not contain the local address of the port.
+    """
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    NAME_FIELD_NUMBER: builtins.int
+    DIRECTION_FIELD_NUMBER: builtins.int
+    PROTOCOL_FIELD_NUMBER: builtins.int
+    ATTACHMENT_FIELD_NUMBER: builtins.int
+    TRANSPORT_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    """Name of the port: a DNS label, unique in one exporter (for example "rootcanal")."""
+    direction: Global___PortDirection.ValueType
+    """Direction of the port."""
+    protocol: builtins.str
+    """Free-text protocol tag (for example "hci-h4"). Compared only if the two ends set it."""
+    attachment: Global___PortAttachment.ValueType
+    """Attachment of the port. Unspecified means a socket."""
+    transport: Global___PortTransport.ValueType
+    """Transport of the port. Unspecified means a stream."""
+    def __init__(
+        self,
+        *,
+        name: builtins.str = ...,
+        direction: Global___PortDirection.ValueType = ...,
+        protocol: builtins.str | None = ...,
+        attachment: Global___PortAttachment.ValueType = ...,
+        transport: Global___PortTransport.ValueType = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["_protocol", b"_protocol", "protocol", b"protocol"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_protocol", b"_protocol", "attachment", b"attachment", "direction", b"direction", "name", b"name", "protocol", b"protocol", "transport", b"transport"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["_protocol", b"_protocol"]) -> typing.Literal["protocol"] | None: ...
+
+Global___PortReport: typing_extensions.TypeAlias = PortReport

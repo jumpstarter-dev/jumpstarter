@@ -58,6 +58,15 @@ service ControllerService {
 
   // Rotate the authentication token for the exporter.
   rpc RotateToken(RotateTokenRequest) returns (RotateTokenResponse);
+
+  // Open one connection of a forward of a lease through the router.
+  // The exporter of the REQUIRES endpoint, or the initiator of a path, calls
+  // it for each connection. The controller sends the same token to the peer
+  // exporter in a ForwardConnect instruction on its Listen stream.
+  rpc DialPeer(DialPeerRequest) returns (DialPeerResponse);
+
+  // Report the state of the caller's end of a forward of a lease.
+  rpc ReportForward(ReportForwardRequest) returns (ReportForwardResponse);
 }
 
 // Registration request sent by an exporter to the controller.
@@ -74,6 +83,8 @@ message DriverInstanceReport {
   map<string, string> labels = 3; // Key-value metadata labels.
   optional string description = 4; // Custom driver description for CLI display.
   map<string, string> methods_description = 5; // Method name to help text mapping for CLI.
+  // Fields 6 and 7 are kept for JEP-0011 and the native gRPC proposal.
+  repeated PortReport ports = 8; // Ports of this driver instance that a forward of a lease can connect. Optional.
 }
 
 // Registration response returned by the controller.
@@ -94,11 +105,94 @@ message ListenRequest {
   string lease_name = 1; // Name of the lease to listen on.
 }
 
-// Response containing router connection details for an incoming client.
+// Response containing router connection details for an incoming client, or
+// one forward instruction. It never contains the two together.
 message ListenResponse {
-  string router_endpoint = 1; // The router gRPC endpoint URL.
-  string router_token = 2; // Authentication token for the router.
+  string router_endpoint = 1; // The router gRPC endpoint URL. Not set for a forward instruction.
+  string router_token = 2; // Authentication token for the router. Not set for a forward instruction.
+  // A forward instruction. Not set for a client connection.
+  oneof forward {
+    ForwardSetup forward_setup = 3; // Set up the local end of a forward. Sent one time for each forward, and again each time the exporter opens Listen.
+    ForwardTeardown forward_teardown = 4; // Close the local end of a forward.
+    ForwardConnect forward_connect = 5; // Open one connection of a forward. Sent one time for each connection.
+  }
 }
+
+// An endpoint of a forward on a different member of the lease.
+message ForwardPeer {
+  string member_name = 1; // Role name of the member.
+  string port_name = 2; // Name of the port on the exporter of that member.
+}
+
+// Instruction to set up the local end of a forward. The controller can send
+// the same setup again. The key is (lease_uid, forward_name, member_name).
+message ForwardSetup {
+  string lease_uid = 1; // UID of the lease.
+  string forward_name = 2; // Name of the forward in the lease.
+  string member_name = 3; // Role name of the member that the receiving exporter is bound to.
+  // The other ends of the forward. REQUIRES: the PROVIDES endpoint.
+  // PROVIDES: each bound REQUIRES endpoint. CONNECTS: the other end.
+  repeated ForwardPeer peers = 4;
+  PortDirection direction = 5; // Direction of the local port.
+  string local_port_name = 6; // Name of the local port.
+  bool initiator = 7; // CONNECTS only: this end opens the path with DialPeer.
+}
+
+// Instruction to close the listener and the streams of a forward.
+message ForwardTeardown {
+  string lease_uid = 1; // UID of the lease.
+  string forward_name = 2; // Name of the forward in the lease.
+}
+
+// Instruction to open one connection of a forward. The PROVIDES side, or the
+// second end of a path, gets it.
+message ForwardConnect {
+  string lease_uid = 1; // UID of the lease.
+  string forward_name = 2; // Name of the forward in the lease.
+  string connection_id = 3; // The stream ID of the connection.
+  string peer_member_name = 4; // Role name of the member that opens the connection.
+  string router_endpoint = 5; // The router gRPC endpoint URL.
+  string router_token = 6; // Authentication token for the router: the token that DialPeer returns.
+}
+
+// Request to open one connection of a forward. The controller finds the
+// member from the identity of the caller.
+message DialPeerRequest {
+  string lease_uid = 1; // UID of the lease.
+  string forward_name = 2; // Name of the forward in the lease.
+}
+
+// Response containing router connection details for one forwarded connection.
+message DialPeerResponse {
+  string router_endpoint = 1; // The router gRPC endpoint URL.
+  string router_token = 2; // Authentication token for the router. Its subject is the new stream ID, as in Dial.
+  string connection_id = 3; // The stream ID of the connection.
+}
+
+// State of one end of a forward, as its exporter reports it.
+enum ForwardEndState {
+  FORWARD_END_STATE_UNSPECIFIED = 0; // Unspecified state.
+  FORWARD_END_STATE_READY = 1; // The listener is open, or the forward is recorded.
+  FORWARD_END_STATE_CONNECTED = 2; // A minimum of one connection is open.
+  FORWARD_END_STATE_FAILED = 3; // The setup failed, for example the listen address is in use.
+}
+
+// Request to report a change of the state of the caller's end of a forward.
+// An exporter does not report each connection.
+message ReportForwardRequest {
+  string lease_uid = 1; // UID of the lease.
+  string forward_name = 2; // Name of the forward in the lease.
+  ForwardEndState state = 3; // New state of this end.
+  optional string message = 4; // The cause of a failure.
+  // Increases with each new state of this end. The first number of an
+  // exporter process is its start time in milliseconds. The controller
+  // ignores a report with a number that is not larger than the last one it
+  // accepted for this end.
+  uint64 sequence = 5;
+}
+
+// Response to a forward report.
+message ReportForwardResponse {}
 
 // Request to subscribe to exporter lease status updates.
 message StatusRequest {}

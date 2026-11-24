@@ -35,6 +35,8 @@ const (
 	ControllerService_GetServiceEndpoints_FullMethodName = "/jumpstarter.v1.ControllerService/GetServiceEndpoints"
 	ControllerService_UpdateLeaseHooks_FullMethodName    = "/jumpstarter.v1.ControllerService/UpdateLeaseHooks"
 	ControllerService_RotateToken_FullMethodName         = "/jumpstarter.v1.ControllerService/RotateToken"
+	ControllerService_DialPeer_FullMethodName            = "/jumpstarter.v1.ControllerService/DialPeer"
+	ControllerService_ReportForward_FullMethodName       = "/jumpstarter.v1.ControllerService/ReportForward"
 )
 
 // ControllerServiceClient is the client API for ControllerService service.
@@ -79,6 +81,13 @@ type ControllerServiceClient interface {
 	UpdateLeaseHooks(ctx context.Context, in *UpdateLeaseHooksRequest, opts ...grpc.CallOption) (*LeaseHooks, error)
 	// Rotate the authentication token for the exporter.
 	RotateToken(ctx context.Context, in *RotateTokenRequest, opts ...grpc.CallOption) (*RotateTokenResponse, error)
+	// Open one connection of a forward of a lease through the router.
+	// The exporter of the REQUIRES endpoint, or the initiator of a path, calls
+	// it for each connection. The controller sends the same token to the peer
+	// exporter in a ForwardConnect instruction on its Listen stream.
+	DialPeer(ctx context.Context, in *DialPeerRequest, opts ...grpc.CallOption) (*DialPeerResponse, error)
+	// Report the state of the caller's end of a forward of a lease.
+	ReportForward(ctx context.Context, in *ReportForwardRequest, opts ...grpc.CallOption) (*ReportForwardResponse, error)
 }
 
 type controllerServiceClient struct {
@@ -237,6 +246,26 @@ func (c *controllerServiceClient) RotateToken(ctx context.Context, in *RotateTok
 	return out, nil
 }
 
+func (c *controllerServiceClient) DialPeer(ctx context.Context, in *DialPeerRequest, opts ...grpc.CallOption) (*DialPeerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DialPeerResponse)
+	err := c.cc.Invoke(ctx, ControllerService_DialPeer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *controllerServiceClient) ReportForward(ctx context.Context, in *ReportForwardRequest, opts ...grpc.CallOption) (*ReportForwardResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportForwardResponse)
+	err := c.cc.Invoke(ctx, ControllerService_ReportForward_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ControllerServiceServer is the server API for ControllerService service.
 // All implementations must embed UnimplementedControllerServiceServer
 // for forward compatibility.
@@ -279,6 +308,13 @@ type ControllerServiceServer interface {
 	UpdateLeaseHooks(context.Context, *UpdateLeaseHooksRequest) (*LeaseHooks, error)
 	// Rotate the authentication token for the exporter.
 	RotateToken(context.Context, *RotateTokenRequest) (*RotateTokenResponse, error)
+	// Open one connection of a forward of a lease through the router.
+	// The exporter of the REQUIRES endpoint, or the initiator of a path, calls
+	// it for each connection. The controller sends the same token to the peer
+	// exporter in a ForwardConnect instruction on its Listen stream.
+	DialPeer(context.Context, *DialPeerRequest) (*DialPeerResponse, error)
+	// Report the state of the caller's end of a forward of a lease.
+	ReportForward(context.Context, *ReportForwardRequest) (*ReportForwardResponse, error)
 	mustEmbedUnimplementedControllerServiceServer()
 }
 
@@ -327,6 +363,12 @@ func (UnimplementedControllerServiceServer) UpdateLeaseHooks(context.Context, *U
 }
 func (UnimplementedControllerServiceServer) RotateToken(context.Context, *RotateTokenRequest) (*RotateTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RotateToken not implemented")
+}
+func (UnimplementedControllerServiceServer) DialPeer(context.Context, *DialPeerRequest) (*DialPeerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DialPeer not implemented")
+}
+func (UnimplementedControllerServiceServer) ReportForward(context.Context, *ReportForwardRequest) (*ReportForwardResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportForward not implemented")
 }
 func (UnimplementedControllerServiceServer) mustEmbedUnimplementedControllerServiceServer() {}
 func (UnimplementedControllerServiceServer) testEmbeddedByValue()                           {}
@@ -569,6 +611,42 @@ func _ControllerService_RotateToken_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ControllerService_DialPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DialPeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).DialPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_DialPeer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).DialPeer(ctx, req.(*DialPeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ControllerService_ReportForward_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportForwardRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ControllerServiceServer).ReportForward(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ControllerService_ReportForward_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ControllerServiceServer).ReportForward(ctx, req.(*ReportForwardRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ControllerService_ServiceDesc is the grpc.ServiceDesc for ControllerService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -619,6 +697,14 @@ var ControllerService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RotateToken",
 			Handler:    _ControllerService_RotateToken_Handler,
+		},
+		{
+			MethodName: "DialPeer",
+			Handler:    _ControllerService_DialPeer_Handler,
+		},
+		{
+			MethodName: "ReportForward",
+			Handler:    _ControllerService_ReportForward_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

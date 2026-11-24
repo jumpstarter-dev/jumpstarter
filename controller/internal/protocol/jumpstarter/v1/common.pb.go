@@ -144,11 +144,260 @@ func (LogSource) EnumDescriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{1}
 }
 
+// The direction of a driver port. It shows the end that has the service, not
+// the direction of the data: each forward is a two-way stream.
+type PortDirection int32
+
+const (
+	PortDirection_PORT_DIRECTION_UNSPECIFIED PortDirection = 0 // Unspecified direction. The controller rejects such a port.
+	PortDirection_PORT_DIRECTION_PROVIDES    PortDirection = 1 // A local service listens. The exporter connects to it for each forwarded connection.
+	PortDirection_PORT_DIRECTION_REQUIRES    PortDirection = 2 // A local driver uses a service on a different member. The exporter opens a local listener for it.
+	PortDirection_PORT_DIRECTION_CONNECTS    PortDirection = 3 // The port connects to a port of its own type. Two such ports make one path.
+)
+
+// Enum value maps for PortDirection.
+var (
+	PortDirection_name = map[int32]string{
+		0: "PORT_DIRECTION_UNSPECIFIED",
+		1: "PORT_DIRECTION_PROVIDES",
+		2: "PORT_DIRECTION_REQUIRES",
+		3: "PORT_DIRECTION_CONNECTS",
+	}
+	PortDirection_value = map[string]int32{
+		"PORT_DIRECTION_UNSPECIFIED": 0,
+		"PORT_DIRECTION_PROVIDES":    1,
+		"PORT_DIRECTION_REQUIRES":    2,
+		"PORT_DIRECTION_CONNECTS":    3,
+	}
+)
+
+func (x PortDirection) Enum() *PortDirection {
+	p := new(PortDirection)
+	*p = x
+	return p
+}
+
+func (x PortDirection) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PortDirection) Descriptor() protoreflect.EnumDescriptor {
+	return file_jumpstarter_v1_common_proto_enumTypes[2].Descriptor()
+}
+
+func (PortDirection) Type() protoreflect.EnumType {
+	return &file_jumpstarter_v1_common_proto_enumTypes[2]
+}
+
+func (x PortDirection) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PortDirection.Descriptor instead.
+func (PortDirection) EnumDescriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{2}
+}
+
+// How a driver port is attached to its device.
+type PortAttachment int32
+
+const (
+	PortAttachment_PORT_ATTACHMENT_UNSPECIFIED PortAttachment = 0 // Unspecified attachment. It means PORT_ATTACHMENT_SOCKET.
+	PortAttachment_PORT_ATTACHMENT_SOCKET      PortAttachment = 1 // A local socket.
+	PortAttachment_PORT_ATTACHMENT_WIRED       PortAttachment = 2 // A cable or a bus. A forward cannot use it.
+	PortAttachment_PORT_ATTACHMENT_WIRELESS    PortAttachment = 3 // A radio medium. A forward cannot use it.
+)
+
+// Enum value maps for PortAttachment.
+var (
+	PortAttachment_name = map[int32]string{
+		0: "PORT_ATTACHMENT_UNSPECIFIED",
+		1: "PORT_ATTACHMENT_SOCKET",
+		2: "PORT_ATTACHMENT_WIRED",
+		3: "PORT_ATTACHMENT_WIRELESS",
+	}
+	PortAttachment_value = map[string]int32{
+		"PORT_ATTACHMENT_UNSPECIFIED": 0,
+		"PORT_ATTACHMENT_SOCKET":      1,
+		"PORT_ATTACHMENT_WIRED":       2,
+		"PORT_ATTACHMENT_WIRELESS":    3,
+	}
+)
+
+func (x PortAttachment) Enum() *PortAttachment {
+	p := new(PortAttachment)
+	*p = x
+	return p
+}
+
+func (x PortAttachment) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PortAttachment) Descriptor() protoreflect.EnumDescriptor {
+	return file_jumpstarter_v1_common_proto_enumTypes[3].Descriptor()
+}
+
+func (PortAttachment) Type() protoreflect.EnumType {
+	return &file_jumpstarter_v1_common_proto_enumTypes[3]
+}
+
+func (x PortAttachment) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PortAttachment.Descriptor instead.
+func (PortAttachment) EnumDescriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{3}
+}
+
+// The transport of a driver port.
+type PortTransport int32
+
+const (
+	PortTransport_PORT_TRANSPORT_UNSPECIFIED PortTransport = 0 // Unspecified transport. It means PORT_TRANSPORT_STREAM.
+	PortTransport_PORT_TRANSPORT_STREAM      PortTransport = 1 // A TCP byte stream.
+	PortTransport_PORT_TRANSPORT_DATAGRAM    PortTransport = 2 // UDP. A forward cannot use it.
+	PortTransport_PORT_TRANSPORT_FRAME       PortTransport = 3 // Link-layer frames. A forward cannot use it.
+)
+
+// Enum value maps for PortTransport.
+var (
+	PortTransport_name = map[int32]string{
+		0: "PORT_TRANSPORT_UNSPECIFIED",
+		1: "PORT_TRANSPORT_STREAM",
+		2: "PORT_TRANSPORT_DATAGRAM",
+		3: "PORT_TRANSPORT_FRAME",
+	}
+	PortTransport_value = map[string]int32{
+		"PORT_TRANSPORT_UNSPECIFIED": 0,
+		"PORT_TRANSPORT_STREAM":      1,
+		"PORT_TRANSPORT_DATAGRAM":    2,
+		"PORT_TRANSPORT_FRAME":       3,
+	}
+)
+
+func (x PortTransport) Enum() *PortTransport {
+	p := new(PortTransport)
+	*p = x
+	return p
+}
+
+func (x PortTransport) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PortTransport) Descriptor() protoreflect.EnumDescriptor {
+	return file_jumpstarter_v1_common_proto_enumTypes[4].Descriptor()
+}
+
+func (PortTransport) Type() protoreflect.EnumType {
+	return &file_jumpstarter_v1_common_proto_enumTypes[4]
+}
+
+func (x PortTransport) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PortTransport.Descriptor instead.
+func (PortTransport) EnumDescriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{4}
+}
+
+// A named connection point on a driver, where a forward of a lease can
+// connect it to a port of a different exporter. It is not a TCP port number,
+// and the report does not contain the local address of the port.
+type PortReport struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                                                 // Name of the port: a DNS label, unique in one exporter (for example "rootcanal").
+	Direction     PortDirection          `protobuf:"varint,2,opt,name=direction,proto3,enum=jumpstarter.v1.PortDirection" json:"direction,omitempty"`    // Direction of the port.
+	Protocol      *string                `protobuf:"bytes,3,opt,name=protocol,proto3,oneof" json:"protocol,omitempty"`                                   // Free-text protocol tag (for example "hci-h4"). Compared only if the two ends set it.
+	Attachment    PortAttachment         `protobuf:"varint,4,opt,name=attachment,proto3,enum=jumpstarter.v1.PortAttachment" json:"attachment,omitempty"` // Attachment of the port. Unspecified means a socket.
+	Transport     PortTransport          `protobuf:"varint,5,opt,name=transport,proto3,enum=jumpstarter.v1.PortTransport" json:"transport,omitempty"`    // Transport of the port. Unspecified means a stream.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortReport) Reset() {
+	*x = PortReport{}
+	mi := &file_jumpstarter_v1_common_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortReport) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortReport) ProtoMessage() {}
+
+func (x *PortReport) ProtoReflect() protoreflect.Message {
+	mi := &file_jumpstarter_v1_common_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortReport.ProtoReflect.Descriptor instead.
+func (*PortReport) Descriptor() ([]byte, []int) {
+	return file_jumpstarter_v1_common_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *PortReport) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *PortReport) GetDirection() PortDirection {
+	if x != nil {
+		return x.Direction
+	}
+	return PortDirection_PORT_DIRECTION_UNSPECIFIED
+}
+
+func (x *PortReport) GetProtocol() string {
+	if x != nil && x.Protocol != nil {
+		return *x.Protocol
+	}
+	return ""
+}
+
+func (x *PortReport) GetAttachment() PortAttachment {
+	if x != nil {
+		return x.Attachment
+	}
+	return PortAttachment_PORT_ATTACHMENT_UNSPECIFIED
+}
+
+func (x *PortReport) GetTransport() PortTransport {
+	if x != nil {
+		return x.Transport
+	}
+	return PortTransport_PORT_TRANSPORT_UNSPECIFIED
+}
+
 var File_jumpstarter_v1_common_proto protoreflect.FileDescriptor
 
 const file_jumpstarter_v1_common_proto_rawDesc = "" +
 	"\n" +
-	"\x1bjumpstarter/v1/common.proto\x12\x0ejumpstarter.v1*\xb6\x02\n" +
+	"\x1bjumpstarter/v1/common.proto\x12\x0ejumpstarter.v1\"\x88\x02\n" +
+	"\n" +
+	"PortReport\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12;\n" +
+	"\tdirection\x18\x02 \x01(\x0e2\x1d.jumpstarter.v1.PortDirectionR\tdirection\x12\x1f\n" +
+	"\bprotocol\x18\x03 \x01(\tH\x00R\bprotocol\x88\x01\x01\x12>\n" +
+	"\n" +
+	"attachment\x18\x04 \x01(\x0e2\x1e.jumpstarter.v1.PortAttachmentR\n" +
+	"attachment\x12;\n" +
+	"\ttransport\x18\x05 \x01(\x0e2\x1d.jumpstarter.v1.PortTransportR\ttransportB\v\n" +
+	"\t_protocol*\xb6\x02\n" +
 	"\x0eExporterStatus\x12\x1f\n" +
 	"\x1bEXPORTER_STATUS_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17EXPORTER_STATUS_OFFLINE\x10\x01\x12\x1d\n" +
@@ -163,7 +412,22 @@ const file_jumpstarter_v1_common_proto_rawDesc = "" +
 	"\x11LOG_SOURCE_DRIVER\x10\x01\x12 \n" +
 	"\x1cLOG_SOURCE_BEFORE_LEASE_HOOK\x10\x02\x12\x1f\n" +
 	"\x1bLOG_SOURCE_AFTER_LEASE_HOOK\x10\x03\x12\x15\n" +
-	"\x11LOG_SOURCE_SYSTEM\x10\x04B\xdc\x01\n" +
+	"\x11LOG_SOURCE_SYSTEM\x10\x04*\x86\x01\n" +
+	"\rPortDirection\x12\x1e\n" +
+	"\x1aPORT_DIRECTION_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17PORT_DIRECTION_PROVIDES\x10\x01\x12\x1b\n" +
+	"\x17PORT_DIRECTION_REQUIRES\x10\x02\x12\x1b\n" +
+	"\x17PORT_DIRECTION_CONNECTS\x10\x03*\x86\x01\n" +
+	"\x0ePortAttachment\x12\x1f\n" +
+	"\x1bPORT_ATTACHMENT_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16PORT_ATTACHMENT_SOCKET\x10\x01\x12\x19\n" +
+	"\x15PORT_ATTACHMENT_WIRED\x10\x02\x12\x1c\n" +
+	"\x18PORT_ATTACHMENT_WIRELESS\x10\x03*\x81\x01\n" +
+	"\rPortTransport\x12\x1e\n" +
+	"\x1aPORT_TRANSPORT_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15PORT_TRANSPORT_STREAM\x10\x01\x12\x1b\n" +
+	"\x17PORT_TRANSPORT_DATAGRAM\x10\x02\x12\x18\n" +
+	"\x14PORT_TRANSPORT_FRAME\x10\x03B\xdc\x01\n" +
 	"\x12com.jumpstarter.v1B\vCommonProtoP\x01Z`github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1;jumpstarterv1\xa2\x02\x03JXX\xaa\x02\x0eJumpstarter.V1\xca\x02\x0eJumpstarter\\V1\xe2\x02\x1aJumpstarter\\V1\\GPBMetadata\xea\x02\x0fJumpstarter::V1b\x06proto3"
 
 var (
@@ -178,17 +442,25 @@ func file_jumpstarter_v1_common_proto_rawDescGZIP() []byte {
 	return file_jumpstarter_v1_common_proto_rawDescData
 }
 
-var file_jumpstarter_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_jumpstarter_v1_common_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_jumpstarter_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
 var file_jumpstarter_v1_common_proto_goTypes = []any{
 	(ExporterStatus)(0), // 0: jumpstarter.v1.ExporterStatus
 	(LogSource)(0),      // 1: jumpstarter.v1.LogSource
+	(PortDirection)(0),  // 2: jumpstarter.v1.PortDirection
+	(PortAttachment)(0), // 3: jumpstarter.v1.PortAttachment
+	(PortTransport)(0),  // 4: jumpstarter.v1.PortTransport
+	(*PortReport)(nil),  // 5: jumpstarter.v1.PortReport
 }
 var file_jumpstarter_v1_common_proto_depIdxs = []int32{
-	0, // [0:0] is the sub-list for method output_type
-	0, // [0:0] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	2, // 0: jumpstarter.v1.PortReport.direction:type_name -> jumpstarter.v1.PortDirection
+	3, // 1: jumpstarter.v1.PortReport.attachment:type_name -> jumpstarter.v1.PortAttachment
+	4, // 2: jumpstarter.v1.PortReport.transport:type_name -> jumpstarter.v1.PortTransport
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_jumpstarter_v1_common_proto_init() }
@@ -196,19 +468,21 @@ func file_jumpstarter_v1_common_proto_init() {
 	if File_jumpstarter_v1_common_proto != nil {
 		return
 	}
+	file_jumpstarter_v1_common_proto_msgTypes[0].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_jumpstarter_v1_common_proto_rawDesc), len(file_jumpstarter_v1_common_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   0,
+			NumEnums:      5,
+			NumMessages:   1,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_jumpstarter_v1_common_proto_goTypes,
 		DependencyIndexes: file_jumpstarter_v1_common_proto_depIdxs,
 		EnumInfos:         file_jumpstarter_v1_common_proto_enumTypes,
+		MessageInfos:      file_jumpstarter_v1_common_proto_msgTypes,
 	}.Build()
 	File_jumpstarter_v1_common_proto = out.File
 	file_jumpstarter_v1_common_proto_goTypes = nil

@@ -81,6 +81,16 @@ class ControllerServiceStub:
                 request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenRequest.SerializeToString,
                 response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenResponse.FromString,
                 _registered_method=True)
+        self.DialPeer = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/DialPeer',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialPeerRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialPeerResponse.FromString,
+                _registered_method=True)
+        self.ReportForward = channel.unary_unary(
+                '/jumpstarter.v1.ControllerService/ReportForward',
+                request_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportForwardRequest.SerializeToString,
+                response_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportForwardResponse.FromString,
+                _registered_method=True)
 
 
 class ControllerServiceServicer:
@@ -188,6 +198,23 @@ class ControllerServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def DialPeer(self, request, context):
+        """Open one connection of a forward of a lease through the router.
+        The exporter of the REQUIRES endpoint, or the initiator of a path, calls
+        it for each connection. The controller sends the same token to the peer
+        exporter in a ForwardConnect instruction on its Listen stream.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReportForward(self, request, context):
+        """Report the state of the caller's end of a forward of a lease.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ControllerServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -255,6 +282,16 @@ def add_ControllerServiceServicer_to_server(servicer, server):
                     servicer.RotateToken,
                     request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenRequest.FromString,
                     response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenResponse.SerializeToString,
+            ),
+            'DialPeer': grpc.unary_unary_rpc_method_handler(
+                    servicer.DialPeer,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialPeerRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.DialPeerResponse.SerializeToString,
+            ),
+            'ReportForward': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReportForward,
+                    request_deserializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportForwardRequest.FromString,
+                    response_serializer=jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportForwardResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -609,6 +646,60 @@ class ControllerService:
             '/jumpstarter.v1.ControllerService/RotateToken',
             jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenRequest.SerializeToString,
             jumpstarter_dot_v1_dot_jumpstarter__pb2.RotateTokenResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DialPeer(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/DialPeer',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.DialPeerRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.DialPeerResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReportForward(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/jumpstarter.v1.ControllerService/ReportForward',
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportForwardRequest.SerializeToString,
+            jumpstarter_dot_v1_dot_jumpstarter__pb2.ReportForwardResponse.FromString,
             options,
             channel_credentials,
             insecure,

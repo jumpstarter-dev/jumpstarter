@@ -27,6 +27,9 @@ import (
 // +kubebuilder:validation:XValidation:rule="!has(self.constraints) || (has(self.members) && self.constraints.all(c, c.members.all(n, self.members.exists(m, m.name == n))))",message="constraints must reference declared members"
 // +kubebuilder:validation:XValidation:rule="has(self.members) == has(oldSelf.members) && (!has(self.members) || self.members == oldSelf.members)",message="members are immutable after creation"
 // +kubebuilder:validation:XValidation:rule="has(self.constraints) == has(oldSelf.constraints) && (!has(self.constraints) || self.constraints == oldSelf.constraints)",message="constraints are immutable after creation"
+// +kubebuilder:validation:XValidation:rule="!has(self.forwards) || (has(self.members) && self.forwards.all(f, f.endpoints.all(e, self.members.exists(m, m.name == e.member))))",message="forward endpoints must reference declared members"
+// +kubebuilder:validation:XValidation:rule="!has(self.forwards) || !has(self.members) || self.forwards.all(f, !self.members.exists(m, m.name == f.name))",message="a forward and a member cannot have the same name"
+// +kubebuilder:validation:XValidation:rule="has(self.forwards) == has(oldSelf.forwards) && (!has(self.forwards) || self.forwards == oldSelf.forwards)",message="forwards are immutable after creation"
 // +kubebuilder:validation:XValidation:rule="has(self.templateRef) == has(oldSelf.templateRef) && (!has(self.templateRef) || self.templateRef == oldSelf.templateRef)",message="templateRef is immutable after creation"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.tags) || self.tags == oldSelf.tags",message="tags are immutable after creation"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.context) || self.context == oldSelf.context",message="context is immutable after creation"
@@ -85,6 +88,88 @@ type LeaseSpec struct {
 	// TemplateRef records the LeaseTemplate that this lease was expanded from.
 	// The client service sets it; the controller does not read it at bind time.
 	TemplateRef *LeaseTemplateReference `json:"templateRef,omitempty"`
+	// Forwards connect ports on different members of a member-form lease
+	// through the router. Each endpoint refers to a member of the lease, and
+	// no forward has the name of a member. Immutable after creation.
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:MaxItems=16
+	Forwards []LeaseForward `json:"forwards,omitempty"`
+}
+
+// LeaseForward is one forward of a member-form lease: a named set of
+// endpoints. It connects one provides port to one or more requires ports, or
+// two connects ports. The controller gets the direction of each port from the
+// exporter reports.
+type LeaseForward struct {
+	// Name of the forward. It is a DNS label, as a role name is.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Name string `json:"name"`
+	// Endpoints are the ends of the forward, in any sequence. The list key
+	// is the member, thus each endpoint is on a different member.
+	// +listType=map
+	// +listMapKey=member
+	// +kubebuilder:validation:MinItems=2
+	// +kubebuilder:validation:MaxItems=8
+	Endpoints []ForwardEndpoint `json:"endpoints"`
+}
+
+// ForwardEndpoint is one end of a forward: a member of the lease and a port
+// that the exporter of that member reports.
+type ForwardEndpoint struct {
+	// Member is the role name of the member.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Member string `json:"member"`
+	// Port is the name of the port on the exporter of the member.
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Port string `json:"port"`
+}
+
+// LeaseForwardState is the state of one forward of a lease. A forward has one
+// state for all its endpoints.
+// +kubebuilder:validation:Enum=Pending;Disabled;Listening;Connected;Failed
+type LeaseForwardState string
+
+const (
+	// LeaseForwardStatePending: the controller did not complete the setup.
+	LeaseForwardStatePending LeaseForwardState = "Pending"
+	// LeaseForwardStateDisabled: an optional member is Omitted, and the
+	// forward cannot operate without it.
+	LeaseForwardStateDisabled LeaseForwardState = "Disabled"
+	// LeaseForwardStateListening: the setup is complete. No connection is open.
+	LeaseForwardStateListening LeaseForwardState = "Listening"
+	// LeaseForwardStateConnected: a minimum of one connection is open.
+	LeaseForwardStateConnected LeaseForwardState = "Connected"
+	// LeaseForwardStateFailed: the validation or the setup failed, or a
+	// necessary member is Lost.
+	LeaseForwardStateFailed LeaseForwardState = "Failed"
+)
+
+// Reasons of the lease conditions that forwards add.
+const (
+	// LeaseReasonForwardsReady: each forward that is not Disabled is
+	// Listening or Connected (ForwardsReady is true).
+	LeaseReasonForwardsReady = "ForwardsReady"
+	// LeaseReasonForwardsPending: a minimum of one forward is Pending, and
+	// none is Failed (ForwardsReady and Ready are false).
+	LeaseReasonForwardsPending = "ForwardsPending"
+	// LeaseReasonForwardFailed: a minimum of one forward is Failed
+	// (ForwardsReady is false, and the lease is Degraded).
+	LeaseReasonForwardFailed = "Failed"
+)
+
+// LeaseForwardStatus is the observed state of one forward of a lease.
+type LeaseForwardStatus struct {
+	// Name of the forward.
+	Name string `json:"name"`
+	// State of the forward.
+	State LeaseForwardState `json:"state"`
+	// Message is a human-readable message for the state: the role of the
+	// Omitted member of a Disabled forward, or the cause of a failure.
+	Message string `json:"message,omitempty"`
 }
 
 // LeaseMember is one member of a member-form lease: a role name and the
@@ -217,6 +302,10 @@ type LeaseStatus struct {
 	// BindAttempt counts the bind attempts of this lease. Each ExporterClaim
 	// of the lease records the attempt that created it.
 	BindAttempt int64 `json:"bindAttempt,omitempty"`
+	// Forwards is the state of each forward of the lease, in spec order.
+	// +listType=map
+	// +listMapKey=name
+	Forwards []LeaseForwardStatus `json:"forwards,omitempty"`
 	// Ended indicates whether the lease has been terminated.
 	Ended bool `json:"ended"`
 	// Priority is the effective priority of the lease from the access policy.
@@ -242,6 +331,10 @@ const (
 	// LeaseConditionTypeDegraded is true when a bound member of a member-form
 	// lease lost its exporter. The lease keeps its other members.
 	LeaseConditionTypeDegraded LeaseConditionType = "Degraded"
+	// LeaseConditionTypeForwardsReady is true when each forward of the lease
+	// that is not Disabled is Listening or Connected. Only a lease with
+	// forwards has it.
+	LeaseConditionTypeForwardsReady LeaseConditionType = "ForwardsReady"
 )
 
 type LeaseLabel string
