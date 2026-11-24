@@ -1327,7 +1327,10 @@ cause.
 A lease with forwards has one more condition for `Ready`, in addition to
 the JEP-0015 conditions. Each forward that is not `Disabled` must be
 `Listening` or `Connected`. While a forward is `Pending`, `Ready` is false
-with the reason `ForwardsPending`.
+with the reason `BeforeLeaseHook`, and its message gives the forwards. The
+`ForwardsReady` condition has the reason `ForwardsPending`. A client that
+has JEP-0015 but not this JEP knows the reason `BeforeLeaseHook`. Thus it
+continues to wait and does not stop with an error.
 
 ### Connections and interruptions
 
@@ -1336,8 +1339,23 @@ The token has a random stream ID as `sub`. It expires after 60 seconds. A
 `Dial` token expires after 30 minutes today. The expiry limits only the
 time to open the stream.
 
-One local TCP connection and one router stream make one pair. These rules
-apply after an interruption:
+One local TCP connection and one router stream make one pair. The router
+gives no signal when the second peer opens the stream. Thus each end obeys
+these rules:
+
+- An end opens its local side first. When its local side is open, it sends
+  one empty data frame on the router stream.
+- An end counts the connection as open only after it gets the first frame
+  from the other end. It reports `CONNECTED` at that time. If the first
+  frame contains data, the end also sends that data to its local side.
+- If no frame arrives in 30 seconds, the end closes the stream. If its
+  local side does not open, the end closes the stream and sends no frame.
+- A path end that listens waits 20 seconds for a local client. If none
+  connects, it closes the stream and sends no frame.
+- The initiator of a path increases the delay between its tries, to a
+  maximum of 30 seconds, when a path stays open for less than 5 seconds.
+
+These rules apply after an interruption:
 
 - If the stream closes, the exporter closes that local connection. It does
   not attach a new stream to it.
@@ -1748,7 +1766,8 @@ These items are not part of this JEP:
 - 2026-11-24: Changes from the review. An exporter sends a report again
   after a failure, and a report has a time limit. `ReportForward` accepts
   only the endpoints of the forward, and each report has a sequence
-  number. The lease status has the state of each end of a forward. A forward with no bound end is
+  number. The lease status has the state of each end of a forward. Each
+  end of a connection sends one empty frame when its local side is open. A forward with no bound end is
   `Disabled`.
 
 ## References
