@@ -287,10 +287,15 @@ func desiredServiceMonitors(js *operatorv1alpha1.Jumpstarter) []*unstructured.Un
 		})
 		monitor.SetName(name)
 		monitor.SetNamespace(js.Namespace)
-		labels := metricsServiceLabels(js, component)
+		// User labels are copied first so the operator labels win on a
+		// collision: overriding jumpstarter.dev/metrics would leave every
+		// monitor unselected by Prometheus, and an identity label must not
+		// contradict the Service the monitor selects.
+		labels := map[string]string{}
 		if js.Spec.Telemetry != nil {
 			maps.Copy(labels, js.Spec.Telemetry.Metrics.ServiceMonitorLabels)
 		}
+		maps.Copy(labels, metricsServiceLabels(js, component))
 		monitor.SetLabels(labels)
 		monitor.Object["spec"] = map[string]any{
 			"namespaceSelector": map[string]any{

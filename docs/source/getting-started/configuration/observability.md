@@ -50,7 +50,10 @@ spec:
 objects match your Prometheus `serviceMonitorSelector`. kube-prometheus-stack
 usually selects a Helm release label such as `release: kube-prometheus-stack`;
 if your Prometheus uses a different selector, set the matching labels here.
-The labels do not change the metrics Service selector. The `controller-kind`
+Operator labels take precedence: a key the operator already sets
+(`app.kubernetes.io/*` or `jumpstarter.dev/metrics`) keeps its generated value,
+so the monitors stay selectable and cannot contradict the Services they
+select. The labels do not change the metrics Service selector. The `controller-kind`
 target-health test installs a minimal Prometheus Operator and Prometheus
 instance and asserts that the generated ServiceMonitors produce `up` targets
 for controller and router within 120 seconds, with no additional scrape

@@ -394,6 +394,37 @@ func TestDesiredServiceMonitorsAddsConfiguredLabels(t *testing.T) {
 	}
 }
 
+func TestDesiredServiceMonitorsOperatorLabelsWin(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.ServiceMonitorLabels = map[string]string{
+		"release":                     "kube-prometheus-stack",
+		metricsServiceLabel:           "false",
+		"app.kubernetes.io/name":      "not-jumpstarter",
+		"app.kubernetes.io/component": "controller",
+	}
+
+	for _, monitor := range desiredServiceMonitors(js) {
+		labels := monitor.GetLabels()
+		if got := labels["release"]; got != "kube-prometheus-stack" {
+			t.Errorf("%s release label = %q, want the user label kept", monitor.GetName(), got)
+		}
+		if got := labels[metricsServiceLabel]; got != "true" {
+			t.Errorf("%s %s = %q, want the operator value true", monitor.GetName(), metricsServiceLabel, got)
+		}
+		if got := labels["app.kubernetes.io/name"]; got != "jumpstarter" {
+			t.Errorf("%s app.kubernetes.io/name = %q, want the operator value", monitor.GetName(), got)
+		}
+		wantComponent := "controller"
+		if strings.Contains(monitor.GetName(), "-router") {
+			wantComponent = "router"
+		}
+		if got := labels["app.kubernetes.io/component"]; got != wantComponent {
+			t.Errorf("%s app.kubernetes.io/component = %q, want %q", monitor.GetName(), got, wantComponent)
+		}
+	}
+}
+
 func TestPodLabelsDoNotChangeSelector(t *testing.T) {
 	js := testJumpstarter()
 	r := &JumpstarterReconciler{}
