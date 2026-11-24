@@ -1435,9 +1435,22 @@ class MembersLease[M: LeaseMembers](Lease):
 
     @staticmethod
     def _forwards_pending(result) -> bool:
+        # The controller gives a Pending forward on ForwardsReady. Ready then has the reason
+        # BeforeLeaseHook, which a client that does not know forwards waits for.
         return condition_present_and_equal(
             result.conditions, "Ready", "False", "ForwardsPending"
         ) or condition_present_and_equal(result.conditions, "ForwardsReady", "False", "ForwardsPending")
+
+    @staticmethod
+    def _preparing(result) -> bool:
+        """The lease is not bound, or the controller still waits for a beforeLease hook or a Pending forward.
+
+        A lease in this state is not used, also when a failed forward is accepted: after the
+        hooks of the members, Ready has the reason of the failed forward (`Failed`).
+        """
+        return condition_true(result.conditions, "Pending") or condition_present_and_equal(
+            result.conditions, "Ready", "False", "BeforeLeaseHook"
+        )
 
     def _raise_for_failure(
         self, result, *, degraded_attach: bool = False, tolerate_failed_forwards: bool = False
@@ -1502,9 +1515,14 @@ class MembersLease[M: LeaseMembers](Lease):
                         failed_forward = (
                             not degraded and self.tolerate_failed_forwards and bool(self._failed_forwards(result))
                         )
-                        self._raise_for_failure(
-                            result, degraded_attach=degraded, tolerate_failed_forwards=failed_forward
+                        # A failed forward does not stop the beforeLease hooks of the members. A lease
+                        # that is accepted with a failed forward is used only when they are complete.
+                        tolerated = failed_forward or (
+                            degraded and bool(self._failed_forwards(result)) and not result.lost_members()
                         )
+                        if tolerated and self._preparing(result):
+                            degraded = failed_forward = False
+                        self._raise_for_failure(result, degraded_attach=degraded, tolerate_failed_forwards=tolerated)
                         if degraded or failed_forward:
                             self._record(result)
                             reasons = "; ".join(
@@ -1527,8 +1545,12 @@ class MembersLease[M: LeaseMembers](Lease):
                             break
 
                         if condition_present_and_equal(result.conditions, "Ready", "False", "BeforeLeaseHook"):
-                            message = condition_message(result.conditions, "Ready")
-                            spinner.update_status(f"Waiting for beforeLease hooks: {message}")
+                            message = condition_message(result.conditions, "Ready") or ""
+                            if message.startswith("Waiting for forwards"):
+                                # The hooks are complete: the controller waits for the forwards.
+                                spinner.update_status(message)
+                            else:
+                                spinner.update_status(f"Waiting for beforeLease hooks: {message}")
                         elif self._forwards_pending(result):
                             pending = ", ".join(
                                 forward.name

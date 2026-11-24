@@ -49,15 +49,24 @@ class HeadunitPeer(LeaseMembers, template="headunit-peer"):
     bt: Forward
 
 
+# The conditions as the controller writes them. While a forward is Pending, Ready has the
+# reason BeforeLeaseHook (a client that does not know forwards waits for it), and
+# ForwardsReady has the reason ForwardsPending.
 FORWARDS_PENDING = [
     condition("Pending", "False", "Bound"),
-    condition("Ready", "False", "ForwardsPending", "waiting for: bt"),
-    condition("ForwardsReady", "False", "ForwardsPending", "waiting for: bt"),
+    condition("Ready", "False", "BeforeLeaseHook", "Waiting for forwards: `bt`"),
+    condition("ForwardsReady", "False", "ForwardsPending", "Waiting for forwards: `bt`"),
 ]
+# The hooks of the members are complete: only the forward keeps the lease from Ready.
 FORWARD_FAILED = [
-    condition("Ready", "False", "ForwardFailed"),
+    condition("Ready", "False", "Failed", "Failed forwards: `bt`"),
     condition("ForwardsReady", "False", "Failed", "forward bt failed"),
-    condition("Degraded", "True", "ForwardFailed"),
+    condition("Degraded", "True", "Failed"),
+]
+# A forward failed the validation at the bind, and a beforeLease hook still runs.
+FORWARD_FAILED_IN_HOOK = [
+    condition("Ready", "False", "BeforeLeaseHook", "Waiting for the beforeLease hook of roles: `headunit`"),
+    *FORWARD_FAILED[1:],
 ]
 FAILURE = "port 'rootcanal' is not on exporter rack3-hu-2"
 
@@ -498,6 +507,66 @@ class TestAcquireWithForwards:
         assert not lease.attached and lease.get.await_count == 2
         assert lease.failed_forwards == {"bt": f"forward 'bt' failed: {FAILURE}"}
         assert f"forward 'bt' failed: {FAILURE}" in caplog.text
+
+    async def test_request_that_takes_a_failed_forward_waits_for_the_hooks(self, caplog):
+        # `jmp shell`: the forward failed at the bind, and the beforeLease hooks still run.
+        in_hook = forwards_lease("Failed", FAILURE, conditions=FORWARD_FAILED_IN_HOOK)
+        with caplog.at_level("WARNING", logger="jumpstarter.client.lease"):
+            lease = await self._wait(
+                forwards_lease("Failed", FAILURE, conditions=[condition("Pending", "True", "Pending")]),
+                in_hook,
+                in_hook,
+                forwards_lease("Failed", FAILURE, conditions=FORWARD_FAILED),
+                tolerate_failed_forwards=True,
+            )
+        # The lease is used only after the hooks.
+        assert lease.get.await_count == 4
+        assert lease.failed_forwards == {"bt": f"forward 'bt' failed: {FAILURE}"}
+        assert caplog.text.count("is degraded") == 1
+
+    async def test_request_that_takes_a_failed_forward_stops_for_a_failed_hook(self):
+        in_hook = forwards_lease("Failed", FAILURE, conditions=FORWARD_FAILED_IN_HOOK)
+        hook_failed = [condition("Ready", "False", "BeforeLeaseHookFailed", "headunit: exit 1"), *FORWARD_FAILED[1:]]
+        with pytest.raises(LeaseError, match="beforeLease hook failed") as excinfo:
+            await self._wait(
+                in_hook,
+                forwards_lease("Failed", FAILURE, conditions=hook_failed),
+                tolerate_failed_forwards=True,
+            )
+        assert not isinstance(excinfo.value, ForwardError)
+
+    async def test_request_that_takes_a_failed_forward_gets_a_forward_that_recovers(self):
+        lease = await self._wait(
+            forwards_lease("Failed", FAILURE, conditions=FORWARD_FAILED_IN_HOOK),
+            forwards_lease("Pending", conditions=FORWARDS_PENDING),
+            forwards_lease("Listening"),
+            tolerate_failed_forwards=True,
+        )
+        assert lease.get.await_count == 3 and lease.failed_forwards == {}
+
+    async def test_attach_to_a_lease_with_a_failed_forward_waits_for_the_hooks(self):
+        in_hook = forwards_lease("Failed", FAILURE, conditions=FORWARD_FAILED_IN_HOOK)
+        failed = forwards_lease("Failed", FAILURE, conditions=FORWARD_FAILED)
+        # one read to verify the lease, then the polls
+        lease = await self._wait(in_hook, in_hook, in_hook, failed, attach=True)
+        assert lease.attached and lease.get.await_count == 4
+        assert lease.failed_forwards == {"bt": f"forward 'bt' failed: {FAILURE}"}
+
+    async def test_request_stops_at_once_for_a_failed_forward_also_in_a_hook(self):
+        with pytest.raises(ForwardError, match="forward 'bt' failed"):
+            await self._wait(forwards_lease("Failed", FAILURE, conditions=FORWARD_FAILED_IN_HOOK))
+
+    async def test_pending_forward_shows_the_forwards_and_not_the_hooks(self):
+        statuses: list[str] = []
+        record = lambda self, text, **kwargs: statuses.append(text)  # noqa: E731
+        with patch("jumpstarter.client.lease.LeaseAcquisitionSpinner.update_status", record):
+            await self._wait(
+                forwards_lease("Pending", conditions=FORWARD_FAILED_IN_HOOK[:1] + FORWARDS_PENDING[2:]),
+                forwards_lease("Pending", conditions=FORWARDS_PENDING),
+                forwards_lease("Listening"),
+            )
+        assert statuses[0] == "Waiting for beforeLease hooks: Waiting for the beforeLease hook of roles: `headunit`"
+        assert statuses[1] == "Waiting for forwards: `bt`"
 
     async def test_request_that_tolerates_forwards_still_stops_for_a_lost_member(self):
         with pytest.raises(LeaseError, match="member 'headunit' lost its exporter") as excinfo:

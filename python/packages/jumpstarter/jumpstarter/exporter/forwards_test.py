@@ -18,7 +18,14 @@ from jumpstarter_protocol.jumpstarter.v1 import common_pb2
 from jumpstarter.common import TemporaryTcpListener
 from jumpstarter.common.ports import Port
 from jumpstarter.driver import Driver
-from jumpstarter.exporter.forwards import PROCESS_SEQUENCE, ForwardManager, ForwardSequence
+from jumpstarter.exporter.forwards import (
+    FORWARD_LOCAL_CLIENT_TIMEOUT,
+    FORWARD_PEER_JOIN_TIMEOUT,
+    JOIN_FRAME,
+    PROCESS_SEQUENCE,
+    ForwardManager,
+    ForwardSequence,
+)
 from jumpstarter.streams.common import create_memory_stream
 from jumpstarter.streams.router import RouterStream
 
@@ -410,6 +417,11 @@ async def test_failed_local_service_closes_the_connection_and_keeps_the_forward(
         await requires.wait_state(READY)
         assert FAILED not in provides.controller.states()
         assert FAILED not in requires.controller.states()
+        # The local side of the provides end did not open: it sent no join frame,
+        # and no end reported a connection that never carried data.
+        assert CONNECTED not in provides.controller.states()
+        assert CONNECTED not in requires.controller.states()
+        assert requires.manager._ends[(LEASE_UID, "bt")].connections == 0
         async with await connect_local(listen):
             pass
 
@@ -503,6 +515,49 @@ async def test_setup_for_a_port_that_is_not_a_stream_socket_reports_failed():
         assert "stream transport" in end.controller.reports[-1].message
 
 
+async def test_log_records_have_the_port_name_and_no_local_address(caplog):
+    # A client of the lease can read the log stream of the session.
+    caplog.set_level("DEBUG")
+    listen, dead = free_address(), free_address()
+    with socket.socket() as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        in_use = f"127.0.0.1:{taken.getsockname()[1]}"
+        async with running() as (tg, router), local_service() as (service, _):
+            requires = End(tg, router, [Port(name="controller", direction="requires", listen=listen)])
+            provides = End(tg, router, [Port(name="rootcanal", direction="provides", connect=service)])
+            provides.driver.logger.setLevel("DEBUG")
+            broken = End(tg, router, [Port(name="broken", direction="requires", listen=in_use)])
+            # The service of this end does not answer.
+            gone = End(tg, router, [Port(name="gone", direction="provides", connect=dead)])
+            requires.controller.peer = provides.manager
+            await provides.setup("rootcanal", PROVIDES)
+            await requires.setup("controller", REQUIRES)
+            await broken.setup("broken", REQUIRES, forward="broken")
+            await gone.setup("gone", PROVIDES, forward="gone")
+            await requires.wait_state(READY)
+            await broken.wait_state(FAILED, "broken")
+            async with await connect_local(listen) as client:
+                assert await read_exactly(client, 4) == b"hci:"
+
+            await gone.manager.handle(
+                jumpstarter_pb2.ListenResponse(
+                    forward_connect=jumpstarter_pb2.ForwardConnect(
+                        lease_uid=LEASE_UID, forward_name="gone", router_endpoint="router.test:443", router_token="t"
+                    )
+                )
+            )
+            await wait_for(lambda: "Forward gone: connection failed" in caplog.text)
+
+    assert "Forward bt: listening for port controller" in caplog.text
+    assert "Forward broken: port 'broken': cannot open the listener" in caplog.text
+    assert "Connecting port rootcanal to its local service" in caplog.text
+    assert "Forward gone: connection failed: Connection refused" in caplog.text
+    for address in (listen, in_use, dead, service):
+        assert address not in caplog.text
+        assert ":" + address.rsplit(":", 1)[1] not in caplog.text
+
+
 # The provides side
 
 
@@ -566,6 +621,117 @@ async def test_a_client_connection_is_not_a_forward_instruction():
         )
         assert handled is False
         assert end.manager._reporter_scope is None
+
+
+async def provides_with_connect(router, service: str, tg, token: str = "token-1"):
+    """A provides end that got the connect instruction of one connection."""
+    provides = End(tg, router, [Port(name="rootcanal", direction="provides", connect=service)])
+    await provides.setup("rootcanal", PROVIDES)
+    await provides.wait_state(READY)
+    await provides.manager.handle(
+        jumpstarter_pb2.ListenResponse(
+            forward_connect=jumpstarter_pb2.ForwardConnect(
+                lease_uid=LEASE_UID,
+                forward_name="bt",
+                connection_id="stream-1",
+                peer_member_name="peer",
+                router_endpoint="router.test:443",
+                router_token=token,
+            )
+        )
+    )
+    await wait_for(lambda: router.opened == [token])
+    return provides
+
+
+async def test_end_sends_its_join_frame_only_after_its_local_side_is_open():
+    hold = Event()
+
+    class SlowDriver(PortDriver):
+        @asynccontextmanager
+        async def connect_port(self, port):
+            await hold.wait()
+            async with Driver.connect_port(self, port) as stream:
+                yield stream
+
+    async with running() as (tg, router), local_service() as (service, connections):
+        provides = End(tg, router, [])
+        provides.driver = SlowDriver(ports=[Port(name="rootcanal", direction="provides", connect=service)])
+        provides.manager.ports = {port.name: (provides.driver, port) for port in provides.driver.ports}
+        await provides.setup("rootcanal", PROVIDES)
+        await provides.wait_state(READY)
+        await provides.manager.handle(
+            jumpstarter_pb2.ListenResponse(
+                forward_connect=jumpstarter_pb2.ForwardConnect(
+                    lease_uid=LEASE_UID, forward_name="bt", router_endpoint="router.test:443", router_token="token-1"
+                )
+            )
+        )
+        await wait_for(lambda: router.opened == ["token-1"])
+        async with router.connect("router.test:443", "token-1") as remote:
+            await remote.send(JOIN_FRAME)
+            # The local side is not open: no frame, and the end is not CONNECTED.
+            with anyio.move_on_after(0.2) as scope:
+                await remote.receive()
+            assert scope.cancelled_caught
+            assert provides.controller.states() == [READY]
+
+            hold.set()
+            # The join frame comes first, then the data of the service.
+            with fail_after(5):
+                assert await remote.receive() == JOIN_FRAME
+            assert await read_exactly(remote, 4) == b"hci:"
+            await provides.wait_state(CONNECTED)
+        assert len(connections) == 1
+
+
+async def test_first_frame_with_data_is_the_signal_and_the_data():
+    async with running() as (tg, router), local_service() as (service, _):
+        provides = await provides_with_connect(router, service, tg)
+        async with router.connect("router.test:443", "token-1") as remote:
+            # A peer that sends data in its first frame, and no empty frame.
+            await remote.send(b"ping")
+            with fail_after(5):
+                assert await remote.receive() == JOIN_FRAME
+            # No byte of the first frame is lost.
+            assert await read_exactly(remote, 8) == b"hci:PING"
+            await provides.wait_state(CONNECTED)
+        await provides.wait_state(READY)
+
+
+async def test_end_is_not_connected_before_the_first_frame_of_the_peer():
+    async with running() as (tg, router), local_service() as (service, connections):
+        provides = End(
+            tg,
+            router,
+            [Port(name="rootcanal", direction="provides", connect=service)],
+            peer_join_timeout=0.3,
+        )
+        await provides.setup("rootcanal", PROVIDES)
+        await provides.wait_state(READY)
+        await provides.manager.handle(
+            jumpstarter_pb2.ListenResponse(
+                forward_connect=jumpstarter_pb2.ForwardConnect(
+                    lease_uid=LEASE_UID, forward_name="bt", router_endpoint="router.test:443", router_token="token-1"
+                )
+            )
+        )
+        async with router.connect("router.test:443", "token-1") as remote:
+            # The end opened its local side and sent its frame. The peer sends none.
+            with fail_after(5):
+                assert await remote.receive() == JOIN_FRAME
+            assert len(connections) == 1
+            # After the time limit the end closes the stream.
+            await expect_closed(remote)
+        assert provides.controller.states() == [READY]
+        await wait_for(lambda: provides.manager._ends[(LEASE_UID, "bt")].connections == 0)
+
+
+def test_the_time_limits_of_a_connection():
+    # The time limit of the wire rule, and the shorter one of a path end that waits for a local client.
+    assert FORWARD_PEER_JOIN_TIMEOUT == 30.0
+    assert FORWARD_LOCAL_CLIENT_TIMEOUT < FORWARD_PEER_JOIN_TIMEOUT
+    assert JOIN_FRAME == b""
 
 
 # Reports
@@ -839,7 +1005,7 @@ async def test_path_end_that_listens_waits_for_its_local_client_for_the_time_lim
             tg,
             router,
             [Port(name="uart", direction="connects", listen=listen)],
-            peer_join_timeout=0.2,
+            local_client_timeout=0.2,
         )
         initiator.controller.peer = responder.manager
         await responder.setup("uart", CONNECTS, forward="uart")
@@ -851,6 +1017,64 @@ async def test_path_end_that_listens_waits_for_its_local_client_for_the_time_lim
         async with await connect_local(initiator_listen) as client:
             await expect_closed(client)
         assert CONNECTED not in responder.controller.states("uart")
+        # It sent no join frame: the initiator did not report a connection.
+        assert CONNECTED not in initiator.controller.states("uart")
+
+
+async def test_path_to_a_dead_service_is_not_connected_and_backs_off():
+    async with running() as (tg, router), accepting_service() as (a_service, a_accepted):
+        initiator = End(tg, router, [Port(name="uart", direction="connects", connect=a_service)], path_backoff=0.02)
+        # No service listens on the connect address of the other end.
+        responder = End(tg, router, [Port(name="uart", direction="connects", connect=free_address())])
+        initiator.controller.peer = responder.manager
+        await responder.setup("uart", CONNECTS, forward="uart")
+        await initiator.setup("uart", CONNECTS, forward="uart", initiator=True)
+
+        async def drain():
+            # The initiator opens its local service again for each try.
+            async for _stream, done in a_accepted:
+                done.set()
+
+        tg.start_soon(drain)
+        # Delays of 20, 40, 80, 160, 320 and 640 ms: 6 or 7 tries in one second.
+        # Without the growing delay there are about 50.
+        await anyio.sleep(1.0)
+        assert 3 <= len(initiator.controller.dials) <= 8
+        assert CONNECTED not in initiator.controller.states("uart")
+        assert CONNECTED not in responder.controller.states("uart")
+
+
+async def test_path_that_stayed_open_is_opened_again_without_a_longer_delay():
+    async with running() as (tg, router), accepting_service() as (a_service, a_accepted), accepting_service() as (
+        b_service,
+        b_accepted,
+    ):
+        initiator = End(
+            tg,
+            router,
+            [Port(name="uart", direction="connects", connect=a_service)],
+            path_backoff=0.02,
+            path_stable_after=0.1,
+        )
+        responder = End(tg, router, [Port(name="uart", direction="connects", connect=b_service)])
+        initiator.controller.peer = responder.manager
+        await responder.setup("uart", CONNECTS, forward="uart")
+        await initiator.setup("uart", CONNECTS, forward="uart", initiator=True)
+
+        for round_ in range(4):
+            with fail_after(5):
+                _a, a_done = await a_accepted.receive()
+                _b, b_done = await b_accepted.receive()
+            await initiator.wait_state(CONNECTED, "uart")
+            # The path stays open for longer than path_stable_after.
+            await anyio.sleep(0.15)
+            started = anyio.current_time()
+            await router.cut(router.opened[-1])
+            a_done.set()
+            b_done.set()
+            await wait_for(lambda round_=round_: len(initiator.controller.dials) == round_ + 2)
+            # Each time the delay is the first one, 20 ms. A delay that grows is 320 ms in the last round.
+            assert anyio.current_time() - started < 0.25
 
 
 # The frames of a real RouterService stream

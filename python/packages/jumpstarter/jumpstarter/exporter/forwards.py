@@ -13,6 +13,13 @@ router stream for each connection.
   the other end those of the ``provides`` side. Each end uses its local mode,
   ``listen`` or ``connect``. A path has one connection at a time.
 
+The router gives no signal when the second caller opens a stream. Thus the two
+ends use this rule for each connection: when its local side is open, an end
+sends one empty data frame (``JOIN_FRAME``) on the router stream. An end counts
+the connection as open, and reports ``CONNECTED``, only after it gets the first
+frame from the other end. If no frame arrives in ``FORWARD_PEER_JOIN_TIMEOUT``
+seconds, the end closes the stream.
+
 The exporter reports each change of the state of an end with ``ReportForward``.
 """
 
@@ -31,12 +38,14 @@ from typing import TYPE_CHECKING, Any
 import grpc
 from anyio import (
     TASK_STATUS_IGNORED,
+    BrokenResourceError,
     CancelScope,
     EndOfStream,
     Event,
     Lock,
     create_memory_object_stream,
     create_task_group,
+    current_time,
     fail_after,
     sleep,
     sleep_forever,
@@ -53,14 +62,27 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+JOIN_FRAME = b""
+"""The empty data frame that an end sends on the router stream when its local side is open."""
+
 FORWARD_PEER_JOIN_TIMEOUT = 30.0
-"""Seconds that one end waits for its peer to join the router stream of a connection."""
+"""Seconds that an end waits, after its own join frame, for the first frame of the other end."""
+
+FORWARD_LOCAL_CLIENT_TIMEOUT = 20.0
+"""Seconds that a path end that listens waits for a local client, for a connection that the peer opened.
+
+It is less than FORWARD_PEER_JOIN_TIMEOUT: this end stops before the peer, which
+waits for the join frame, does. Thus it never takes a local client for a stream
+that the peer closed a moment before.
+"""
 
 _RPC_TIMEOUT = 30
 _REPORT_BACKOFF_BASE = 1.0
 _REPORT_BACKOFF_CAP = 30.0
 _PATH_BACKOFF_BASE = 0.5
 _PATH_BACKOFF_CAP = 30.0
+_PATH_STABLE_AFTER = 5.0
+"""Seconds that a path must stay open before its initiator opens it again without a longer delay."""
 
 _FINAL_REPORT_CODES = frozenset({
     grpc.StatusCode.UNIMPLEMENTED,
@@ -130,7 +152,28 @@ class ForwardEnd:
 
 def _os_error_cause(error: OSError) -> str:
     # str(error) can contain the local address, which must stay in the exporter.
-    return os.strerror(error.errno) if error.errno else type(error).__name__
+    if error.errno:
+        return os.strerror(error.errno)
+    # connect_tcp() raises an OSError without a number for the errors of all its tries.
+    cause = error.__cause__
+    causes = cause.exceptions if isinstance(cause, BaseExceptionGroup) else [cause]
+    for inner in causes:
+        if isinstance(inner, OSError) and inner.errno:
+            return os.strerror(inner.errno)
+    return type(error).__name__
+
+
+class _NoLocalClient(Exception):
+    """A path end that listens got no local client for a connection that the peer opened."""
+
+
+def _error_cause(error: BaseException) -> str:
+    """The cause of a failed connection, for a report or a log record.
+
+    A client of the lease can read the two (the lease status, and the log stream
+    of the session), and the listen and connect addresses stay in the exporter.
+    """
+    return _os_error_cause(error) if isinstance(error, OSError) else str(error) or type(error).__name__
 
 
 @asynccontextmanager
@@ -150,8 +193,10 @@ class ForwardManager:
     """Runs the listeners and the connections. aclose() stops and waits for them."""
     lease_name: str = ""
     peer_join_timeout: float = FORWARD_PEER_JOIN_TIMEOUT
+    local_client_timeout: float = FORWARD_LOCAL_CLIENT_TIMEOUT
     report_backoff: float = _REPORT_BACKOFF_BASE
     path_backoff: float = _PATH_BACKOFF_BASE
+    path_stable_after: float = _PATH_STABLE_AFTER
     sequence: ForwardSequence = field(default_factory=lambda: PROCESS_SEQUENCE)
 
     _ends: dict[tuple[str, str], ForwardEnd] = field(init=False, default_factory=dict)
@@ -352,14 +397,15 @@ class ForwardManager:
                 local_port=port,
                 reuse_port=False,
             ):
-                logger.info("Forward %s: listening on %s for port %s", end.name, end.port.listen, end.port.name)
+                # The record has the name of the port, and not its address: a
+                # client of the lease can read the log stream of the session.
+                logger.info("Forward %s: listening for port %s", end.name, end.port.name)
                 self._set_state(end, _READY)
                 await sleep_forever()
         except OSError as error:
-            logger.error("Forward %s: cannot listen on %s: %s", end.name, end.port.listen, error)
-            self._set_state(
-                end, _FAILED, f"port '{end.port.name}': cannot open the listener: {_os_error_cause(error)}"
-            )
+            message = f"port '{end.port.name}': cannot open the listener: {_os_error_cause(error)}"
+            logger.error("Forward %s: %s", end.name, message)
+            self._set_state(end, _FAILED, message)
 
     async def _guard_local(self, end: ForwardEnd, handler, local) -> None:
         """Run the handler of one local connection. Its failure does not stop the listener."""
@@ -367,7 +413,7 @@ class ForwardManager:
             async with local:
                 await handler(end, local)
         except Exception as error:  # noqa: BLE001
-            logger.warning("Forward %s: connection failed: %s", end.name, error)
+            logger.warning("Forward %s: connection failed: %s", end.name, _error_cause(error))
 
     # Connections
 
@@ -405,15 +451,18 @@ class ForwardManager:
 
     @asynccontextmanager
     async def _take_local(self, end: ForwardEnd) -> AsyncGenerator[Any, None]:
-        with fail_after(self.peer_join_timeout):
-            local, done = await end.local_rx.receive()
+        try:
+            with fail_after(self.local_client_timeout):
+                local, done = await end.local_rx.receive()
+        except TimeoutError:
+            raise _NoLocalClient(f"no local client in {self.local_client_timeout:.0f}s") from None
         try:
             yield local
         finally:
             done.set()
 
     async def _accept_connection(self, end: ForwardEnd, endpoint: str, token: str) -> None:
-        """One connection that the peer opened: join its router stream and open the local side."""
+        """One connection that the peer opened: open its router stream and the local side, then join."""
         assert end.port is not None and end.driver is not None
         if end.local_rx is not None:
             open_local = self._take_local(end)
@@ -426,14 +475,20 @@ class ForwardManager:
             else:
                 await self._bridge(end, endpoint, token, open_local)
         except Exception as error:  # noqa: BLE001
-            logger.warning("Forward %s: connection failed: %s", end.name, error)
+            logger.warning("Forward %s: connection failed: %s", end.name, _error_cause(error))
 
     async def _initiate_path(self, end: ForwardEnd) -> None:
-        """The initiator of a path with a local service: open the path, and open it again after a cut."""
+        """The initiator of a path with a local service: open the path, and open it again after a cut.
+
+        The delay between two tries grows to its maximum. Only a path that
+        stayed open for path_stable_after seconds starts the delay again: a
+        path that the other end closes at once, for example because its local
+        service does not answer, is not opened again and again without a delay.
+        """
         assert end.port is not None and end.driver is not None
         delay = self.path_backoff
         while True:
-            opened = False
+            lived = 0.0
             try:
                 async with end.driver.connect_port(end.port) as local:
                     # Keep the one local connection while the peer is not ready.
@@ -446,54 +501,57 @@ class ForwardManager:
                             logger.debug("Forward %s: DialPeer failed (%s), trying again", end.name, error.code())
                             await sleep(delay)
                             delay = min(delay * 2, _PATH_BACKOFF_CAP)
-                    opened = await self._bridge(
-                        end, response.router_endpoint, response.router_token, _opened(local)
-                    )
+                    lived = await self._bridge(end, response.router_endpoint, response.router_token, _opened(local))
             except Exception as error:  # noqa: BLE001
-                logger.debug("Forward %s: path not open: %s", end.name, error)
-            if opened:
+                logger.debug("Forward %s: path not open: %s", end.name, _error_cause(error))
+            if lived >= self.path_stable_after:
                 delay = self.path_backoff
             await sleep(delay)
             delay = min(delay * 2, _PATH_BACKOFF_CAP)
 
-    async def _bridge(self, end: ForwardEnd, endpoint: str, token: str, open_local) -> bool:
+    async def _bridge(self, end: ForwardEnd, endpoint: str, token: str, open_local) -> float:
         """Connect one local connection to one router stream until one of them closes.
 
-        Returns True if the peer joined and the data path was open.
+        The end opens its local side first, and then sends its join frame: the
+        frame tells the peer that this side of the connection can carry data.
+        The connection is open, and the end CONNECTED, when the first frame of
+        the peer arrives after that. A first frame with data is the signal and
+        data: the bytes go to the local side.
+
+        Returns the seconds that the connection was open: 0.0 if it did not open.
         """
         assert end.port is not None and end.driver is not None
-        opened = False
-        async with self.router_connect(endpoint, token) as remote:
-            # The router gives no signal when the peer joins. Thus each end sends
-            # one empty frame when it opens the stream, and the first frame from
-            # the peer shows that it joined.
-            await remote.send(b"")
+        # The router stream is open before the local side: an end whose local side
+        # does not open closes the stream, and the peer sees that at once.
+        async with self.router_connect(endpoint, token) as remote, open_local as local:
+            await remote.send(JOIN_FRAME)
             try:
                 with fail_after(self.peer_join_timeout):
                     first = await remote.receive()
             except TimeoutError:
                 logger.warning(
-                    "Forward %s: the peer did not join the stream in %.0fs, closing the connection",
+                    "Forward %s: no frame from the peer in %.0fs, closing the connection",
                     end.name,
                     self.peer_join_timeout,
                 )
-                return False
-            except EndOfStream:
-                return False
-            async with open_local as local:
-                if first:
-                    await local.send(first)
-                opened = True
-                self._connection_opened(end)
-                try:
-                    async with forward_stream(remote, local, metrics_driver_type=end.driver.driver_type):
-                        pass
-                except Exception as error:  # noqa: BLE001
-                    logger.debug("Forward %s: stream ended on an error: %s", end.name, error)
-                finally:
-                    self._connection_closed(end)
+                return 0.0
+            except (EndOfStream, BrokenResourceError):
+                # The peer closed the stream and sent no frame: its local side did not open.
+                logger.warning("Forward %s: the peer closed the connection before it was open", end.name)
+                return 0.0
+            if first:
+                await local.send(first)
+            opened_at = current_time()
+            self._connection_opened(end)
+            try:
+                async with forward_stream(remote, local, metrics_driver_type=end.driver.driver_type):
+                    pass
+            except Exception as error:  # noqa: BLE001
+                logger.debug("Forward %s: stream ended on an error: %s", end.name, _error_cause(error))
+            finally:
+                self._connection_closed(end)
         await self._notify_driver(end)
-        return opened
+        return current_time() - opened_at
 
     def _connection_opened(self, end: ForwardEnd) -> None:
         end.connections += 1
@@ -595,7 +653,9 @@ class ForwardManager:
 
 
 __all__ = [
+    "FORWARD_LOCAL_CLIENT_TIMEOUT",
     "FORWARD_PEER_JOIN_TIMEOUT",
+    "JOIN_FRAME",
     "PROCESS_SEQUENCE",
     "ForwardEnd",
     "ForwardManager",

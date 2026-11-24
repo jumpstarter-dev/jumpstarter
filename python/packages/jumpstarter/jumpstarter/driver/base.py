@@ -245,7 +245,8 @@ class Driver(
         if address is None:
             raise ValueError(f"port '{port.name}' has no local address to connect to")
         host, tcp_port = address
-        self.logger.debug("Connecting port %s to %s:%d", port.name, host, tcp_port)
+        # Without the address: a client of the lease can read the log stream of the session.
+        self.logger.debug("Connecting port %s to its local service", port.name)
         async with await connect_tcp(remote_host=host, remote_port=tcp_port) as stream:
             yield stream
 

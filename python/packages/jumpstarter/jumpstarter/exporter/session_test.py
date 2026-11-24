@@ -1348,6 +1348,25 @@ def test_session_counts_the_port_of_a_proxied_driver_one_time():
 
 
 @pytest.mark.anyio
+async def test_get_report_gives_a_proxied_driver_two_times_with_the_same_uuid_and_ports():
+    # A client needs the two reports: the driver, and its alias. The controller takes
+    # the ports of one UUID one time, and does not see two ports with one name.
+    from jumpstarter_driver_composite.driver import Proxy
+
+    from jumpstarter.common.ports import Port
+
+    target = SimpleDriver(ports=[Port(name="rootcanal", direction="provides", connect="127.0.0.1:7300")])
+    root = CompositeDriver_(children={"target": target, "alias": Proxy(ref="target")})
+
+    with Session(root_device=root) as session:
+        response = await session.GetReport(empty_pb2.Empty(), None)
+    with_ports = [report for report in response.reports if report.ports]
+    assert [report.uuid for report in with_ports] == [str(target.uuid)] * 2
+    assert {report.labels["jumpstarter.dev/name"] for report in with_ports} == {"target", "alias"}
+    assert [[port.name for port in report.ports] for report in with_ports] == [["rootcanal"], ["rootcanal"]]
+
+
+@pytest.mark.anyio
 async def test_get_report_contains_the_ports_without_the_local_addresses():
     from jumpstarter_protocol.jumpstarter.v1 import common_pb2
 
