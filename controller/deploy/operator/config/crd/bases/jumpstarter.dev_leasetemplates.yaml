@@ -231,6 +231,8 @@ spec:
             x-kubernetes-validations:
             - message: a template member cannot set excluded
               rule: self.members.all(m, !has(m.excluded) || !m.excluded)
+            - message: a template must have a required member
+              rule: self.members.exists(m, !has(m.optional) || !m.optional)
             - message: constraints must reference declared members
               rule: '!has(self.constraints) || self.constraints.all(c, c.members.all(n,
                 self.members.exists(m, m.name == n)))'

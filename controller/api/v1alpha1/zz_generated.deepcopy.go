@@ -519,6 +519,11 @@ func (in *ExporterStatus) DeepCopyInto(out *ExporterStatus) {
 		*out = new(corev1.LocalObjectReference)
 		**out = **in
 	}
+	if in.ClaimRef != nil {
+		in, out := &in.ClaimRef, &out.ClaimRef
+		*out = new(ClaimLeaseReference)
+		**out = **in
+	}
 	if in.LeaseHooks != nil {
 		in, out := &in.LeaseHooks, &out.LeaseHooks
 		*out = new(ExporterLeaseHooks)

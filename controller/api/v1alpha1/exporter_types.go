@@ -50,6 +50,11 @@ type ExporterStatus struct {
 	Devices []Device `json:"devices,omitempty"`
 	// LeaseRef is a reference to the lease currently assigned to this exporter.
 	LeaseRef *corev1.LocalObjectReference `json:"leaseRef,omitempty"`
+	// ClaimRef is the lease that gets or holds this exporter. The lease
+	// controller sets it before it creates the ExporterClaim of the exporter
+	// and removes it when the bind attempt fails or the lease ends. While it
+	// is set, spec.exclusionGroup cannot change.
+	ClaimRef *ClaimLeaseReference `json:"claimRef,omitempty"`
 	// LeaseHooks records how far the exporter got with the lifecycle hooks of
 	// its latest lease. It survives exporter restarts, so a restarted exporter
 	// neither repeats a finished beforeLease hook nor skips an owed afterLease hook.
@@ -163,7 +168,7 @@ const (
 // +kubebuilder:printcolumn:name="Token Expires",type="string",JSONPath=".status.tokenExpiresAt"
 
 // Exporter is the Schema for the exporters API
-// +kubebuilder:validation:XValidation:rule="!has(self.status) || !has(self.status.leaseRef) || ((has(self.spec) && has(self.spec.exclusionGroup)) == (has(oldSelf.spec) && has(oldSelf.spec.exclusionGroup)) && (!(has(self.spec) && has(self.spec.exclusionGroup)) || self.spec.exclusionGroup == oldSelf.spec.exclusionGroup))",message="spec.exclusionGroup cannot change while a lease holds the exporter"
+// +kubebuilder:validation:XValidation:rule="!has(self.status) || !(has(self.status.leaseRef) || has(self.status.claimRef)) || ((has(self.spec) && has(self.spec.exclusionGroup)) == (has(oldSelf.spec) && has(oldSelf.spec.exclusionGroup)) && (!(has(self.spec) && has(self.spec.exclusionGroup)) || self.spec.exclusionGroup == oldSelf.spec.exclusionGroup))",message="spec.exclusionGroup cannot change while a lease holds the exporter"
 type Exporter struct {
 	// Exporters represent the services that connect to the physical or virtual
 	// devices. They are responsible for providing the access to the devices and

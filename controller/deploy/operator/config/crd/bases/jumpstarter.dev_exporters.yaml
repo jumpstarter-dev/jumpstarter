@@ -77,6 +77,31 @@ spec:
           status:
             description: ExporterStatus defines the observed state of Exporter.
             properties:
+              claimRef:
+                description: |-
+                  ClaimRef is the lease that gets or holds this exporter. The lease
+                  controller sets it before it creates the ExporterClaim of the exporter
+                  and removes it when the bind attempt fails or the lease ends. While it
+                  is set, spec.exclusionGroup cannot change.
+                properties:
+                  attempt:
+                    description: Attempt is status.bindAttempt of the lease when it
+                      created the claim.
+                    format: int64
+                    type: integer
+                  name:
+                    description: Name of the lease.
+                    maxLength: 253
+                    type: string
+                  uid:
+                    description: UID of the lease. A lease name can be used again
+                      after the lease is deleted.
+                    type: string
+                required:
+                - attempt
+                - name
+                - uid
+                type: object
               conditions:
                 description: Conditions represent the latest available observations
                   of the exporter state.
@@ -342,10 +367,10 @@ spec:
         type: object
         x-kubernetes-validations:
         - message: spec.exclusionGroup cannot change while a lease holds the exporter
-          rule: '!has(self.status) || !has(self.status.leaseRef) || ((has(self.spec)
-            && has(self.spec.exclusionGroup)) == (has(oldSelf.spec) && has(oldSelf.spec.exclusionGroup))
-            && (!(has(self.spec) && has(self.spec.exclusionGroup)) || self.spec.exclusionGroup
-            == oldSelf.spec.exclusionGroup))'
+          rule: '!has(self.status) || !(has(self.status.leaseRef) || has(self.status.claimRef))
+            || ((has(self.spec) && has(self.spec.exclusionGroup)) == (has(oldSelf.spec)
+            && has(oldSelf.spec.exclusionGroup)) && (!(has(self.spec) && has(self.spec.exclusionGroup))
+            || self.spec.exclusionGroup == oldSelf.spec.exclusionGroup))'
     served: true
     storage: true
     subresources:

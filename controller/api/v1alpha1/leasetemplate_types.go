@@ -24,6 +24,7 @@ import (
 // that a lab administrator publishes. A client requests it by its name, and
 // the client service copies it into the new lease.
 // +kubebuilder:validation:XValidation:rule="self.members.all(m, !has(m.excluded) || !m.excluded)",message="a template member cannot set excluded"
+// +kubebuilder:validation:XValidation:rule="self.members.exists(m, !has(m.optional) || !m.optional)",message="a template must have a required member"
 // +kubebuilder:validation:XValidation:rule="!has(self.constraints) || self.constraints.all(c, c.members.all(n, self.members.exists(m, m.name == n)))",message="constraints must reference declared members"
 type LeaseTemplateSpec struct {
 	// Description is a short description for persons.

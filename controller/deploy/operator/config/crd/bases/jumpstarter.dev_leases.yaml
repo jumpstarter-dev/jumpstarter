@@ -354,6 +354,9 @@ spec:
                 && size(self.selector.matchLabels) > 0) || (has(self.selector.matchExpressions)
                 && size(self.selector.matchExpressions) > 0)) || (has(self.exporterRef)
                 && has(self.exporterRef.name) && size(self.exporterRef.name) > 0))'
+            - message: a lease with members must have a required member
+              rule: '!has(self.members) || size(self.members) == 0 || self.members.exists(m,
+                !has(m.optional) || !m.optional)'
             - message: constraints must reference declared members
               rule: '!has(self.constraints) || (has(self.members) && self.constraints.all(c,
                 c.members.all(n, self.members.exists(m, m.name == n))))'
