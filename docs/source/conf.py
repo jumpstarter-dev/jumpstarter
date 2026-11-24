@@ -40,7 +40,9 @@ extensions = [
 templates_path = ["_templates"]
 exclude_patterns = []
 
-mermaid_version = "10.9.1"
+mermaid_version = "11.12.1"
+# The generated exporter lifecycle diagram asks for the ELK layout in its front matter.
+mermaid_include_elk = True
 mermaid_init_js = ""
 
 suppress_warnings = [
