@@ -16,33 +16,14 @@ component runs on infrastructure you control.
 
 ## Highlights
 
-- **One interface for real and virtual devices** - The same driver
-  interfaces, CLI, and Python API work with a board on your desk, a board in a
-  remote lab, or a virtual target such as QEMU, Renode, an Android emulator, or
-  Cuttlefish.
-- **Your tools, unchanged** - Tests are plain pytest, shell scripts, or any
-  other program. `jmp shell` connects them to a device, and the same commands
-  run unchanged in CI.
-- **Ready for AI agents** - The built-in MCP server lets any assistant that
-  supports local MCP servers lease, control, and inspect hardware with your
-  credentials, bound by the same access policies as you.
-- **Remote labs without lab accounts** - Exporters connect out to the service
-  over gRPC, so lab hosts can sit behind NAT or a firewall. Users never log in
-  to them, and local flash images stream through the lease connection, so no
-  shared filesystem is needed.
-- **Secure sharing** - Single sign-on through your OIDC provider, leases for
-  exclusive access, and access policies that decide which clients can use which
-  devices and for how long.
-- **Kubernetes native** - Exporters, clients, leases, and access policies are
-  Kubernetes resources, and pools of virtual devices scale with lease demand.
-  The controller and router serve Prometheus metrics, and an optional telemetry
-  service collects exporter metrics and logs.
-- **Broad hardware coverage** - More than 60 driver packages for power,
-  serial consoles, storage and flashing, video, networking, Bluetooth, mobile
-  devices, and automotive protocols such as CAN, UDS, DoIP, and SOME/IP. New
-  drivers are written in plain Python.
-- **Open source** - Apache 2.0 licensed, self-hosted, and supported on Linux
-  and macOS.
+- 🧪 **Unified Testing** - One interface for real boards and virtual targets alike
+- 🔌 **Hardware Abstraction** - Drive UART, CAN, GPIO, power, video, and USB through drivers
+- 🐍 **Python-Powered** - Plain pytest or shell scripts, with no job language to learn
+- 🌐 **Collaborative** - Lease hardware across teams with OIDC sign-on and access policies
+- ⚙️ **Automation Ready** - Built-in MCP server; agents act with your identity and policies
+- 🔒 **Remote Labs** - Exporters dial out; no lab accounts or shared filesystems needed
+- ☸️ **Kubernetes Native** - CRDs and an operator; virtual device pools scale with demand
+- 💻 **Cross-Platform** - Supports Linux and macOS, open source under Apache 2.0
 
 ## Repository Structure
 
