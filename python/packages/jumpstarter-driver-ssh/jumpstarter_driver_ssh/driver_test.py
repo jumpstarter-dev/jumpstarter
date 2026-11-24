@@ -465,9 +465,10 @@ def test_ssh_command_with_identity_string():
         assert mock_run.called
         call_args = mock_run.call_args[0][0]  # First positional argument
 
-        # Should include -i flag with temporary identity file
+        # Should include -i flag with temporary identity file, offered alone
         assert "-i" in call_args
         identity_file_index = call_args.index("-i")
+        assert call_args[identity_file_index - 2:identity_file_index] == ["-o", "IdentitiesOnly=yes"]
         identity_file_path = call_args[identity_file_index + 1]
 
         # The identity file should be a temporary file
@@ -514,9 +515,10 @@ def test_ssh_command_with_identity_file():
             assert mock_run.called
             call_args = mock_run.call_args[0][0]  # First positional argument
 
-            # Should include -i flag with temporary identity file
+            # Should include -i flag with temporary identity file, offered alone
             assert "-i" in call_args
             identity_file_index = call_args.index("-i")
+            assert call_args[identity_file_index - 2:identity_file_index] == ["-o", "IdentitiesOnly=yes"]
             identity_file_path = call_args[identity_file_index + 1]
 
             # The identity file should be a temporary file (not the original file)
@@ -557,8 +559,9 @@ def test_ssh_command_without_identity():
         assert mock_run.called
         call_args = mock_run.call_args[0][0]  # First positional argument
 
-        # Should NOT include -i flag
+        # Should NOT include -i flag nor IdentitiesOnly
         assert "-i" not in call_args
+        assert "IdentitiesOnly=yes" not in call_args
 
         # Should include -l testuser
         assert "-l" in call_args

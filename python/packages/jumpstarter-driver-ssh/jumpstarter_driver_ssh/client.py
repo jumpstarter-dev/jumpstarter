@@ -198,9 +198,9 @@ class SSHWrapperClient(CompositeClient):
         ssh_args = shlex.split(self.command)
         default_username = self.username
 
-        # Add identity file if provided
+        # Offer only the identity file, if provided
         if identity_file:
-            ssh_args.extend(["-i", identity_file])
+            ssh_args.extend(["-o", "IdentitiesOnly=yes", "-i", identity_file])
 
         # Add port if specified
         if port and port != 22:
