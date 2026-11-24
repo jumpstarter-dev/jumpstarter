@@ -7,7 +7,7 @@
 #
 # Environment variables:
 #   COMPAT_SCENARIO      - "old-controller" or "old-client" (required)
-#   COMPAT_CONTROLLER_TAG - Controller release tag for old-controller scenario (default: v0.8.1)
+#   COMPAT_CONTROLLER_TAG - Release tag for old-controller scenario; its operator, controller and router are deployed (default: v0.9.0)
 #   COMPAT_CLIENT_VERSION - PyPI version for old-client scenario (default: 0.9.0)
 
 set -euo pipefail
@@ -105,6 +105,10 @@ deploy_old_controller() {
     local BASEDOMAIN="jumpstarter.${IP}.nip.io"
     local GRPC_ENDPOINT="grpc.${BASEDOMAIN}:8082"
     local GRPC_ROUTER_ENDPOINT="router.${BASEDOMAIN}:8083"
+    # The release's operator defaults the controller and router images to
+    # :latest, which is main's newest build rather than the release, so pin
+    # both. Release images are tagged without the leading "v".
+    local CONTROLLER_IMAGE="quay.io/jumpstarter-dev/jumpstarter-controller:${COMPAT_CONTROLLER_TAG#v}"
 
     kubectl config use-context kind-jumpstarter
 
@@ -138,6 +142,7 @@ spec:
     autoProvisioning:
       enabled: true
   controller:
+    image: ${CONTROLLER_IMAGE}
     replicas: 1
     grpc:
       endpoints:
@@ -146,6 +151,7 @@ spec:
             enabled: true
             port: 30010
   routers:
+    image: ${CONTROLLER_IMAGE}
     replicas: 1
     grpc:
       endpoints:

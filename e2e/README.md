@@ -255,8 +255,10 @@ telemetry token.
 ## Lane: `compat` + `old-controller` (`compat_old_controller_test.go`)
 
 Prereq: separate setup path — `make e2e-compat-setup COMPAT_SCENARIO=old-controller
-COMPAT_CONTROLLER_TAG=v0.8.1` deploys an **old (v0.8.1) controller** against current
-client/exporter code. Skipped on PRs (merge-queue/`workflow_dispatch` only).
+COMPAT_CONTROLLER_TAG=v0.9.0` installs that release's operator and deploys an **old
+(v0.9.0) controller and router** against current client/exporter code. The controller
+and router images are pinned to the release, since its operator defaults them to
+`:latest`. Skipped on PRs (merge-queue/`workflow_dispatch` only).
 
 | Test Name | Steps | Pass Check |
 |---|---|---|
