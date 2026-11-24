@@ -93,11 +93,12 @@ func leaseMemberSpecs(lease *jumpstarterdevv1alpha1.Lease) ([]memberSpec, error)
 	for i := range lease.Spec.Members {
 		member := &lease.Spec.Members[i]
 		spec := memberSpec{
-			name:          member.Name,
-			exporterRef:   member.ExporterRef,
-			optional:      member.Optional,
-			excluded:      member.Excluded,
-			allowDisabled: member.AllowDisabled,
+			name:        member.Name,
+			exporterRef: member.ExporterRef,
+			optional:    member.Optional,
+			excluded:    member.Excluded,
+			// For a member with a selector the field has no effect.
+			allowDisabled: member.AllowDisabled && member.ExporterRef != nil,
 		}
 		if member.Selector != nil {
 			selector, err := metav1.LabelSelectorAsSelector(member.Selector)
@@ -134,7 +135,7 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 	}
 
 	if lease.IsBound() {
-		return r.reconcileBoundLease(ctx, result, lease)
+		return r.reconcileBoundLease(ctx, result, lease, state)
 	}
 
 	if err := r.backfillClaims(ctx, lease.Namespace); err != nil {
@@ -145,9 +146,13 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 	if err != nil {
 		return err
 	}
-	// A lease that is not bound keeps no claims: these are from a reconcile
-	// that stopped before it wrote the bind.
-	if len(claimsOf(claims, lease)) > 0 {
+	// A lease that is not bound keeps no claims and no marks: these are from
+	// a reconcile that stopped before it wrote the bind.
+	marks, err := r.leaseHasMarks(ctx, lease)
+	if err != nil {
+		return err
+	}
+	if marks || len(claimsOf(claims, lease)) > 0 {
 		if claims, err = r.startAttempt(ctx, lease, state); err != nil {
 			return err
 		}
@@ -231,34 +236,61 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 		return r.setBindFailure(ctx, result, lease, members, solved.Failure)
 	}
 
-	// The assignment exists. Take the claims, and only then write the bind.
-	if !state.attemptStarted {
-		if _, err := r.startAttempt(ctx, lease, state); err != nil {
-			return err
-		}
-	}
-
 	bound := map[string]ApprovedExporter{}
+	// selected has the exclusion group that the assignment used for each
+	// exporter.
+	selected := map[string]string{}
 	var exporters, groups []string
 	for _, member := range members {
 		name, ok := solved.Bound[member.spec.name]
 		if !ok {
 			continue
 		}
-		selected := member.readyEntry(name)
-		bound[member.spec.name] = selected
+		entry := member.readyEntry(name)
+		bound[member.spec.name] = entry
 		exporters = append(exporters, name)
-		if group := selected.Exporter.Spec.ExclusionGroup; group != "" && !slices.Contains(groups, group) {
+		group := entry.Exporter.Spec.ExclusionGroup
+		selected[name] = group
+		if group != "" && !slices.Contains(groups, group) {
 			groups = append(groups, group)
 		}
 	}
 	slices.Sort(groups)
+
+	// A lease in which no member binds holds nothing and never begins. The
+	// API does not admit a lease without a required member; this keeps the
+	// reconciler safe for one that exists.
+	if len(bound) == 0 {
+		lease.SetStatusUnsatisfiable(jumpstarterdevv1alpha1.LeaseReasonInsufficientExporters,
+			"No member of the lease can bind an exporter")
+		return nil
+	}
+
+	// The assignment exists. Mark the exporters, take the claims, and only
+	// then write the bind.
+	if !state.attemptStarted {
+		if _, err := r.startAttempt(ctx, lease, state); err != nil {
+			return err
+		}
+	}
+
+	ok, cause, err := r.markExporters(ctx, lease, state, selected)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		r.rollbackAttempt(ctx, lease, state)
+		lease.SetStatusPending("NotAvailable", "%s, trying again", cause)
+		result.RequeueAfter = pendingRequeueAfter(lease)
+		return nil
+	}
 
 	ok, blocked, err := r.createBindClaims(ctx, lease, state, claimKeys(exporters, groups))
 	if err != nil {
 		return err
 	}
 	if !ok {
+		r.rollbackAttempt(ctx, lease, state)
 		lease.SetStatusPending("NotAvailable",
 			"Another lease got the claim for %s first, trying again", blocked)
 		result.RequeueAfter = pendingRequeueAfter(lease)
@@ -267,11 +299,11 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 
 	lease.Status.ExclusionGroups = groups
 	if !lease.IsMemberForm() {
-		selected := bound[""]
-		lease.Status.Priority = selected.Policy.Priority
-		lease.Status.SpotAccess = selected.Policy.SpotAccess
+		entry := bound[""]
+		lease.Status.Priority = entry.Policy.Priority
+		lease.Status.SpotAccess = entry.Policy.SpotAccess
 		lease.Status.ExporterRef = &corev1.LocalObjectReference{
-			Name: selected.Exporter.Name,
+			Name: entry.Exporter.Name,
 		}
 		return nil
 	}
@@ -281,11 +313,11 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 	lease.Status.SpotAccess = false
 	for _, spec := range specs {
 		status := jumpstarterdevv1alpha1.LeaseMemberStatus{Name: spec.name}
-		if selected, ok := bound[spec.name]; ok {
+		if entry, ok := bound[spec.name]; ok {
 			status.State = jumpstarterdevv1alpha1.LeaseMemberStateBound
-			status.ExporterRef = &corev1.LocalObjectReference{Name: selected.Exporter.Name}
-			status.Priority = selected.Policy.Priority
-			status.SpotAccess = selected.Policy.SpotAccess
+			status.ExporterRef = &corev1.LocalObjectReference{Name: entry.Exporter.Name}
+			status.Priority = entry.Policy.Priority
+			status.SpotAccess = entry.Policy.SpotAccess
 			// The lease priority is the minimum of the member priorities.
 			if first || status.Priority < lease.Status.Priority {
 				lease.Status.Priority = status.Priority
@@ -311,7 +343,7 @@ func (r *LeaseReconciler) reconcileStatusMembers(
 	lease.Status.Members = statuses
 	lease.SetStatusCondition(jumpstarterdevv1alpha1.LeaseConditionTypePending, false,
 		"Bound", "The members of the lease have their exporters")
-	return r.reconcileMemberConditions(ctx, lease)
+	return r.reconcileMemberConditions(ctx, result, lease)
 }
 
 // setPendingMembers gives a member-form lease that is not bound its member
@@ -479,8 +511,21 @@ func (r *LeaseReconciler) loadBindEnvironment(
 	}
 	for i := range exporters.Items {
 		exporter := &exporters.Items[i]
-		if exporter.Spec.ExclusionGroup != "" && exporterInCleanup(exporter) {
-			env.cleanupGroups[exporter.Spec.ExclusionGroup] = true
+		group := exporter.Spec.ExclusionGroup
+		if group != "" && exporterInCleanup(exporter) {
+			env.cleanupGroups[group] = true
+		}
+		// The mark of another active lease: that lease is in a bind attempt
+		// for the exporter and its group.
+		if ref := exporter.Status.ClaimRef; ref != nil {
+			if holder, ok := active[ref.UID]; ok {
+				if _, held := env.exporterHolder[exporter.Name]; !held {
+					env.exporterHolder[exporter.Name] = holder
+				}
+				if _, held := env.groupHolder[group]; !held && group != "" {
+					env.groupHolder[group] = holder
+				}
+			}
 		}
 	}
 	return env, nil
@@ -716,13 +761,15 @@ func (r *LeaseReconciler) rolesSelectExporterSet(
 	return false, nil
 }
 
-// reconcileBoundLease keeps the claims of a bound lease and, for a member-form
-// lease, finds lost members and sets the Ready and Degraded conditions. It
-// never assigns again: a bound lease keeps its exporters until it ends.
+// reconcileBoundLease keeps the claims and the marks of a bound lease and, for
+// a member-form lease, finds lost members and sets the Ready and Degraded
+// conditions. It never assigns again: a bound lease keeps its exporters until
+// it ends.
 func (r *LeaseReconciler) reconcileBoundLease(
 	ctx context.Context,
 	result *ctrl.Result,
 	lease *jumpstarterdevv1alpha1.Lease,
+	state *bindState,
 ) error {
 	claims, err := r.listClaims(ctx, lease.Namespace)
 	if err != nil {
@@ -732,7 +779,7 @@ func (r *LeaseReconciler) reconcileBoundLease(
 	if claims, err = r.deleteSmallerAttempts(ctx, lease, claims); err != nil {
 		return err
 	}
-	outcome, err := r.ensureBoundClaims(ctx, lease, claims)
+	outcome, err := r.ensureBoundClaims(ctx, lease, claims, state)
 	if err != nil {
 		return err
 	}
@@ -740,13 +787,45 @@ func (r *LeaseReconciler) reconcileBoundLease(
 	case boundClaimsConflict:
 		return nil
 	case boundClaimsRetry:
-		result.RequeueAfter = time.Second
+		requeueWithin(result, time.Second)
+	case boundClaimsHeld:
+		// An old leader can mark an exporter after the bind.
+		if err := r.removeStrayMarks(ctx, lease); err != nil {
+			return err
+		}
 	}
 
 	if !lease.IsMemberForm() {
 		return nil
 	}
-	return r.reconcileMemberConditions(ctx, lease)
+	return r.reconcileMemberConditions(ctx, result, lease)
+}
+
+// requeueWithin makes the result ask for a reconcile after at most this time.
+// A requeue that is already sooner stays.
+func requeueWithin(result *ctrl.Result, after time.Duration) {
+	if after <= 0 {
+		return
+	}
+	if result.RequeueAfter <= 0 || after < result.RequeueAfter {
+		result.RequeueAfter = after
+	}
+}
+
+// processStart is when this controller process started, to the precision that
+// the offline grace needs.
+var processStart = time.Now()
+
+// offlineGrace returns how long the reconciler must still wait before it can
+// take an offline exporter for lost. After a start the controller has no
+// current heartbeat data: the exporters reconnect, and the exporter
+// reconciler needs the offline time limit to show which of them did not.
+func (r *LeaseReconciler) offlineGrace() time.Duration {
+	start := r.StartedAt
+	if start.IsZero() {
+		start = processStart
+	}
+	return time.Until(start.Add(exporterOfflineThreshold))
 }
 
 // reconcileMemberConditions marks the bound members whose exporter is gone as
@@ -754,11 +833,12 @@ func (r *LeaseReconciler) reconcileBoundLease(
 // Ready waits for the beforeLease hook of every bound member.
 func (r *LeaseReconciler) reconcileMemberConditions(
 	ctx context.Context,
+	result *ctrl.Result,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
 	logger := log.FromContext(ctx)
 
-	var waiting, failed []string
+	var waiting, failed, offline []string
 	for i := range lease.Status.Members {
 		member := &lease.Status.Members[i]
 		if member.State != jumpstarterdevv1alpha1.LeaseMemberStateBound || member.ExporterRef == nil {
@@ -774,6 +854,13 @@ func (r *LeaseReconciler) reconcileMemberConditions(
 		case err != nil:
 			return fmt.Errorf("reconcileMemberConditions: failed to get exporter of role %s: %w", member.Name, err)
 		case !exporterOnline(&exporter):
+			if grace := r.offlineGrace(); grace > 0 {
+				// The controller started a moment ago: the exporter can be
+				// about to reconnect. Look again when the grace ends.
+				offline = append(offline, member.Name)
+				requeueWithin(result, grace)
+				continue
+			}
 			logger.Info("Member lost: exporter offline", "lease_member", member.Name, "exporter", exporter.Name)
 			lease.MarkMemberLost(member.Name, jumpstarterdevv1alpha1.LeaseMemberReasonOffline,
 				fmt.Sprintf("Exporter %s went offline", exporter.Name))
@@ -816,6 +903,9 @@ func (r *LeaseReconciler) reconcileMemberConditions(
 	case len(waiting) > 0:
 		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook,
 			"Waiting for the beforeLease hook of roles: %s", quoteRoles(waiting))
+	case len(offline) > 0:
+		lease.SetStatusReady(false, jumpstarterdevv1alpha1.LeaseReasonBeforeLeaseHook,
+			"Waiting for the exporters of roles: %s", quoteRoles(offline))
 	default:
 		lease.SetStatusReady(true, "Ready", "The exporters of all members are ready")
 	}

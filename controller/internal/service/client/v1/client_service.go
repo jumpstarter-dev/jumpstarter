@@ -356,6 +356,9 @@ func (s *ClientService) CreateLease(ctx context.Context, req *cpb.CreateLeaseReq
 		jlease.Spec.Constraints = expansion.constraints
 		jlease.Spec.TemplateRef = expansion.templateRef
 	}
+	if err := s.validateMemberExporters(ctx, namespace, jlease.Spec.Members); err != nil {
+		return nil, err
+	}
 
 	if len(jlease.Spec.SharedWith) > 0 {
 		// Deduplicate first, then enforce the limit against the deduplicated list,
@@ -420,6 +423,36 @@ func (s *ClientService) validateExplicitExporter(
 
 	if err := jumpstarterdevv1alpha1.ValidateExporterEnabledForLease(&exporter, lease.AllowDisabled); err != nil {
 		return status.Error(codes.FailedPrecondition, err.Error())
+	}
+	return nil
+}
+
+// validateMemberExporters does for the members what validateExplicitExporter
+// does for a scalar request: it rejects a required member that names a known
+// disabled exporter without allowDisabled. An optional member with such an
+// exporter is omitted by the controller, and a missing exporter stays
+// asynchronous.
+func (s *ClientService) validateMemberExporters(
+	ctx context.Context,
+	namespace string,
+	members []jumpstarterdevv1alpha1.LeaseMember,
+) error {
+	for i := range members {
+		member := &members[i]
+		if member.ExporterRef == nil || member.Optional || member.Excluded || member.AllowDisabled {
+			continue
+		}
+		var exporter jumpstarterdevv1alpha1.Exporter
+		err := s.Get(ctx, types.NamespacedName{Namespace: namespace, Name: member.ExporterRef.Name}, &exporter)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return err
+		}
+		if err := jumpstarterdevv1alpha1.ValidateExporterEnabledForLease(&exporter, false); err != nil {
+			return status.Errorf(codes.FailedPrecondition, "members[%s]: %v", member.Name, err)
+		}
 	}
 	return nil
 }
@@ -492,6 +525,11 @@ func validateRequestedMembers(lease *cpb.Lease) error {
 			return status.Errorf(codes.InvalidArgument,
 				"members[%s]: one of selector or exporter_name is required", member.Name)
 		}
+	}
+	// A lease with only optional members can bind no exporter. A template
+	// always has a required member, and a request cannot exclude it.
+	if !slices.ContainsFunc(lease.Members, func(member *cpb.LeaseMember) bool { return !member.GetOptional() }) {
+		return status.Error(codes.InvalidArgument, "members: a lease must have a required member")
 	}
 	for i, constraint := range lease.Constraints {
 		if constraint.GetSameLabel() == "" {

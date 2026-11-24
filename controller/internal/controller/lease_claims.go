@@ -25,7 +25,6 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -57,6 +56,12 @@ type bindState struct {
 	// created are the claims this reconcile created. They are deleted when
 	// the reconcile does not write the bind to the lease status.
 	created []*jumpstarterdevv1alpha1.ExporterClaim
+	// marked are the exporters on which this reconcile wrote
+	// status.claimRef. The marks are removed with the claims in created.
+	marked []string
+	// ensured are the claims this reconcile created for a lease that was
+	// bound without them. They stay unless the lease ended meanwhile.
+	ensured []*jumpstarterdevv1alpha1.ExporterClaim
 }
 
 // claimKey is an exporter or an exclusion group that a lease holds.
@@ -127,6 +132,44 @@ func (r *LeaseReconciler) deleteClaim(ctx context.Context, claim *jumpstarterdev
 	return fmt.Errorf("deleteClaim: failed to delete exporter claim %s: %w", claim.Name, err)
 }
 
+// rollbackAttempt deletes the claims and removes the marks of a bind that this
+// reconcile did not write to the lease status.
+func (r *LeaseReconciler) rollbackAttempt(
+	ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, state *bindState,
+) {
+	r.rollbackClaims(ctx, state)
+	r.rollbackMarks(ctx, lease, state)
+}
+
+// rollbackEnsured deletes the claims that this reconcile created for a bound
+// lease, when a read from the API server shows that the lease ended or does
+// not exist. The reconcile had an old copy of the lease then.
+func (r *LeaseReconciler) rollbackEnsured(
+	ctx context.Context, lease *jumpstarterdevv1alpha1.Lease, state *bindState,
+) {
+	if len(state.ensured) == 0 {
+		return
+	}
+	logger := log.FromContext(ctx)
+	holder, err := r.activeLease(ctx, lease.Namespace, jumpstarterdevv1alpha1.ClaimLeaseReference{
+		Name: lease.Name, UID: lease.UID,
+	})
+	if err != nil {
+		// Another lease replaces a claim only after it reads that this lease
+		// ended, so a claim that stays here blocks nothing for long.
+		logger.Error(err, "failed to read the lease of the claims that this reconcile created")
+		return
+	}
+	if holder == nil {
+		for _, claim := range state.ensured {
+			if err := r.deleteClaim(ctx, claim); err != nil {
+				logger.Error(err, "failed to delete a claim of a lease that ended")
+			}
+		}
+	}
+	state.ensured = nil
+}
+
 // rollbackClaims deletes the claims that this reconcile created.
 func (r *LeaseReconciler) rollbackClaims(ctx context.Context, state *bindState) {
 	for _, claim := range state.created {
@@ -141,9 +184,9 @@ func (r *LeaseReconciler) rollbackClaims(ctx context.Context, state *bindState) 
 
 // startAttempt starts a bind attempt: it increments status.bindAttempt, reads
 // the claims from the API server and deletes those the lease owns from smaller
-// attempts. It returns the claims of the namespace that are left. A conflict
-// on the status update means another reconcile changed the lease; the caller
-// stops.
+// attempts. It also removes the marks of smaller attempts. It returns the
+// claims of the namespace that are left. A conflict on the status update means
+// another reconcile changed the lease; the caller stops.
 func (r *LeaseReconciler) startAttempt(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
@@ -160,7 +203,13 @@ func (r *LeaseReconciler) startAttempt(
 	if err != nil {
 		return nil, err
 	}
-	return r.deleteSmallerAttempts(ctx, lease, claims)
+	if claims, err = r.deleteSmallerAttempts(ctx, lease, claims); err != nil {
+		return nil, err
+	}
+	if err := r.removeLeaseMarks(ctx, lease, lease.Status.BindAttempt-1); err != nil {
+		return nil, err
+	}
+	return claims, nil
 }
 
 // deleteSmallerAttempts deletes the claims of the lease that are from an
@@ -184,8 +233,8 @@ func (r *LeaseReconciler) deleteSmallerAttempts(
 	return left, nil
 }
 
-// deleteLeaseClaims deletes all the claims of an ended lease. status.ended is
-// written before, and it never goes back to false.
+// deleteLeaseClaims deletes all the claims of an ended lease and then removes
+// its marks. status.ended is written before, and it never goes back to false.
 func (r *LeaseReconciler) deleteLeaseClaims(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) error {
 	claims, err := r.listClaims(ctx, lease.Namespace)
 	if err != nil {
@@ -196,7 +245,7 @@ func (r *LeaseReconciler) deleteLeaseClaims(ctx context.Context, lease *jumpstar
 			return err
 		}
 	}
-	return nil
+	return r.removeLeaseMarks(ctx, lease, lease.Status.BindAttempt)
 }
 
 func (r *LeaseReconciler) newClaim(
@@ -225,20 +274,11 @@ func (r *LeaseReconciler) newClaim(
 func (r *LeaseReconciler) claimHolder(
 	ctx context.Context, claim *jumpstarterdevv1alpha1.ExporterClaim,
 ) (*jumpstarterdevv1alpha1.Lease, error) {
-	var holder jumpstarterdevv1alpha1.Lease
-	if err := r.APIReader.Get(ctx, types.NamespacedName{
-		Namespace: claim.Namespace,
-		Name:      claim.Spec.LeaseRef.Name,
-	}, &holder); err != nil {
-		if k8serrors.IsNotFound(err) {
-			return nil, nil
-		}
+	holder, err := r.activeLease(ctx, claim.Namespace, claim.Spec.LeaseRef)
+	if err != nil {
 		return nil, fmt.Errorf("claimHolder: failed to get the lease of exporter claim %s: %w", claim.Name, err)
 	}
-	if holder.UID != claim.Spec.LeaseRef.UID || holder.Status.Ended {
-		return nil, nil
-	}
-	return &holder, nil
+	return holder, nil
 }
 
 // createClaim creates the claim of the lease for this key at the current
@@ -351,16 +391,38 @@ func leaseHoldsKey(lease *jumpstarterdevv1alpha1.Lease, key claimKey) bool {
 	return slices.Contains(lease.HeldExporterNames(), key.exporter)
 }
 
-// ensureBoundClaims creates the claims that a bound lease does not have: the
-// lease was bound before the controller used claims, or by a controller of the
-// previous version during an upgrade. When two leases hold one exporter, the
-// older lease gets the claim; the newer lease gets Invalid with the reason
-// ExporterConflict and then ends. The caller writes the status of the lease
-// when the outcome is boundClaimsConflict.
+// leaseIsCurrent reports whether the API server has the lease as it is
+// reconciled: it exists, did not end, and has the same resource version. A
+// reconcile with an old copy (an old leader, or a cache that is behind) must
+// not act as the holder of the exporters in that copy.
+func (r *LeaseReconciler) leaseIsCurrent(ctx context.Context, lease *jumpstarterdevv1alpha1.Lease) (bool, error) {
+	var current jumpstarterdevv1alpha1.Lease
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(lease), &current); err != nil {
+		if k8serrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("leaseIsCurrent: failed to get lease %s: %w", lease.Name, err)
+	}
+	return current.UID == lease.UID && !current.Status.Ended &&
+		current.ResourceVersion == lease.ResourceVersion, nil
+}
+
+// ensureBoundClaims creates the claims and the marks that a bound lease does
+// not have: the lease was bound before the controller used claims, or by a
+// controller of the previous version during an upgrade. When two leases hold
+// one exporter, the older lease gets the claim; the newer lease gets Invalid
+// with the reason ExporterConflict and then ends. The caller writes the status
+// of the lease when the outcome is boundClaimsConflict.
+//
+// Before it creates a claim or decides a conflict, it reads the lease from the
+// API server. With an old copy of a lease that ended meanwhile, it would take
+// the lease that now holds the exporter for the newer of two holders. The
+// claims it creates are recorded in state, when there is one.
 func (r *LeaseReconciler) ensureBoundClaims(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
 	claims []jumpstarterdevv1alpha1.ExporterClaim,
+	state *bindState,
 ) (boundClaimsOutcome, error) {
 	owned := map[string]bool{}
 	for _, claim := range claimsOf(claims, lease) {
@@ -368,11 +430,25 @@ func (r *LeaseReconciler) ensureBoundClaims(
 	}
 
 	outcome := boundClaimsHeld
+	verified := false
 	for _, key := range claimKeys(lease.HeldExporterNames(), lease.Status.ExclusionGroups) {
 		if owned[key.name()] {
 			continue
 		}
-		claim, _, holder, err := r.createClaim(ctx, lease, key)
+		if !verified {
+			current, err := r.leaseIsCurrent(ctx, lease)
+			if err != nil {
+				return boundClaimsRetry, err
+			}
+			if !current {
+				return boundClaimsRetry, nil
+			}
+			verified = true
+		}
+		claim, created, holder, err := r.createClaim(ctx, lease, key)
+		if created && state != nil {
+			state.ensured = append(state.ensured, claim)
+		}
 		if err != nil {
 			return boundClaimsRetry, err
 		}
@@ -395,6 +471,11 @@ func (r *LeaseReconciler) ensureBoundClaims(
 					"ensureBoundClaims: failed to update the status of lease %s: %w", holder.Name, err)
 			}
 			outcome = boundClaimsRetry
+		}
+	}
+	if outcome == boundClaimsHeld {
+		if err := r.ensureBoundMarks(ctx, lease, verified); err != nil {
+			return boundClaimsRetry, err
 		}
 	}
 	return outcome, nil
@@ -439,7 +520,7 @@ func (r *LeaseReconciler) backfillClaims(ctx context.Context, namespace string) 
 		if lease.Status.Ended || !lease.IsBound() {
 			continue
 		}
-		outcome, err := r.ensureBoundClaims(ctx, lease, claims)
+		outcome, err := r.ensureBoundClaims(ctx, lease, claims, nil)
 		if err != nil {
 			return err
 		}

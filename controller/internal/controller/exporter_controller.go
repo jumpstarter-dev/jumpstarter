@@ -402,7 +402,8 @@ func (r *ExporterReconciler) emitEventf(exporter *jumpstarterdevv1alpha1.Exporte
 }
 
 // mapLeaseToExporters gives the exporters whose status.leaseRef depends on
-// this lease: those it holds, and those it had as owners.
+// this lease: those it holds (the exporter of a Lost member is one of them),
+// and the exporter that a scalar lease has as owner.
 func mapLeaseToExporters(_ context.Context, obj client.Object) []reconcile.Request {
 	lease := obj.(*jumpstarterdevv1alpha1.Lease)
 	names := lease.HeldExporterNames()

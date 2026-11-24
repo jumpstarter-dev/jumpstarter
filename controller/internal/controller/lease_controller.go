@@ -53,6 +53,12 @@ type LeaseReconciler struct {
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
 
+	// StartedAt is when this controller process started. A bound member is
+	// not taken for lost because its exporter is offline until the offline
+	// time limit has passed since then (offlineGrace). The zero value is the
+	// time the process loaded this package.
+	StartedAt time.Time
+
 	// backfilled has the namespaces whose bound leases got their claims
 	// (backfillClaims).
 	backfillMu sync.Mutex
@@ -88,9 +94,12 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	var lease jumpstarterdevv1alpha1.Lease
 	if err := r.Get(ctx, req.NamespacedName, &lease); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(
-			fmt.Errorf("Reconcile: unable to get lease: %w", err),
-		)
+		if k8serrors.IsNotFound(err) {
+			// A lease that is deleted before it ends leaves its marks. The
+			// garbage collector deletes its claims.
+			return ctrl.Result{}, r.removeDeletedLeaseMarks(ctx, req.NamespacedName)
+		}
+		return ctrl.Result{}, fmt.Errorf("Reconcile: unable to get lease: %w", err)
 	}
 
 	leaseLogValues := []any{"lease_id", lease.Name, "client", lease.Spec.ClientRef.Name}
@@ -110,13 +119,16 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		string(jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable),
 	)
 
-	// The claims of a bind count only once the status update below has
-	// written the bind. On every other way out they are deleted.
+	// The claims and the marks of a bind count only once the status update
+	// below has written the bind. On every other way out they are removed,
+	// except when it is not known whether that update was applied.
 	state := &bindState{}
-	committed := false
+	keep := false
 	defer func() {
-		if !committed {
-			r.rollbackClaims(context.WithoutCancel(ctx), state)
+		if !keep {
+			cleanupCtx := context.WithoutCancel(ctx)
+			r.rollbackAttempt(cleanupCtx, &lease, state)
+			r.rollbackEnsured(cleanupCtx, &lease, state)
 		}
 	}()
 
@@ -139,9 +151,15 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if err := r.Status().Update(ctx, &lease); err != nil {
+		// Only a rejection says that the bind was not written. After any
+		// other error (a timeout, for example) the API server can have
+		// applied the update: the claims and the marks then belong to a
+		// bound lease and must stay. If the update was not applied, the next
+		// reconcile starts a new attempt, which removes them.
+		keep = !k8serrors.IsConflict(err) && !k8serrors.IsInvalid(err) && !k8serrors.IsNotFound(err)
 		return RequeueConflict(logger, result, err)
 	}
-	committed = true
+	keep = true
 
 	// status.ended is written and never goes back to false: now the claims
 	// can go. The ended label is set only after, so a failure here is retried.
@@ -173,63 +191,37 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return result, nil
 }
 
-// reconcileOwnerReferences makes the exporters of the lease its owners, so
-// that the exporter reconciler follows the lease. A scalar lease has its
-// exporter as controller owner. A member-form lease has one owner reference
-// for each bound member, none as controller, and one for its client: the
-// garbage collector deletes an object when all its owners are gone, and the
-// client keeps a lease whose exporters were deleted (its members are Lost).
+// reconcileOwnerReferences gives a scalar lease its exporter as controller
+// owner. A member-form lease has no owner reference to an exporter: the
+// garbage collector deletes an object when all its owners are gone, and such a
+// lease stays when its exporters are deleted (the exporter watch then makes
+// their members Lost).
 func (r *LeaseReconciler) reconcileOwnerReferences(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
 ) error {
-	if !lease.IsMemberForm() {
-		if lease.Status.ExporterRef == nil {
-			return nil
-		}
-		var exporter jumpstarterdevv1alpha1.Exporter
-		if err := r.Get(ctx, types.NamespacedName{
-			Namespace: lease.Namespace,
-			Name:      lease.Status.ExporterRef.Name,
-		}, &exporter); err != nil {
-			return err
-		}
-		if err := controllerutil.SetControllerReference(&exporter, lease, r.Scheme); err != nil {
-			return fmt.Errorf("Reconcile: failed to update lease controller reference: %w", err)
-		}
+	if lease.IsMemberForm() {
+		// An earlier build of this controller made the exporters of the
+		// bound members and the client owners of the lease.
+		lease.OwnerReferences = slices.DeleteFunc(lease.OwnerReferences, func(ref metav1.OwnerReference) bool {
+			return strings.HasPrefix(ref.APIVersion, jumpstarterdevv1alpha1.GroupVersion.Group+"/") &&
+				(ref.Kind == "Exporter" || ref.Kind == "Client")
+		})
 		return nil
 	}
 
-	if !lease.IsBound() {
+	if lease.Status.ExporterRef == nil {
 		return nil
 	}
-	bound := lease.BoundExporterNames()
-	// The exporter of a Lost member is no owner any more; it can be deleted.
-	lease.OwnerReferences = slices.DeleteFunc(lease.OwnerReferences, func(ref metav1.OwnerReference) bool {
-		return ref.Kind == "Exporter" && !slices.Contains(bound, ref.Name)
-	})
-	for _, name := range bound {
-		var exporter jumpstarterdevv1alpha1.Exporter
-		if err := r.Get(ctx, types.NamespacedName{Namespace: lease.Namespace, Name: name}, &exporter); err != nil {
-			if k8serrors.IsNotFound(err) {
-				// The next reconcile marks the member as Lost.
-				continue
-			}
-			return err
-		}
-		if err := controllerutil.SetOwnerReference(&exporter, lease, r.Scheme); err != nil {
-			return fmt.Errorf("Reconcile: failed to update lease owner reference: %w", err)
-		}
-	}
-	var jclient jumpstarterdevv1alpha1.Client
+	var exporter jumpstarterdevv1alpha1.Exporter
 	if err := r.Get(ctx, types.NamespacedName{
 		Namespace: lease.Namespace,
-		Name:      lease.Spec.ClientRef.Name,
-	}, &jclient); err != nil {
-		return client.IgnoreNotFound(err)
+		Name:      lease.Status.ExporterRef.Name,
+	}, &exporter); err != nil {
+		return err
 	}
-	if err := controllerutil.SetOwnerReference(&jclient, lease, r.Scheme); err != nil {
-		return fmt.Errorf("Reconcile: failed to update lease owner reference: %w", err)
+	if err := controllerutil.SetControllerReference(&exporter, lease, r.Scheme); err != nil {
+		return fmt.Errorf("Reconcile: failed to update lease controller reference: %w", err)
 	}
 	return nil
 }
@@ -270,7 +262,9 @@ func (r *LeaseReconciler) reconcileStatusEnded(
 				lease.Expire(ctx)
 				return nil
 			}
-			result.RequeueAfter = expiration.Sub(now)
+			// A sooner requeue stays, for example that of a bound lease
+			// that waits for a claim.
+			requeueWithin(result, expiration.Sub(now))
 			return nil
 		}
 
@@ -463,9 +457,17 @@ func (r *LeaseReconciler) reconcileSharedWithPolicies(
 		return nil
 	}
 
-	// Without an assigned exporter, exporter-scoped policies cannot be evaluated
-	// yet; grant the desired set for now. It is filtered once an exporter is bound.
 	if !lease.IsBound() {
+		if lease.IsMemberForm() {
+			// The list is empty before the bind. This function runs again
+			// before the status update that binds the members, so that update
+			// writes the list that the policies permit.
+			lease.Status.SharedWith = nil
+			return nil
+		}
+		// Scalar lease: without an assigned exporter, exporter-scoped policies
+		// cannot be evaluated yet; grant the desired set for now. It is
+		// filtered once an exporter is bound.
 		lease.Status.SharedWith = slices.Clone(lease.Spec.SharedWith)
 		return nil
 	}
@@ -761,6 +763,11 @@ func exporterChangedForPendingLeases() predicate.Funcs {
 		if oldLeased != newLeased {
 			return true
 		}
+		// The lease of a mark removes the marks it must not have, and an
+		// exporter without a mark can be assigned.
+		if !claimRefEqual(oldExp.Status.ClaimRef, newExp.Status.ClaimRef) {
+			return true
+		}
 		// Readiness also depends on whether the exporter records its lease hooks
 		// and still owes an afterLease hook (filterOutNotReadyExporters).
 		if oldExp.Status.RecordsLeaseHooks != newExp.Status.RecordsLeaseHooks ||
@@ -791,6 +798,13 @@ func exporterChangedForPendingLeases() predicate.Funcs {
 	}
 }
 
+func claimRefEqual(a, b *jumpstarterdevv1alpha1.ClaimLeaseReference) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func (r *LeaseReconciler) mapExporterToLeases(ctx context.Context, obj client.Object) []reconcile.Request {
 	exporter := obj.(*jumpstarterdevv1alpha1.Exporter)
 
@@ -802,7 +816,8 @@ func (r *LeaseReconciler) mapExporterToLeases(ctx context.Context, obj client.Ob
 	var requests []reconcile.Request
 	for i := range leaseList.Items {
 		lease := &leaseList.Items[i]
-		if leaseFollowsExporter(lease, exporter) {
+		marked := exporter.Status.ClaimRef != nil && exporter.Status.ClaimRef.UID == lease.UID
+		if marked || leaseFollowsExporter(lease, exporter) {
 			requests = append(requests, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: lease.Name, Namespace: lease.Namespace},
 			})
@@ -864,5 +879,14 @@ func (r *LeaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&jumpstarterdevv1alpha1.Exporter{},
 			handler.EnqueueRequestsFromMapFunc(r.mapExporterToLeases),
 			builder.WithPredicates(exporterChangedForPendingLeases())).
+		// A claim has its lease as controller owner. The lease is reconciled
+		// when one of its claims appears or goes: an old leader can create a
+		// claim of a smaller attempt after the bind, and a bound lease
+		// creates again a claim that was deleted. A reconcile that changes
+		// no claim causes no further event, so this does not loop.
+		Owns(&jumpstarterdevv1alpha1.ExporterClaim{}, builder.WithPredicates(predicate.Funcs{
+			UpdateFunc:  func(event.UpdateEvent) bool { return false },
+			GenericFunc: func(event.GenericEvent) bool { return false },
+		})).
 		Complete(r)
 }

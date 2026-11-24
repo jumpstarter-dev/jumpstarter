@@ -246,6 +246,84 @@ func TestCreateLeaseWithMembers(t *testing.T) {
 	}
 }
 
+func TestCreateLeaseWithMembersRequiresARequiredMember(t *testing.T) {
+	svc, fc := templateService()
+	phone := selectorMember("phone", "device-type=phone")
+	phone.Optional = true
+	spare := selectorMember("spare", "device-type=phone")
+	spare.Optional = true
+	_, err := svc.CreateLease(context.Background(), &cpb.CreateLeaseRequest{
+		Parent: "namespaces/" + memberTestNamespace,
+		Lease: &cpb.Lease{
+			Duration: durationpb.New(time.Hour),
+			Members:  []*cpb.LeaseMember{phone, spare},
+		},
+	})
+	requireStatus(t, err, codes.InvalidArgument, "must have a required member")
+	if leases := listLeases(t, fc); len(leases) != 0 {
+		t.Fatalf("expected no lease, got %d", len(leases))
+	}
+}
+
+func TestCreateLeaseWithMembersChecksDisabledExporters(t *testing.T) {
+	disabled := false
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{Name: "ecu-11", Namespace: memberTestNamespace},
+		Spec:       jumpstarterdevv1alpha1.ExporterSpec{Enabled: &disabled},
+	}
+	refMember := func(optional, allowDisabled bool) *cpb.LeaseMember {
+		return &cpb.LeaseMember{
+			Name:          "ecu",
+			Selection:     &cpb.LeaseMember_ExporterName{ExporterName: "ecu-11"},
+			Optional:      optional,
+			AllowDisabled: allowDisabled,
+		}
+	}
+	create := func(svc *ClientService, members ...*cpb.LeaseMember) error {
+		_, err := svc.CreateLease(context.Background(), &cpb.CreateLeaseRequest{
+			Parent: "namespaces/" + memberTestNamespace,
+			Lease:  &cpb.Lease{Duration: durationpb.New(time.Hour), Members: members},
+		})
+		return err
+	}
+
+	t.Run("rejects a required member with a disabled exporter", func(t *testing.T) {
+		svc, fc := templateService(exporter.DeepCopy())
+		err := create(svc, refMember(false, false))
+		requireStatus(t, err, codes.FailedPrecondition, "members[ecu]", "ecu-11 is disabled")
+		if leases := listLeases(t, fc); len(leases) != 0 {
+			t.Fatalf("expected no lease, got %d", len(leases))
+		}
+	})
+	t.Run("permits it with allow_disabled", func(t *testing.T) {
+		svc, _ := templateService(exporter.DeepCopy())
+		if err := create(svc, refMember(false, true)); err != nil {
+			t.Fatalf("expected the lease to be created, got %v", err)
+		}
+	})
+	t.Run("leaves an optional member to the controller", func(t *testing.T) {
+		svc, _ := templateService(exporter.DeepCopy())
+		err := create(svc, selectorMember("phone", "device-type=phone"), refMember(true, false))
+		if err != nil {
+			t.Fatalf("expected the lease to be created, got %v", err)
+		}
+	})
+	t.Run("leaves a missing exporter to the controller", func(t *testing.T) {
+		svc, _ := templateService()
+		if err := create(svc, refMember(false, false)); err != nil {
+			t.Fatalf("expected the lease to be created, got %v", err)
+		}
+	})
+	t.Run("checks the members of a template", func(t *testing.T) {
+		svc, fc := templateService(iviTemplate(), exporter.DeepCopy())
+		_, err := svc.CreateLease(context.Background(), templateRequest(&cpb.LeaseTemplateUse{Template: "ivi"}))
+		requireStatus(t, err, codes.FailedPrecondition, "members[ecu]", "ecu-11 is disabled")
+		if leases := listLeases(t, fc); len(leases) != 0 {
+			t.Fatalf("expected no lease, got %d", len(leases))
+		}
+	})
+}
+
 func TestCreateLeaseWithMembersRejectsBadSelector(t *testing.T) {
 	svc, fc := templateService()
 	_, err := svc.CreateLease(context.Background(), &cpb.CreateLeaseRequest{

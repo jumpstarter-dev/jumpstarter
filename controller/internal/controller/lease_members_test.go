@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
@@ -31,7 +32,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -92,8 +98,103 @@ func scalarRefLease(name, exporter string) *jumpstarterdevv1alpha1.Lease {
 	}
 }
 
+// newLeaseReconciler returns a reconciler of a controller that started long
+// ago: an offline exporter is lost at once.
 func newLeaseReconciler(c client.Client) *LeaseReconciler {
-	return &LeaseReconciler{Client: c, APIReader: k8sClient, Scheme: k8sClient.Scheme()}
+	return &LeaseReconciler{
+		Client:    c,
+		APIReader: k8sClient,
+		Scheme:    k8sClient.Scheme(),
+		StartedAt: time.Now().Add(-time.Hour),
+	}
+}
+
+// exporterReadHook runs a hook before each read of an exporter from the API
+// server: the point between the assignment and the mark.
+type exporterReadHook struct {
+	client.Reader
+	beforeGet func(name string)
+}
+
+func (r *exporterReadHook) Get(
+	ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption,
+) error {
+	if _, ok := obj.(*jumpstarterdevv1alpha1.Exporter); ok && r.beforeGet != nil {
+		r.beforeGet(key.Name)
+	}
+	return r.Reader.Get(ctx, key, obj, opts...)
+}
+
+// staleLeaseClient is a cache that still has an old copy of one lease.
+type staleLeaseClient struct {
+	client.Client
+	lease *jumpstarterdevv1alpha1.Lease
+}
+
+func (c *staleLeaseClient) Get(
+	ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption,
+) error {
+	if lease, ok := obj.(*jumpstarterdevv1alpha1.Lease); ok && key.Name == c.lease.Name {
+		c.lease.DeepCopyInto(lease)
+		return nil
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+// statusResultClient replaces the result of a status update that the API
+// server applied, as a timeout of the response does.
+type statusResultClient struct {
+	client.Client
+	afterUpdate func(obj client.Object) error
+}
+
+func (c *statusResultClient) Status() client.SubResourceWriter {
+	return &statusResultWriter{SubResourceWriter: c.Client.Status(), afterUpdate: c.afterUpdate}
+}
+
+type statusResultWriter struct {
+	client.SubResourceWriter
+	afterUpdate func(obj client.Object) error
+}
+
+func (w *statusResultWriter) Update(
+	ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption,
+) error {
+	if err := w.SubResourceWriter.Update(ctx, obj, opts...); err != nil {
+		return err
+	}
+	return w.afterUpdate(obj)
+}
+
+// leaseGetCounter counts the reconciles of a lease: each one starts with one
+// read of the lease from the cache.
+type leaseGetCounter struct {
+	client.Client
+	name  string
+	count atomic.Int64
+}
+
+func (c *leaseGetCounter) Get(
+	ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption,
+) error {
+	if _, ok := obj.(*jumpstarterdevv1alpha1.Lease); ok && key.Name == c.name {
+		c.count.Add(1)
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+func claimRefOf(ctx context.Context, exporter string) *jumpstarterdevv1alpha1.ClaimLeaseReference {
+	return getExporter(ctx, exporter).Status.ClaimRef
+}
+
+func markFor(lease *jumpstarterdevv1alpha1.Lease, attempt int64) *jumpstarterdevv1alpha1.ClaimLeaseReference {
+	return &jumpstarterdevv1alpha1.ClaimLeaseReference{Name: lease.Name, UID: lease.UID, Attempt: attempt}
+}
+
+func setClaimRef(ctx context.Context, exporter string, ref *jumpstarterdevv1alpha1.ClaimLeaseReference) {
+	e := getExporter(ctx, exporter)
+	e.Status.ClaimRef = ref
+	Expect(k8sClient.Status().Update(ctx, e)).To(Succeed())
 }
 
 func reconcileLeaseWith(ctx context.Context, r *LeaseReconciler, name string) reconcile.Result {
@@ -246,21 +347,140 @@ var _ = Describe("Member-form leases", func() {
 				Expect(metav1.IsControlledBy(ptrTo(claims[name]), updated)).To(BeTrue())
 			}
 
-			// One owner reference for each bound member, none as controller,
-			// and the client, which keeps the lease when exporters are deleted.
-			Expect(metav1.GetControllerOf(updated)).To(BeNil())
-			owners := map[string]string{}
-			for _, ref := range updated.OwnerReferences {
-				owners[ref.Name] = ref.Kind
-			}
-			Expect(owners).To(Equal(map[string]string{
-				"mx-phone-1": "Exporter", "mx-phone-2": "Exporter", testClient.Name: "Client",
-			}))
+			// No owner reference: the garbage collector must not delete the
+			// lease with its exporters.
+			Expect(updated.OwnerReferences).To(BeEmpty())
 
 			for _, name := range []string{"mx-phone-1", "mx-phone-2"} {
+				// The mark is there before status.leaseRef.
+				Expect(getExporter(ctx, name).Status.LeaseRef).To(BeNil())
+				Expect(claimRefOf(ctx, name)).To(Equal(markFor(updated, 1)))
 				reconcileExporter(ctx, name)
 				Expect(getExporter(ctx, name).Status.LeaseRef).To(Equal(&corev1.LocalObjectReference{Name: leaseA}))
+				Expect(claimRefOf(ctx, name)).To(Equal(markFor(updated, 1)))
 			}
+		})
+
+		It("removes the owner references that an earlier build gave the lease", func() {
+			online(mxExporter("mx-phone-1", "", phone))
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, selectorMember("phone", phone)))).To(Succeed())
+			lease := getLease(ctx, leaseA)
+			Expect(controllerutil.SetOwnerReference(getExporter(ctx, "mx-phone-1"), lease, k8sClient.Scheme())).To(Succeed())
+			Expect(controllerutil.SetOwnerReference(testClient, lease, k8sClient.Scheme())).To(Succeed())
+			Expect(k8sClient.Update(ctx, lease)).To(Succeed())
+			Expect(getLease(ctx, leaseA).OwnerReferences).To(HaveLen(2))
+
+			reconcileLeaseOnly(ctx, leaseA)
+			updated := getLease(ctx, leaseA)
+			Expect(updated.IsBound()).To(BeTrue())
+			Expect(updated.OwnerReferences).To(BeEmpty())
+			Expect(mapLeaseToExporters(ctx, updated)).To(HaveLen(1))
+		})
+
+		It("has an empty status.sharedWith before the bind, and the bind writes it", func() {
+			shared := &jumpstarterdevv1alpha1.Client{ObjectMeta: metav1.ObjectMeta{
+				Name: "mx-shared-early", Namespace: "default",
+			}}
+			Expect(k8sClient.Create(ctx, shared)).To(Succeed())
+			DeferCleanup(func() { Expect(k8sClient.Delete(ctx, shared)).To(Succeed()) })
+
+			online(mxExporter("mx-phone-1", "", phone))
+			setExporterOnlineConditions(ctx, "mx-phone-1", metav1.ConditionFalse)
+			lease := memberLease(leaseA, selectorMember("phone", phone))
+			lease.Spec.SharedWith = []string{"mx-shared-early"}
+			Expect(k8sClient.Create(ctx, lease)).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			pending := getLease(ctx, leaseA)
+			Expect(pending.IsBound()).To(BeFalse())
+			Expect(pending.Status.Ended).To(BeFalse())
+			Expect(pending.Status.SharedWith).To(BeEmpty())
+
+			// The one status update that binds the members has the list.
+			setExporterOnlineConditions(ctx, "mx-phone-1", metav1.ConditionTrue)
+			var writes []*jumpstarterdevv1alpha1.Lease
+			recorder := &statusResultClient{Client: k8sClient, afterUpdate: func(obj client.Object) error {
+				if written, ok := obj.(*jumpstarterdevv1alpha1.Lease); ok {
+					writes = append(writes, written.DeepCopy())
+				}
+				return nil
+			}}
+			reconcileLeaseWith(ctx, newLeaseReconciler(recorder), leaseA)
+			bound := 0
+			for _, written := range writes {
+				if written.IsBound() {
+					bound++
+					Expect(written.Status.SharedWith).To(Equal([]string{"mx-shared-early"}))
+				} else {
+					Expect(written.Status.SharedWith).To(BeEmpty())
+				}
+			}
+			Expect(bound).To(Equal(1))
+			Expect(getLease(ctx, leaseA).Status.SharedWith).To(Equal([]string{"mx-shared-early"}))
+		})
+
+		It("ends a lease in which no member can bind, without an attempt", func() {
+			online(mxExporter("mx-phone-1", "", phone))
+			setExporterOnlineConditions(ctx, "mx-phone-1", metav1.ConditionFalse)
+			optional := selectorMember("phone", phone)
+			optional.Optional = true
+			// The API does not admit a lease without a required member.
+			err := k8sClient.Create(ctx, memberLease(leaseA, optional))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("a lease with members must have a required member"))
+
+			// The reconciler stays safe for one that exists: the copy that it
+			// reconciles has only optional members.
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, selectorMember("phone", phone)))).To(Succeed())
+			lease := getLease(ctx, leaseA)
+			lease.Spec.Members[0].Optional = true
+			r := newLeaseReconciler(k8sClient)
+			var result reconcile.Result
+			Expect(r.reconcileStatusMembers(ctx, &result, lease, &bindState{})).To(Succeed())
+
+			Expect(lease.Status.BindAttempt).To(BeZero())
+			Expect(getLease(ctx, leaseA).Status.BindAttempt).To(BeZero())
+			Expect(lease.IsBound()).To(BeFalse())
+			condition := leaseCondition(lease, jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal(jumpstarterdevv1alpha1.LeaseReasonInsufficientExporters))
+			Expect(leaseCondition(lease, jumpstarterdevv1alpha1.LeaseConditionTypeReady)).To(BeNil())
+			Expect(result.RequeueAfter).To(BeZero())
+			Expect(claimsByKey(ctx)).To(BeEmpty())
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(BeNil())
+
+			// Such a lease ends.
+			Expect(r.reconcileStatusEnded(ctx, &result, lease)).To(Succeed())
+			Expect(lease.Status.Ended).To(BeTrue())
+		})
+
+		It("keeps a disabled exporter only for a member with exporterRef and allowDisabled", func() {
+			online(mxExporter("mx-phone-1", "", phone))
+			setExporterEnabled(ctx, "mx-phone-1", false)
+
+			// A selector does not select a disabled exporter, with the field or without it.
+			bySelector := selectorMember("phone", phone)
+			bySelector.AllowDisabled = true
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, bySelector))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			condition := leaseCondition(getLease(ctx, leaseA), jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("AllDisabled"))
+
+			// An exporterRef without the field does not get it.
+			Expect(k8sClient.Create(ctx, memberLease(leaseB, refMember("phone", "mx-phone-1")))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseB)
+			condition = leaseCondition(getLease(ctx, leaseB), jumpstarterdevv1alpha1.LeaseConditionTypeUnsatisfiable)
+			Expect(condition).NotTo(BeNil())
+			Expect(condition.Reason).To(Equal("ExporterDisabled"))
+			Expect(condition.Message).To(HavePrefix("role `phone`: "))
+
+			// An exporterRef with the field gets it.
+			byRef := refMember("phone", "mx-phone-1")
+			byRef.AllowDisabled = true
+			Expect(k8sClient.Create(ctx, memberLease(leaseC, byRef))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseC)
+			Expect(memberExporter(getLease(ctx, leaseC), "phone")).To(Equal("mx-phone-1"))
 		})
 
 		It("has no status.exporterRef with one member", func() {
@@ -559,6 +779,10 @@ var _ = Describe("Member-form leases", func() {
 			claims := claimsByKey(ctx)
 			Expect(claims).To(HaveLen(1))
 			Expect(claims[second].Spec.LeaseRef.UID).To(Equal(other.UID))
+			// The marks of the attempt went with its claims.
+			Expect(updated.Status.BindAttempt).To(Equal(int64(1)))
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-phone-2")).To(BeNil())
 		})
 
 		It("completes two leases with the same exporters in opposite member order", func() {
@@ -567,17 +791,19 @@ var _ = Describe("Member-form leases", func() {
 			Expect(k8sClient.Create(ctx, memberLease(leaseB,
 				refMember("one", "mx-phone-2"), refMember("two", "mx-phone-1")))).To(Succeed())
 
-			// Lease B is reconciled while lease A is about to create its
-			// first claim. Both create the same claim first.
+			// Lease B is reconciled while lease A has its assignment and is
+			// about to mark its first exporter. Both mark the same exporter
+			// first, and both create the same claim first.
 			interleaved := false
-			hooked := &claimHookClient{Client: k8sClient}
-			hooked.beforeCreate = func(*jumpstarterdevv1alpha1.ExporterClaim) {
+			r := newLeaseReconciler(k8sClient)
+			r.APIReader = &exporterReadHook{Reader: k8sClient, beforeGet: func(string) {
 				if !interleaved {
 					interleaved = true
 					reconcileLeaseOnly(ctx, leaseB)
 				}
-			}
-			reconcileLeaseWith(ctx, newLeaseReconciler(hooked), leaseA)
+			}}
+			reconcileLeaseWith(ctx, r, leaseA)
+			Expect(interleaved).To(BeTrue())
 
 			a, b := getLease(ctx, leaseA), getLease(ctx, leaseB)
 			Expect(b.BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-phone-2"))
@@ -587,6 +813,9 @@ var _ = Describe("Member-form leases", func() {
 			for _, claim := range claims {
 				Expect(claim.Spec.LeaseRef.UID).To(Equal(b.UID))
 			}
+			for _, name := range []string{"mx-phone-1", "mx-phone-2"} {
+				Expect(claimRefOf(ctx, name)).To(Equal(markFor(b, 1)))
+			}
 
 			// When lease B ends, its claims go and lease A binds.
 			b.Spec.Release = true
@@ -595,6 +824,37 @@ var _ = Describe("Member-form leases", func() {
 			Expect(claimsByKey(ctx)).To(BeEmpty())
 			reconcileLeaseOnly(ctx, leaseA)
 			Expect(getLease(ctx, leaseA).BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-phone-2"))
+		})
+
+		It("gives a lease nothing while another lease has its marks and creates its claims", func() {
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				refMember("one", "mx-phone-1"), refMember("two", "mx-phone-2")))).To(Succeed())
+			Expect(k8sClient.Create(ctx, memberLease(leaseB,
+				refMember("one", "mx-phone-2"), refMember("two", "mx-phone-1")))).To(Succeed())
+
+			// Lease B is reconciled while lease A is about to create its
+			// first claim: lease A has its marks.
+			interleaved := false
+			hooked := &claimHookClient{Client: k8sClient}
+			hooked.beforeCreate = func(*jumpstarterdevv1alpha1.ExporterClaim) {
+				if !interleaved {
+					interleaved = true
+					reconcileLeaseOnly(ctx, leaseB)
+					waiting := getLease(ctx, leaseB)
+					Expect(waiting.IsBound()).To(BeFalse())
+					Expect(waiting.Status.BindAttempt).To(BeZero())
+					Expect(leaseCondition(waiting, jumpstarterdevv1alpha1.LeaseConditionTypePending).Reason).
+						To(Equal("NotAvailable"))
+				}
+			}
+			reconcileLeaseWith(ctx, newLeaseReconciler(hooked), leaseA)
+			Expect(interleaved).To(BeTrue())
+
+			a := getLease(ctx, leaseA)
+			Expect(a.BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-phone-2"))
+			for _, claim := range claimsByKey(ctx) {
+				Expect(claim.Spec.LeaseRef.UID).To(Equal(a.UID))
+			}
 		})
 
 		It("replaces the claims of leases that ended or do not exist", func() {
@@ -703,6 +963,11 @@ var _ = Describe("Member-form leases", func() {
 				Expect(claim.Spec.LeaseRef.UID).To(Equal(updated.UID))
 				Expect(claim.Spec.LeaseRef.Attempt).To(Equal(int64(2)))
 			}
+			// The old reconcile removed only what its own attempt wrote: the
+			// marks of the newer attempt stay.
+			for _, name := range []string{"mx-phone-1", "mx-phone-2"} {
+				Expect(claimRefOf(ctx, name)).To(Equal(markFor(updated, 2)))
+			}
 		})
 
 		It("deletes a claim of a smaller attempt on the reconcile of the bound lease", func() {
@@ -739,9 +1004,379 @@ var _ = Describe("Member-form leases", func() {
 			Expect(getLease(ctx, leaseA).Status.Ended).To(BeTrue())
 			Expect(claimsByKey(ctx)).To(BeEmpty())
 			for _, name := range []string{"mx-phone-1", "mx-phone-2"} {
+				Expect(claimRefOf(ctx, name)).To(BeNil())
 				reconcileExporter(ctx, name)
 				Expect(getExporter(ctx, name).Status.LeaseRef).To(BeNil())
 			}
+		})
+
+		It("keeps the claims and the marks when the result of the bind update is not known", func() {
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				selectorMember("phone", phone), selectorMember("phone-2", phone)))).To(Succeed())
+
+			// The API server applies the update that binds, and the response
+			// does not arrive.
+			failed := false
+			lossy := &statusResultClient{Client: k8sClient, afterUpdate: func(obj client.Object) error {
+				if lease, ok := obj.(*jumpstarterdevv1alpha1.Lease); ok && lease.IsBound() && !failed {
+					failed = true
+					return k8serrors.NewTimeoutError("the response did not arrive", 1)
+				}
+				return nil
+			}}
+			_, err := newLeaseReconciler(lossy).Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: leaseA, Namespace: "default"},
+			})
+			Expect(k8serrors.IsTimeout(err)).To(BeTrue())
+			Expect(failed).To(BeTrue())
+
+			bound := getLease(ctx, leaseA)
+			Expect(bound.BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-phone-2"))
+			claims := claimsByKey(ctx)
+			Expect(claims).To(HaveLen(2))
+			for _, name := range []string{"mx-phone-1", "mx-phone-2"} {
+				Expect(claims[name].Spec.LeaseRef.UID).To(Equal(bound.UID))
+				Expect(claimRefOf(ctx, name)).To(Equal(markFor(bound, 1)))
+			}
+
+			// The next reconcile finds the lease bound with its claims.
+			uids := map[string]types.UID{}
+			for name, claim := range claims {
+				uids[name] = claim.UID
+			}
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(getLease(ctx, leaseA).Status.BindAttempt).To(Equal(int64(1)))
+			for name, claim := range claimsByKey(ctx) {
+				Expect(claim.UID).To(Equal(uids[name]))
+			}
+		})
+
+		It("removes the claims and the marks when the bind update is rejected", func() {
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				selectorMember("phone", phone), selectorMember("phone-2", phone)))).To(Succeed())
+
+			// Another writer changes the lease after the claims exist: the
+			// update that binds gets a conflict.
+			created := 0
+			hooked := &claimHookClient{Client: k8sClient}
+			hooked.beforeCreate = func(*jumpstarterdevv1alpha1.ExporterClaim) {
+				created++
+				if created == 2 {
+					lease := getLease(ctx, leaseA)
+					lease.Status.Priority = 7
+					Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+				}
+			}
+			reconcileLeaseWith(ctx, newLeaseReconciler(hooked), leaseA)
+
+			Expect(getLease(ctx, leaseA).IsBound()).To(BeFalse())
+			Expect(claimsByKey(ctx)).To(BeEmpty())
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-phone-2")).To(BeNil())
+		})
+
+		It("does not act for a lease that ended, with an old copy of it", func() {
+			Expect(k8sClient.Create(ctx, scalarRefLease(leaseA, "mx-phone-1"))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			old := getLease(ctx, leaseA)
+			Expect(old.Status.ExporterRef.Name).To(Equal("mx-phone-1"))
+
+			// The lease ends and loses its claim; lease B then gets the exporter.
+			released := old.DeepCopy()
+			released.Spec.Release = true
+			Expect(k8sClient.Update(ctx, released)).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(getLease(ctx, leaseA).Status.Ended).To(BeTrue())
+			Expect(k8sClient.Create(ctx, scalarRefLease(leaseB, "mx-phone-1"))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseB)
+			holder := getLease(ctx, leaseB)
+			Expect(holder.Status.ExporterRef.Name).To(Equal("mx-phone-1"))
+			Expect(leaseOlder(old, holder)).To(BeTrue())
+
+			// An old leader, or a cache that is behind, reconciles lease A as
+			// it was while it was bound.
+			stale := &staleLeaseClient{Client: k8sClient, lease: old}
+			_, err := newLeaseReconciler(stale).Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: leaseA, Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			holder = getLease(ctx, leaseB)
+			Expect(leaseCondition(holder, jumpstarterdevv1alpha1.LeaseConditionTypeInvalid)).To(BeNil())
+			Expect(holder.Status.Ended).To(BeFalse())
+			claims := claimsByKey(ctx)
+			Expect(claims).To(HaveLen(1))
+			Expect(claims["mx-phone-1"].Spec.LeaseRef.UID).To(Equal(holder.UID))
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(holder, holder.Status.BindAttempt)))
+			reconcileLeaseOnly(ctx, leaseB)
+			Expect(getLease(ctx, leaseB).Status.Ended).To(BeFalse())
+		})
+	})
+
+	When("the controller marks exporters with status.claimRef", func() {
+		BeforeEach(func() {
+			online(mxExporter("mx-phone-1", "", phone), mxExporter("mx-phone-2", "", phone))
+		})
+
+		It("replaces the mark of a lease that ended or does not exist", func() {
+			Expect(k8sClient.Create(ctx, scalarRefLease(leaseB, "mx-phone-2"))).To(Succeed())
+			ended := getLease(ctx, leaseB)
+			ended.Status.Ended = true
+			Expect(k8sClient.Status().Update(ctx, ended)).To(Succeed())
+			setClaimRef(ctx, "mx-phone-1", &jumpstarterdevv1alpha1.ClaimLeaseReference{
+				Name: "mx-deleted-lease", UID: "00000000-0000-0000-0000-000000000001", Attempt: 3,
+			})
+			setClaimRef(ctx, "mx-phone-2", markFor(ended, 1))
+
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				selectorMember("phone", phone), selectorMember("phone-2", phone)))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+
+			updated := getLease(ctx, leaseA)
+			Expect(updated.BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-phone-2"))
+			for _, name := range []string{"mx-phone-1", "mx-phone-2"} {
+				Expect(claimRefOf(ctx, name)).To(Equal(markFor(updated, 1)))
+			}
+		})
+
+		It("replaces a mark with the name of the lease and another UID", func() {
+			setClaimRef(ctx, "mx-phone-1", &jumpstarterdevv1alpha1.ClaimLeaseReference{
+				Name: leaseA, UID: "00000000-0000-0000-0000-000000000002", Attempt: 9,
+			})
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, refMember("phone", "mx-phone-1")))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			updated := getLease(ctx, leaseA)
+			Expect(updated.IsBound()).To(BeTrue())
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(updated, 1)))
+		})
+
+		It("does not select an exporter that has the mark of another active lease", func() {
+			Expect(k8sClient.Create(ctx, scalarRefLease(leaseB, "mx-phone-1"))).To(Succeed())
+			other := getLease(ctx, leaseB)
+			setClaimRef(ctx, "mx-phone-1", markFor(other, 1))
+
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				refMember("one", "mx-phone-1"), refMember("two", "mx-phone-2")))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+
+			updated := getLease(ctx, leaseA)
+			Expect(updated.IsBound()).To(BeFalse())
+			Expect(leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypePending).Reason).
+				To(Equal("NotAvailable"))
+			Expect(updated.Status.BindAttempt).To(BeZero())
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(other, 1)))
+			Expect(claimRefOf(ctx, "mx-phone-2")).To(BeNil())
+		})
+
+		It("fails the attempt when another active lease marks the exporter after the assignment", func() {
+			Expect(k8sClient.Create(ctx, scalarRefLease(leaseB, "mx-phone-2"))).To(Succeed())
+			other := getLease(ctx, leaseB)
+
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				refMember("one", "mx-phone-1"), refMember("two", "mx-phone-2")))).To(Succeed())
+			done := false
+			r := newLeaseReconciler(k8sClient)
+			r.APIReader = &exporterReadHook{Reader: k8sClient, beforeGet: func(name string) {
+				// Lease A has its mark on the first exporter at this point.
+				if name == "mx-phone-2" && !done {
+					done = true
+					Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(getLease(ctx, leaseA), 1)))
+					setClaimRef(ctx, "mx-phone-2", markFor(other, 1))
+				}
+			}}
+			res := reconcileLeaseWith(ctx, r, leaseA)
+			Expect(done).To(BeTrue())
+			Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+
+			updated := getLease(ctx, leaseA)
+			Expect(updated.IsBound()).To(BeFalse())
+			condition := leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypePending)
+			Expect(condition.Reason).To(Equal("NotAvailable"))
+			Expect(condition.Message).To(ContainSubstring("mx-phone-2"))
+			Expect(updated.Status.BindAttempt).To(Equal(int64(1)))
+			Expect(claimsByKey(ctx)).To(BeEmpty())
+			// The attempt removed its own mark and left the mark of lease B.
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-phone-2")).To(Equal(markFor(other, 1)))
+		})
+
+		It("fails the attempt when the group changes after the assignment, and then uses the new group", func() {
+			online(mxExporter("mx-dut-power", "mx-dut-1", map[string]string{"mx": "dut"}))
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				refMember("phone", "mx-phone-1"), refMember("power", "mx-dut-power")))).To(Succeed())
+
+			// An administrator changes the group between the assignment and
+			// the mark. The exporter has no mark, so admission permits it.
+			changed := false
+			r := newLeaseReconciler(k8sClient)
+			r.APIReader = &exporterReadHook{Reader: k8sClient, beforeGet: func(name string) {
+				if name == "mx-dut-power" && !changed {
+					changed = true
+					exporter := getExporter(ctx, "mx-dut-power")
+					exporter.Spec.ExclusionGroup = "mx-dut-2"
+					Expect(k8sClient.Update(ctx, exporter)).To(Succeed())
+				}
+			}}
+			res := reconcileLeaseWith(ctx, r, leaseA)
+			Expect(changed).To(BeTrue())
+			Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+
+			failed := getLease(ctx, leaseA)
+			Expect(failed.IsBound()).To(BeFalse())
+			Expect(failed.Status.ExclusionGroups).To(BeEmpty())
+			condition := leaseCondition(failed, jumpstarterdevv1alpha1.LeaseConditionTypePending)
+			Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(condition.Reason).To(Equal("NotAvailable"))
+			Expect(condition.Message).To(ContainSubstring("exclusion group of exporter mx-dut-power changed"))
+			Expect(claimsByKey(ctx)).To(BeEmpty())
+			Expect(claimRefOf(ctx, "mx-dut-power")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(BeNil())
+
+			reconcileLeaseOnly(ctx, leaseA)
+			bound := getLease(ctx, leaseA)
+			Expect(bound.BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-dut-power"))
+			Expect(bound.Status.ExclusionGroups).To(Equal([]string{"mx-dut-2"}))
+			claims := claimsByKey(ctx)
+			Expect(claims).To(HaveKey("group:mx-dut-2"))
+			Expect(claims).NotTo(HaveKey("group:mx-dut-1"))
+		})
+
+		It("removes the marks of an attempt that stopped", func() {
+			online(mxExporter("mx-phone-3", "", map[string]string{"mx": "other"}))
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				selectorMember("phone", phone), selectorMember("phone-2", phone)))).To(Succeed())
+			// A reconcile started attempt 1, marked an exporter and stopped.
+			lease := getLease(ctx, leaseA)
+			lease.Status.BindAttempt = 1
+			Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+			setClaimRef(ctx, "mx-phone-3", markFor(lease, 1))
+
+			reconcileLeaseOnly(ctx, leaseA)
+
+			updated := getLease(ctx, leaseA)
+			Expect(updated.Status.BindAttempt).To(Equal(int64(2)))
+			Expect(updated.BoundExporterNames()).To(ConsistOf("mx-phone-1", "mx-phone-2"))
+			Expect(claimRefOf(ctx, "mx-phone-3")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(updated, 2)))
+		})
+
+		It("removes a mark that an old leader wrote after the bind", func() {
+			online(mxExporter("mx-phone-3", "", map[string]string{"mx": "other"}))
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				selectorMember("phone", phone), selectorMember("phone-2", phone)))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			lease := getLease(ctx, leaseA)
+			Expect(lease.IsBound()).To(BeTrue())
+
+			setClaimRef(ctx, "mx-phone-3", markFor(lease, 0))
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(claimRefOf(ctx, "mx-phone-3")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(lease, 1)))
+		})
+
+		It("removes the marks of a lease that was deleted before it ended", func() {
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				selectorMember("phone", phone), selectorMember("phone-2", phone)))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(claimRefOf(ctx, "mx-phone-1")).NotTo(BeNil())
+
+			Expect(k8sClient.Delete(ctx, getLease(ctx, leaseA))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-phone-2")).To(BeNil())
+		})
+
+		It("enqueues the lease of a mark for a change of that exporter", func() {
+			Expect(k8sClient.Create(ctx, memberLease(leaseA, refMember("phone", "mx-phone-1")))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+			lease := getLease(ctx, leaseA)
+			before, after := getExporter(ctx, "mx-phone-2"), getExporter(ctx, "mx-phone-2")
+			after.Status.ClaimRef = markFor(lease, 0)
+			Expect(exporterChangedForPendingLeases().Update(event.UpdateEvent{ObjectOld: before, ObjectNew: after})).To(BeTrue())
+			Expect(exporterChangedForPendingLeases().Update(event.UpdateEvent{ObjectOld: after, ObjectNew: after})).To(BeFalse())
+			Expect(newLeaseReconciler(k8sClient).mapExporterToLeases(ctx, after)).To(Equal([]reconcile.Request{{
+				NamespacedName: types.NamespacedName{Namespace: "default", Name: leaseA},
+			}}))
+			Expect(newLeaseReconciler(k8sClient).mapExporterToLeases(ctx, before)).To(BeEmpty())
+		})
+	})
+
+	When("the lease controller runs in a manager", func() {
+		It("reconciles a bound lease when one of its claims appears, and then stops", func() {
+			online(
+				mxExporter("mx-phone-1", "", phone), mxExporter("mx-phone-2", "", phone),
+				mxExporter("mx-phone-3", "", map[string]string{"mx": "other"}),
+			)
+
+			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
+				Scheme:                 k8sClient.Scheme(),
+				Metrics:                metricsserver.Options{BindAddress: "0"},
+				HealthProbeBindAddress: "0",
+				Controller:             config.Controller{SkipNameValidation: ptrTo(true)},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			counter := &leaseGetCounter{Client: mgr.GetClient(), name: leaseA}
+			Expect((&LeaseReconciler{
+				Client:    counter,
+				APIReader: mgr.GetAPIReader(),
+				Scheme:    mgr.GetScheme(),
+				StartedAt: time.Now().Add(-time.Hour),
+			}).SetupWithManager(mgr)).To(Succeed())
+			mgrCtx, stop := context.WithCancel(ctx)
+			stopped := make(chan error, 1)
+			go func() {
+				defer GinkgoRecover()
+				stopped <- mgr.Start(mgrCtx)
+			}()
+			DeferCleanup(func() {
+				stop()
+				Eventually(stopped, 30*time.Second).Should(Receive(BeNil()))
+			})
+
+			// settled waits until the lease is not reconciled for two seconds
+			// and returns the number of its reconciles.
+			settled := func() int64 {
+				var last int64 = -1
+				Eventually(func() bool {
+					now := counter.count.Load()
+					same := now == last
+					last = now
+					return same
+				}, 30*time.Second, 2*time.Second).Should(BeTrue())
+				return last
+			}
+
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				selectorMember("phone", phone), selectorMember("phone-2", phone)))).To(Succeed())
+			Eventually(func() bool { return getLease(ctx, leaseA).IsBound() }, 20*time.Second, 100*time.Millisecond).
+				Should(BeTrue())
+			// The bind creates claims and marks; their events must converge.
+			bindReconciles := settled()
+			Expect(bindReconciles).To(BeNumerically("<=", 10))
+			lease := getLease(ctx, leaseA)
+			Expect(lease.Status.BindAttempt).To(Equal(int64(1)))
+			Expect(claimsByKey(ctx)).To(HaveLen(2))
+
+			// An old leader that died left a claim of a smaller attempt for an
+			// exporter that the lease does not hold.
+			stray := &jumpstarterdevv1alpha1.ExporterClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      jumpstarterdevv1alpha1.ExporterClaimName("mx-phone-3"),
+					Namespace: "default",
+				},
+				Spec: jumpstarterdevv1alpha1.ExporterClaimSpec{
+					Exporter: "mx-phone-3",
+					LeaseRef: *markFor(lease, 0),
+				},
+			}
+			Expect(controllerutil.SetControllerReference(lease, stray, k8sClient.Scheme())).To(Succeed())
+			Expect(k8sClient.Create(ctx, stray)).To(Succeed())
+			Eventually(func() map[string]jumpstarterdevv1alpha1.ExporterClaim { return claimsByKey(ctx) },
+				20*time.Second, 100*time.Millisecond).ShouldNot(HaveKey("mx-phone-3"))
+			Expect(claimsByKey(ctx)).To(HaveLen(2))
+
+			Expect(settled() - bindReconciles).To(BeNumerically("<=", 5))
+			Expect(getLease(ctx, leaseA).Status.BindAttempt).To(Equal(int64(1)))
 		})
 	})
 
@@ -806,17 +1441,56 @@ var _ = Describe("Member-form leases", func() {
 			Expect(getLease(ctx, leaseA).IsBound()).To(BeTrue())
 		})
 
-		It("rejects a group change on an exporter that has a lease", func() {
-			Expect(k8sClient.Create(ctx, memberLease(leaseA, refMember("power", "mx-dut-power")))).To(Succeed())
+		It("rejects a group change from the mark to the end of the lease", func() {
+			changeGroup := func(name, group string) error {
+				exporter := getExporter(ctx, name)
+				exporter.Spec.ExclusionGroup = group
+				return k8sClient.Update(ctx, exporter)
+			}
+			rejected := func(name string) {
+				err := changeGroup(name, "mx-dut-2")
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("spec.exclusionGroup cannot change"))
+			}
+
+			Expect(k8sClient.Create(ctx, memberLease(leaseA,
+				refMember("power", "mx-dut-power"), refMember("serial", "mx-dut-serial")))).To(Succeed())
+			reconcileLeaseOnly(ctx, leaseA)
+
+			// The mark is set, status.leaseRef is not yet.
+			exporter := getExporter(ctx, "mx-dut-power")
+			Expect(exporter.Status.LeaseRef).To(BeNil())
+			Expect(exporter.Status.ClaimRef).NotTo(BeNil())
+			rejected("mx-dut-power")
+
+			reconcileExporter(ctx, "mx-dut-power")
+			Expect(getExporter(ctx, "mx-dut-power").Status.LeaseRef).NotTo(BeNil())
+			rejected("mx-dut-power")
+
+			// The exporter of a Lost member has no status.leaseRef, and keeps
+			// its mark.
+			setExporterOnlineConditions(ctx, "mx-dut-serial", metav1.ConditionFalse)
+			reconcileLeaseOnly(ctx, leaseA)
+			reconcileExporter(ctx, "mx-dut-serial")
+			lease := getLease(ctx, leaseA)
+			Expect(lease.MemberStatus("serial").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStateLost))
+			lost := getExporter(ctx, "mx-dut-serial")
+			Expect(lost.Status.LeaseRef).To(BeNil())
+			Expect(lost.Status.ClaimRef).To(Equal(markFor(lease, 1)))
+			rejected("mx-dut-serial")
+
+			// The exporter of the group that the lease did not select has no mark.
+			Expect(claimRefOf(ctx, "mx-dut-flash")).To(BeNil())
+
+			// After the lease ends the group can change.
+			lease.Spec.Release = true
+			Expect(k8sClient.Update(ctx, lease)).To(Succeed())
 			reconcileLeaseOnly(ctx, leaseA)
 			reconcileExporter(ctx, "mx-dut-power")
-
-			exporter := getExporter(ctx, "mx-dut-power")
-			Expect(exporter.Status.LeaseRef).NotTo(BeNil())
-			exporter.Spec.ExclusionGroup = "mx-dut-2"
-			err := k8sClient.Update(ctx, exporter)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("spec.exclusionGroup cannot change"))
+			Expect(claimRefOf(ctx, "mx-dut-power")).To(BeNil())
+			Expect(claimRefOf(ctx, "mx-dut-serial")).To(BeNil())
+			Expect(changeGroup("mx-dut-power", "mx-dut-2")).To(Succeed())
+			Expect(changeGroup("mx-dut-serial", "mx-dut-2")).To(Succeed())
 		})
 	})
 
@@ -888,11 +1562,9 @@ var _ = Describe("Member-form leases", func() {
 
 			reconcileExporter(ctx, "mx-phone-1")
 			Expect(getExporter(ctx, "mx-phone-1").Status.LeaseRef).To(Equal(&corev1.LocalObjectReference{Name: leaseA}))
-			owners := []string{}
-			for _, ref := range updated.OwnerReferences {
-				owners = append(owners, ref.Name)
-			}
-			Expect(owners).To(ConsistOf("mx-phone-1", testClient.Name))
+			Expect(updated.OwnerReferences).To(BeEmpty())
+			// The exporter reconciler still follows the exporter of the lost member.
+			Expect(mapLeaseToExporters(ctx, updated)).To(HaveLen(2))
 		}
 
 		It("loses a member whose exporter goes offline", func() {
@@ -919,6 +1591,60 @@ var _ = Describe("Member-form leases", func() {
 			Expect(k8sClient.Create(ctx, scalarRefLease(leaseB, "mx-phone-2"))).To(Succeed())
 			reconcileLeaseOnly(ctx, leaseB)
 			Expect(getLease(ctx, leaseB).Status.ExporterRef).To(BeNil())
+		})
+
+		It("does not lose a member for an offline exporter until the grace after a start ends", func() {
+			for _, name := range roles {
+				setExporterStatusValue(ctx, name, jumpstarterdevv1alpha1.ExporterStatusLeaseReady)
+			}
+			reconcileLeaseOnly(ctx, leaseA)
+			Expect(ready().Status).To(Equal(metav1.ConditionTrue))
+			setExporterOnlineConditions(ctx, "mx-phone-2", metav1.ConditionFalse)
+
+			// The controller started ten seconds ago.
+			started := newLeaseReconciler(k8sClient)
+			started.StartedAt = time.Now().Add(-10 * time.Second)
+			res := reconcileLeaseWith(ctx, started, leaseA)
+			Expect(res.RequeueAfter).To(BeNumerically(">", 40*time.Second))
+			Expect(res.RequeueAfter).To(BeNumerically("<=", 50*time.Second))
+			updated := getLease(ctx, leaseA)
+			Expect(updated.HasLostMember()).To(BeFalse())
+			Expect(updated.MemberStatus("phone-2").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStateBound))
+			Expect(leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypeDegraded)).To(BeNil())
+			Expect(ready().Status).To(Equal(metav1.ConditionTrue))
+
+			// The exporter reconnects in the grace: nothing was lost.
+			setExporterOnlineConditions(ctx, "mx-phone-2", metav1.ConditionTrue)
+			res = reconcileLeaseWith(ctx, started, leaseA)
+			Expect(getLease(ctx, leaseA).HasLostMember()).To(BeFalse())
+			Expect(res.RequeueAfter).To(BeNumerically(">", time.Minute))
+
+			// It is offline when the grace is over.
+			setExporterOnlineConditions(ctx, "mx-phone-2", metav1.ConditionFalse)
+			started.StartedAt = time.Now().Add(-exporterOfflineThreshold - time.Second)
+			reconcileLeaseWith(ctx, started, leaseA)
+			expectLost(jumpstarterdevv1alpha1.LeaseMemberReasonOffline)
+		})
+
+		It("does not delay a deleted exporter or a release for the grace after a start", func() {
+			started := newLeaseReconciler(k8sClient)
+			started.StartedAt = time.Now()
+
+			lease := getLease(ctx, leaseA)
+			Expect(lease.MarkMemberLost("phone",
+				jumpstarterdevv1alpha1.LeaseMemberReasonExporterReleased, "released")).To(BeTrue())
+			Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, getExporter(ctx, "mx-phone-2"))).To(Succeed())
+			reconcileLeaseWith(ctx, started, leaseA)
+
+			updated := getLease(ctx, leaseA)
+			Expect(updated.MemberStatus("phone").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStateLost))
+			Expect(updated.MemberStatus("phone").Reason).To(Equal(jumpstarterdevv1alpha1.LeaseMemberReasonExporterReleased))
+			Expect(updated.MemberStatus("phone-2").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStateLost))
+			Expect(updated.MemberStatus("phone-2").Reason).To(Equal(jumpstarterdevv1alpha1.LeaseMemberReasonExporterDeleted))
+			degraded := leaseCondition(updated, jumpstarterdevv1alpha1.LeaseConditionTypeDegraded)
+			Expect(degraded).NotTo(BeNil())
+			Expect(degraded.Status).To(Equal(metav1.ConditionTrue))
 		})
 
 		It("loses a member whose exporter is deleted", func() {
@@ -1033,6 +1759,8 @@ var _ = Describe("Member-form leases", func() {
 
 			claims := claimsByKey(ctx)
 			Expect(claims["mx-phone-1"].Spec.LeaseRef.UID).To(Equal(old.UID))
+			// The backfill also marks the exporter.
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(old, 0)))
 			Expect(memberExporter(getLease(ctx, leaseB), "phone")).To(Equal("mx-phone-2"))
 			reconcileExporter(ctx, "mx-phone-1")
 			Expect(getExporter(ctx, "mx-phone-1").Status.LeaseRef).To(Equal(&corev1.LocalObjectReference{Name: leaseA}))
@@ -1041,8 +1769,10 @@ var _ = Describe("Member-form leases", func() {
 		It("creates the claim on the reconcile of the bound lease", func() {
 			Expect(k8sClient.Create(ctx, scalarRefLease(leaseA, "mx-phone-1"))).To(Succeed())
 			old := bindWithoutClaim(ctx, leaseA, "mx-phone-1")
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(BeNil())
 			reconcileLeaseOnly(ctx, leaseA)
 			Expect(claimsByKey(ctx)["mx-phone-1"].Spec.LeaseRef.UID).To(Equal(old.UID))
+			Expect(claimRefOf(ctx, "mx-phone-1")).To(Equal(markFor(old, 0)))
 			Expect(getLease(ctx, leaseA).Status.Ended).To(BeFalse())
 		})
 
@@ -1079,8 +1809,10 @@ var _ = Describe("Member-form leases", func() {
 			reconcileLeaseOnly(ctx, leaseB)
 			Expect(claimsByKey(ctx)["mx-phone-1"].Spec.LeaseRef.UID).To(Equal(newer.UID))
 
+			// The lease expires in an hour. It must come back for its claim
+			// much sooner than that.
 			res := reconcileLeaseOnly(ctx, leaseA)
-			Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(res.RequeueAfter).To(Equal(time.Second))
 			Expect(leaseCondition(getLease(ctx, leaseB), jumpstarterdevv1alpha1.LeaseConditionTypeInvalid).Reason).
 				To(Equal(jumpstarterdevv1alpha1.LeaseReasonExporterConflict))
 			reconcileLeaseOnly(ctx, leaseB)
