@@ -624,7 +624,9 @@ func TestRenderPod_execBackendLogContext(t *testing.T) {
 }
 
 func TestRenderPod_httpBackendHasNoLauncher(t *testing.T) {
-	for _, params := range []map[string]any{{"fetch_images": true}, {"fetch_images": true, "backend": "http"}} {
+	for _, params := range []map[string]any{
+		{"fetch_images": true}, {"fetch_images": true, "backend": "http"}, {"fetch_images": true, "runtime_launcher": false},
+	} {
 		pod := renderTestPod(t, params)
 		for _, volume := range pod.Spec.Volumes {
 			if volume.Name == sharedVolumeName {
@@ -644,12 +646,106 @@ func TestRenderPod_httpBackendHasNoLauncher(t *testing.T) {
 	}
 }
 
+// A driver in the exporter container cannot open the Unix sockets of the
+// guest (the wmediumd API socket of the Wi-Fi medium is in the runtime
+// container's /tmp). With runtime_launcher, the http backend serves the same
+// launcher socket as the exec backend, and the driver runs its helper beside
+// the socket through jumpstarter-exec.
+func TestRenderPod_httpBackendRuntimeLauncher(t *testing.T) {
+	pod := renderTestPod(t, map[string]any{"fetch_images": true, "runtime_launcher": true, "webrtc_turn": true})
+
+	copyExec := pod.Spec.InitContainers[0]
+	if copyExec.Name != "copy-jumpstarter-exec" || copyExec.Command[1] != jmpExecBinaryPath ||
+		copyExec.Command[2] != sharedMountPath+"/jumpstarter-exec" || copyExec.Image != pod.Spec.Containers[0].Image ||
+		!hasMount(copyExec.VolumeMounts, sharedVolumeName, sharedMountPath) {
+		t.Fatalf("jumpstarter-exec must be staged from the exporter image: %#v", copyExec)
+	}
+	permissions := initContainer(t, pod, "fix-cuttlefish-permissions")
+	if command := permissions.Command[2]; !strings.Contains(command, "chown httpcvd:httpcvd /shared && chmod 1777 /shared") ||
+		!hasMount(permissions.VolumeMounts, sharedVolumeName, sharedMountPath) {
+		t.Fatalf("shared directory must be writable by the launcher and readable by the exporter: %#v", permissions)
+	}
+
+	runtime := initContainer(t, pod, runtimeContainerName)
+	script := runtime.Command[2]
+	launcher := "(cd / && exec runuser -u httpcvd -- /shared/jumpstarter-exec serve --socket /shared/launcher.sock) &\n"
+	// The launcher runs as the user that owns the CVD's sockets, in the
+	// background: Host Orchestrator stays PID 1's job and in control of cvd.
+	if !strings.HasSuffix(script, launcher+"exec /root/run_services.sh") {
+		t.Fatalf("runtime must start the launcher before the image services: %q", script)
+	}
+	if !hasMount(runtime.VolumeMounts, sharedVolumeName, sharedMountPath) {
+		t.Fatalf("runtime lacks the shared volume: %#v", runtime.VolumeMounts)
+	}
+
+	exporter := pod.Spec.Containers[0]
+	if !hasEnv(exporter.Env, "JUMPSTARTER_LAUNCHER_SOCKET", launcherSocketPath) ||
+		!hasMount(exporter.VolumeMounts, sharedVolumeName, sharedMountPath) {
+		t.Fatalf("exporter must reach the launcher: %#v", exporter)
+	}
+	// The backend is unchanged: the exporter, the gate and the probe use Host Orchestrator.
+	if exporter.Command[6] != hostOrchestratorURL {
+		t.Fatalf("exporter endpoint = %q, want %q", exporter.Command[6], hostOrchestratorURL)
+	}
+	gate := initContainer(t, pod, gateContainerName)
+	if gate.Command[4] != hostOrchestratorURL || len(gate.VolumeMounts) != 0 {
+		t.Fatalf("startup gate must wait on Host Orchestrator only: %#v", gate)
+	}
+
+	total := resource.MustParse("1Gi")
+	sharedFound := false
+	for _, volume := range pod.Spec.Volumes {
+		if volume.Name == sharedVolumeName {
+			sharedFound = true
+			if volume.EmptyDir == nil || volume.EmptyDir.SizeLimit == nil || volume.EmptyDir.SizeLimit.String() != sharedVolumeSizeLimit {
+				t.Fatalf("shared volume must be a bounded emptyDir: %#v", volume)
+			}
+		}
+		if volume.EmptyDir != nil {
+			total.Add(*volume.EmptyDir.SizeLimit)
+		}
+	}
+	if !sharedFound {
+		t.Fatal("shared volume missing")
+	}
+	if request := runtime.Resources.Requests[corev1.ResourceEphemeralStorage]; request.Cmp(total) != 0 {
+		t.Fatalf("storage budget %s does not include the shared volume (%s)", request.String(), total.String())
+	}
+}
+
+func TestRenderPod_runtimeLauncherLogContext(t *testing.T) {
+	exporter := &jumpstarterdevv1alpha1.Exporter{ObjectMeta: metav1.ObjectMeta{Name: "cf-1", Namespace: "lab"}}
+	pod, err := New("dev").RenderPod(context.Background(), testExporterSet(), &virtualtargetv1alpha1.VirtualTargetClass{}, map[string]any{
+		"fetch_images": true, "runtime_launcher": true, "runtime_privileged": true, "service_account_name": "cuttlefish-runtime",
+	}, nil, exporter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime := initContainer(t, pod, runtimeContainerName); !hasEnv(runtime.Env, "JUMPSTARTER_EXEC_LOG_FIELDS", "component=exporter,exporter=cf-1,namespace=lab") {
+		t.Fatalf("launcher log context missing: %#v", runtime.Env)
+	}
+}
+
+// The launcher is for other drivers: the Cuttlefish driver of the http
+// backend still talks to Host Orchestrator and gets no launcher_socket.
+func TestEnrichExporterExport_runtimeLauncherKeepsHTTPBackend(t *testing.T) {
+	drivers := []virtualtargetv1alpha1.DriverConfig{{Name: "cuttlefish", Type: cuttlefishDriverType}}
+	enriched, err := New("dev").EnrichExporterExport(context.Background(), nil, drivers, map[string]any{"runtime_launcher": true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config := configFor(t, enriched[0]); config["launcher_socket"] != nil || config["cvd_user"] != nil {
+		t.Fatalf("http backend must not drive cvd through the launcher: %#v", config)
+	}
+}
+
 func TestBackendValidation(t *testing.T) {
 	for _, params := range []map[string]any{
 		{"backend": "grpc"}, {"backend": 1}, {"backend": ""},
 		{"cvd_user": "root"}, {"backend": "http", "cvd_user": "root"}, {"backend": "http", "cvd_user": "httpcvd"},
 		{"backend": "exec", "cvd_user": ""}, {"backend": "exec", "cvd_user": "Bad User"}, {"backend": "exec", "cvd_user": 101},
 		{"backend": "exec", "cvd_user": "root"},
+		{"runtime_launcher": "true"}, {"runtime_launcher": 1}, {"backend": "exec", "runtime_launcher": false},
 	} {
 		params["fetch_images"] = true
 		params["runtime_privileged"] = true

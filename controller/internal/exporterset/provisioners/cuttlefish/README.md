@@ -309,6 +309,31 @@ only the provisioner-approved `env_config`. Host Orchestrator operations
 synchronous. Inventory documents are normalized to the Host Orchestrator shape,
 so clients see the same fields from both backends.
 
+### A launcher beside Host Orchestrator
+
+Some drivers must run a helper where the guest's Unix sockets are. The Wi-Fi
+medium is one: wmediumd's API socket is
+`/tmp/cf_env_<uid>/env-1/wmediumd_api_server` in the runtime container, and the
+exporter container cannot open it. Set `parameters.runtime_launcher: true` to
+keep the `http` backend and also get the launcher of exec mode: the `shared`
+emptyDir, the `copy-jumpstarter-exec` init container, and
+`JUMPSTARTER_LAUNCHER_SOCKET=/shared/launcher.sock` on the exporter. The runtime
+container starts `jumpstarter-exec serve` in the background as `httpcvd`, the
+user that owns the CVD, and then runs the image services as before. Host
+Orchestrator stays in control of `cvd`: the Cuttlefish driver gets no
+`launcher_socket`, and the startup gate and the liveness probe do not depend on
+the launcher.
+
+It is off by default because it widens what the exporter can do: commands
+received over `launcher.sock` run in the privileged runtime container as
+`httpcvd`, outside the checks that `create_cvd()` makes in managed mode. The
+exec backend always runs the launcher; `runtime_launcher: false` is rejected
+there.
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `runtime_launcher` | Run a `jumpstarter-exec` launcher in the runtime container of the `http` backend | `false` |
+
 ## WebRTC display over the lease
 
 Set `parameters.webrtc_turn: true` to make the CVD's screen viewable by whoever

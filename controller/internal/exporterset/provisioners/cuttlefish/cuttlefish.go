@@ -87,7 +87,8 @@ const (
 	backendExec = "exec"
 
 	// Shared emptyDir carrying jumpstarter-exec, the launcher socket and the
-	// env_config handed to `cvd load`. Only used by the exec backend.
+	// env_config handed to `cvd load`. Used by the exec backend, and by the
+	// http backend with parameters.runtime_launcher.
 	sharedVolumeName      = "shared"
 	sharedMountPath       = "/shared"
 	sharedVolumeSizeLimit = "100Mi"
@@ -152,10 +153,20 @@ func resolveGuestSpec(parameters map[string]any) (guestSpec, error) {
 
 type runtimeConfig struct {
 	backend, cvdUser string
+	// launcher is parameters.runtime_launcher: the http backend also runs a
+	// jumpstarter-exec launcher in the runtime container, for drivers that
+	// must run a helper beside the guest's Unix sockets (the Wi-Fi medium).
+	launcher bool
 }
 
 func (r runtimeConfig) exec() bool {
 	return r.backend == backendExec
+}
+
+// hasLauncher reports whether the runtime container serves launcher.sock on
+// the shared volume. The exec backend always does.
+func (r runtimeConfig) hasLauncher() bool {
+	return r.exec() || r.launcher
 }
 
 // endpoint is how the exporter and probes reach the runtime.
@@ -184,6 +195,16 @@ func resolveBackend(parameters map[string]any) (runtimeConfig, error) {
 			return config, fmt.Errorf("cvd_user must be a non-root container user name")
 		}
 		config.cvdUser = value
+	}
+	if raw, exists := parameters["runtime_launcher"]; exists {
+		value, ok := raw.(bool)
+		if !ok {
+			return config, fmt.Errorf("runtime_launcher must be a boolean")
+		}
+		if config.exec() && !value {
+			return config, fmt.Errorf("runtime_launcher cannot be false with parameters.backend=%q", backendExec)
+		}
+		config.launcher = value
 	}
 	return config, nil
 }
@@ -516,7 +537,7 @@ func (p *Provisioner) RenderPod(
 	if err != nil {
 		return nil, err
 	}
-	if rt.exec() {
+	if rt.hasLauncher() {
 		storage.budget.Add(resource.MustParse(sharedVolumeSizeLimit))
 	}
 	webrtc, err := resolveWebRTCConfig(mergedParameters)
@@ -643,8 +664,9 @@ func exporterContainer(img images, rt runtimeConfig) corev1.Container {
 			PeriodSeconds: 10, TimeoutSeconds: 10, FailureThreshold: 6,
 		},
 	}
-	if rt.exec() {
-		// The exporter's lease-end path calls `jumpstarter-exec shutdown` on this socket.
+	if rt.hasLauncher() {
+		// The exporter's lease-end path calls `jumpstarter-exec shutdown` on this
+		// socket, and drivers run helpers in the runtime container through it.
 		container.VolumeMounts = append(container.VolumeMounts, sharedMount())
 		container.Env = append(container.Env, corev1.EnvVar{Name: "JUMPSTARTER_LAUNCHER_SOCKET", Value: launcherSocketPath})
 	}
@@ -696,6 +718,13 @@ func runtimeCommand(rt runtimeConfig) string {
 	marker := "cat /proc/sys/kernel/random/uuid > " + cvdStatePath + "/runtime-id\n" +
 		"chmod 644 " + cvdStatePath + "/runtime-id\n" + launcherLogsCommand(cvdStatePath)
 	if !rt.exec() {
+		if rt.launcher {
+			// Host Orchestrator stays in control of cvd. The launcher runs next
+			// to it, as the user that owns the CVD and its Unix sockets, for
+			// the helpers of other drivers.
+			marker += "(cd " + launcherWorkDir + " && exec runuser -u " + rt.cvdUser + " -- " +
+				sharedMountPath + "/jumpstarter-exec serve --socket " + launcherSocketPath + ") &\n"
+		}
 		return marker + "exec /root/run_services.sh"
 	}
 	// Host Orchestrator and stock nginx are not started: cvd is driven over
@@ -728,7 +757,7 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 	root := int64(0)
 
 	var containers []corev1.Container
-	if rt.exec() {
+	if rt.hasLauncher() {
 		containers = append(containers, corev1.Container{
 			Name: "copy-jumpstarter-exec", Image: img.exporter, ImagePullPolicy: img.exporterPull,
 			Command:      []string{"cp", jmpExecBinaryPath, sharedMountPath + "/jumpstarter-exec"},
@@ -758,8 +787,11 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 	var runtimeEnv []corev1.EnvVar
 	var gateMounts []corev1.VolumeMount
 	if rt.exec() {
-		runtimeMounts = append(runtimeMounts, sharedMount())
+		// Only the exec backend's gate waits on the launcher.
 		gateMounts = []corev1.VolumeMount{sharedMount()}
+	}
+	if rt.hasLauncher() {
+		runtimeMounts = append(runtimeMounts, sharedMount())
 		if exporter != nil {
 			// JEP-0013 persistent log context on every jumpstarter-exec serve line.
 			runtimeEnv = []corev1.EnvVar{{
@@ -783,7 +815,7 @@ func initContainers(img images, storage storageConfig, runtime corev1.ResourceRe
 	permissionsCommand := "mkdir -p " + cvdStatePath + " " + androidTmpPath +
 		" && chown -R " + rt.cvdUser + ":" + rt.cvdUser + " " + cvdStatePath + " " + androidTmpPath + " " + fetchPath
 	permissionsMounts := stateMounts
-	if rt.exec() {
+	if rt.hasLauncher() {
 		// The exporter writes env_config here; the launcher creates its socket.
 		// Sticky mode keeps the exporter from replacing the launcher socket.
 		permissionsCommand += " && chown " + rt.cvdUser + ":" + rt.cvdUser + " " + sharedMountPath +
@@ -835,7 +867,7 @@ func volumes(storage storageConfig, rt runtimeConfig) []corev1.Volume {
 		deviceVolume("vhost-net", "/dev/vhost-net"),
 		deviceVolume("tun", "/dev/net/tun"),
 	}
-	if rt.exec() {
+	if rt.hasLauncher() {
 		size := resource.MustParse(sharedVolumeSizeLimit)
 		result = append(result, emptyDir(sharedVolumeName, &size))
 	}
