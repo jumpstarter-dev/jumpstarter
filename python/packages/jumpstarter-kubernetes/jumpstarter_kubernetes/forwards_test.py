@@ -13,6 +13,7 @@ from jumpstarter_kubernetes import (
     V1Alpha1ForwardEndpoint,
     V1Alpha1Lease,
     V1Alpha1LeaseForward,
+    V1Alpha1LeaseForwardEndStatus,
     V1Alpha1LeaseForwardStatus,
     V1Alpha1LeaseList,
     V1Alpha1LeaseTemplate,
@@ -145,6 +146,39 @@ class TestLease:
             # a status without a message has no message key
             assert parsed["status"]["forwards"][0] == {"name": "bt", "state": "Connected"}
             assert parsed["status"]["forwards"][1]["message"] == "port 'console' is not on exporter hu-1"
+
+    def test_reads_and_prints_the_ends_of_a_forward_as_the_cluster_has_them(self):
+        data = lease_dict()
+        ends = [
+            {
+                "member": "headunit",
+                "state": "Ready",
+                "sequence": 1764000000123,
+                "setupTime": "2026-11-24T10:00:00Z",
+                "reportTime": "2026-11-24T10:00:01Z",
+            },
+            {"member": "peer", "state": "Failed", "message": "address already in use", "sequence": 7},
+            {"member": "logger", "state": "Pending", "setupTime": "2026-11-24T10:00:00Z"},
+        ]
+        data["status"]["forwards"][1]["ends"] = ends
+        lease = V1Alpha1Lease.from_dict(data)
+        assert lease.status.forwards is not None
+        assert lease.status.forwards[0].ends is None
+        assert lease.status.forwards[1].ends == [
+            V1Alpha1LeaseForwardEndStatus(
+                member="headunit",
+                state="Ready",
+                sequence=1764000000123,
+                setup_time="2026-11-24T10:00:00Z",
+                report_time="2026-11-24T10:00:01Z",
+            ),
+            V1Alpha1LeaseForwardEndStatus(member="peer", state="Failed", message="address already in use", sequence=7),
+            V1Alpha1LeaseForwardEndStatus(member="logger", state="Pending", setup_time="2026-11-24T10:00:00Z"),
+        ]
+        for parsed in (json.loads(lease.dump_json()), yaml.safe_load(lease.dump_yaml())):
+            # a forward without ends has no ends key, and an end has only the fields that are set
+            assert "ends" not in parsed["status"]["forwards"][0]
+            assert parsed["status"]["forwards"][1]["ends"] == ends
 
     def test_lease_without_forwards_prints_as_before(self):
         lease = V1Alpha1Lease.from_dict(lease_dict(forwards=False))

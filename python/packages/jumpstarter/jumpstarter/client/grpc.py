@@ -129,6 +129,13 @@ _FORWARD_STATES = {
     client_pb2.LEASE_FORWARD_STATE_FAILED: "Failed",
 }
 
+_FORWARD_END_STATES = {
+    client_pb2.LEASE_FORWARD_END_STATE_PENDING: "Pending",
+    client_pb2.LEASE_FORWARD_END_STATE_READY: "Ready",
+    client_pb2.LEASE_FORWARD_END_STATE_CONNECTED: "Connected",
+    client_pb2.LEASE_FORWARD_END_STATE_FAILED: "Failed",
+}
+
 # The enums of jumpstarter.v1.PortReport, by number. The zero value of the
 # attachment means socket, and the zero value of the transport means stream.
 _PORT_DIRECTIONS = {1: "provides", 2: "requires", 3: "connects"}
@@ -269,10 +276,46 @@ class LeaseForward(BaseModel):
         return ", ".join(str(e) for e in self.endpoints)
 
 
+class LeaseForwardEndStatus(BaseModel):
+    """The state of one end of a forward: what the exporter of the member reported last."""
+
+    member_name: str
+    state: str  # Pending | Ready | Connected | Failed
+    message: str | None = None
+
+    @classmethod
+    def from_protobuf(cls, data: client_pb2.LeaseForwardEndStatus) -> LeaseForwardEndStatus:
+        return cls(
+            member_name=data.member_name,
+            state=_FORWARD_END_STATES.get(data.state, "Unknown"),
+            message=data.message if data.HasField("message") and data.message else None,
+        )
+
+    def describe(self) -> str:
+        """`member: State`, with the message of the end."""
+        return format_forward_end(self.member_name, self.state, self.message)
+
+
+def format_forward_end(member: str, state: str, message: str | None = None) -> str:
+    """`member: State (message)`: one end of a forward, for display."""
+    text = f"{member}: {state}"
+    return f"{text} ({message})" if message else text
+
+
 class LeaseForwardStatus(BaseModel):
     name: str
     state: str  # Pending | Disabled | Listening | Connected | Failed
     message: str | None = None
+    # The state of each bound end of the forward. A controller that is older
+    # than the field gives none.
+    ends: list[LeaseForwardEndStatus] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_ends(self, handler):
+        data = handler(self)
+        if not self.ends:
+            data.pop("ends", None)
+        return data
 
     @classmethod
     def from_protobuf(cls, data: client_pb2.LeaseForwardStatus) -> LeaseForwardStatus:
@@ -280,7 +323,24 @@ class LeaseForwardStatus(BaseModel):
             name=data.name,
             state=_FORWARD_STATES.get(data.state, "Unknown"),
             message=data.message if data.HasField("message") and data.message else None,
+            ends=[LeaseForwardEndStatus.from_protobuf(end) for end in data.ends],
         )
+
+    def end(self, member_name: str) -> LeaseForwardEndStatus | None:
+        for end in self.ends:
+            if end.member_name == member_name:
+                return end
+        return None
+
+    def describe_ends(self, separator: str = "\n") -> str:
+        """The state and the message of each end, one for each line.
+
+        Empty for a forward that is Listening or Connected: the ends are
+        then of no interest.
+        """
+        if self.usable:
+            return ""
+        return separator.join(end.describe() for end in self.ends)
 
     @property
     def failed(self) -> bool:

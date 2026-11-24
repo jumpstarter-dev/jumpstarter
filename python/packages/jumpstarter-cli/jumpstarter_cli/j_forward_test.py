@@ -35,6 +35,7 @@ SNAPSHOT = [
         "message": None,
     }
 ]
+FAILED_ENDS = [("headunit", "Ready"), ("phone", "Failed", "address already in use")]
 
 
 def lease(*statuses, forwards=None) -> Lease:
@@ -111,6 +112,15 @@ class TestStatusList:
         assert console.describe() == "headunit.console → phone.console"
         assert console.state == "Pending"  # no status yet
 
+    def test_ends_come_from_the_lease_status(self):
+        config = client_config(lease(forward_status_pb("bt", "Failed", "The setup failed", ends=FAILED_ENDS)))
+        (bt,) = forward_status_list(config, "lease-9m2qd", in_shell=False).forwards
+        assert [(e.member, e.state, e.message) for e in bt.ends] == [
+            ("headunit", "Ready", None),
+            ("phone", "Failed", "address already in use"),
+        ]
+        assert bt.describe_ends() == "headunit: Ready\nphone: Failed (address already in use)"
+
     def test_port_that_no_exporter_reports_has_no_arrow(self):
         config = client_config(lease(forwards=[forward_pb("can", "headunit.can", "phone.can-remote")]))
         (can,) = forward_status_list(config, "lease-9m2qd", in_shell=False).forwards
@@ -140,6 +150,54 @@ class TestCommand:
         assert "MESSAGE" in result.output
         assert "Failed" in result.output and "the listen address is in use" in result.output
         assert "Disabled" in result.output and "member 'phone' is omitted" in result.output
+
+    def test_forward_that_is_not_usable_shows_the_state_and_the_message_of_each_end(self):
+        result = run(
+            client_config(
+                lease(
+                    forward_status_pb("bt", "Failed", "The setup failed", ends=FAILED_ENDS),
+                    forward_status_pb("can", "Pending", ends=[("headunit", "Ready"), ("phone", "Pending")]),
+                    forward_status_pb("uart", "Connected", ends=[("headunit", "Connected"), ("phone", "Ready")]),
+                    forwards=[
+                        forward_pb(),
+                        forward_pb("can", "headunit.can", "phone.can-remote"),
+                        forward_pb("uart", "headunit.uart", "phone.uart"),
+                    ],
+                )
+            )
+        )
+        assert result.exit_code == 0, result.output
+        lines = [line.rstrip() for line in result.output.splitlines() if line.strip()]
+        assert lines[0].split() == ["NAME", "ENDPOINTS", "STATE", "MESSAGE", "ENDS"]
+        assert "headunit: Ready" in lines[1] and lines[1].split()[0] == "bt"
+        assert "phone: Failed (address already in use)" in lines[2]
+        assert "headunit: Ready" in lines[3] and lines[3].split()[0] == "can"
+        assert "phone: Pending" in lines[4]
+        # a forward that is Listening or Connected does not show its ends
+        assert lines[5].split() == ["uart", "headunit.uart", "↔", "phone.uart", "Connected"]
+        assert len(lines) == 6
+
+    def test_usable_forwards_have_no_ends_column(self):
+        result = run(
+            client_config(lease(forward_status_pb("bt", "Listening", ends=[("headunit", "Ready"), ("phone", "Ready")])))
+        )
+        assert result.exit_code == 0 and "ENDS" not in result.output and "headunit: Ready" not in result.output
+
+    @pytest.mark.parametrize("output", ["json", "yaml"])
+    def test_structured_output_has_the_ends(self, output):
+        result = run(
+            client_config(
+                lease(forward_status_pb("bt", "Connected", ends=[("headunit", "Connected"), ("phone", "Ready")]))
+            ),
+            "-o",
+            output,
+        )
+        data = json.loads(result.output) if output == "json" else yaml.safe_load(result.output)
+        assert data["forwards"][0]["state"] == "Connected"
+        assert data["forwards"][0]["ends"] == [
+            {"member": "headunit", "state": "Connected", "message": None},
+            {"member": "phone", "state": "Ready", "message": None},
+        ]
 
     @pytest.mark.parametrize("output", ["json", "yaml"])
     def test_structured_output(self, output):
@@ -186,6 +244,14 @@ class TestCommand:
         assert "cannot read lease lease-9m2qd (controller is down)" in result.output
         assert "These are the states at the start of the shell" in result.output
         assert "headunit.rootcanal → phone.controller" in result.output and "Pending" in result.output
+
+    def test_lease_that_cannot_be_read_shows_the_ends_of_the_shell_start(self):
+        snapshot = [
+            {**SNAPSHOT[0], "ends": [{"member": "headunit", "state": "Ready", "message": None}, {"member": "phone"}]}
+        ]
+        result = run(client_config(RuntimeError("controller is down")), env={JMP_LEASE_FORWARDS: json.dumps(snapshot)})
+        assert result.exit_code == 0
+        assert "ENDS" in result.output and "headunit: Ready" in result.output and "phone: Pending" in result.output
 
     def test_lease_that_cannot_be_read_without_a_record_is_an_error(self):
         result = run(client_config(ConnectionError("controller is down")))

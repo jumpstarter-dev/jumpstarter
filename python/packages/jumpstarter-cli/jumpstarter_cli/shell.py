@@ -857,14 +857,17 @@ def _forwards_environment(lease) -> list[dict]:
                 entry["direction"] = direction
             endpoints.append(entry)
         status = statuses.get(forward.name)
-        described.append(
-            {
-                "name": forward.name,
-                "endpoints": endpoints,
-                "state": status.state if status is not None else "Pending",
-                "message": status.message if status is not None else None,
-            }
-        )
+        entry = {
+            "name": forward.name,
+            "endpoints": endpoints,
+            "state": status.state if status is not None else "Pending",
+            "message": status.message if status is not None else None,
+        }
+        # The state of each end, when the controller gives it.
+        ends = getattr(status, "ends", None) or []
+        if ends:
+            entry["ends"] = [{"member": end.member_name, "state": end.state, "message": end.message} for end in ends]
+        described.append(entry)
     return described
 
 

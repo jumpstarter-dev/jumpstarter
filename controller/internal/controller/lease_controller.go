@@ -155,6 +155,11 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return result, err
 	}
 
+	// The states of the forward ends are of no use after the lease.
+	if lease.Status.Ended {
+		lease.ClearForwardEnds()
+	}
+
 	if err := r.Status().Update(ctx, &lease); err != nil {
 		// Only a rejection says that the bind was not written. After any
 		// other error (a timeout, for example) the API server can have
@@ -183,9 +188,10 @@ func (r *LeaseReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 	if lease.Status.Ended {
 		lease.Labels[string(jumpstarterdevv1alpha1.LeaseLabelEnded)] = jumpstarterdevv1alpha1.LeaseLabelEndedValue
-		// The reports of the forward ends are of no use after the lease.
-		delete(lease.Annotations, jumpstarterdevv1alpha1.LeaseForwardEndsAnnotation)
 	}
+	// An earlier build kept the states of the forward ends in this
+	// annotation. They are in status.forwards[].ends[] now.
+	delete(lease.Annotations, jumpstarterdevv1alpha1.LegacyLeaseForwardEndsAnnotation)
 
 	if err := r.reconcileOwnerReferences(ctx, &lease); err != nil {
 		return result, err

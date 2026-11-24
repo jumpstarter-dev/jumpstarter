@@ -114,6 +114,39 @@ def test_state_comes_from_the_lease_through_the_client_config(monkeypatch):
     config.get_lease.assert_awaited_with(name="lease-9m2qd")
 
 
+def test_ends_come_from_the_environment_and_then_from_the_lease(monkeypatch):
+    ends = [{"member": "headunit", "state": "Ready"}, {"member": "phone"}]
+    started = [{**FORWARDS[0], "state": "Pending", "ends": ends}]
+    monkeypatch.setenv(JMP_LEASE_FORWARDS, json.dumps(started))
+    lease = Lease.from_protobuf(
+        members_lease_pb(
+            forwards=[forward_pb()],
+            forward_statuses=[
+                forward_status_pb(
+                    "bt", "Failed", "The setup failed", [("headunit", "Ready"), ("phone", "Failed", "address in use")]
+                )
+            ],
+        )
+    )
+    config = Mock(get_lease=AsyncMock(return_value=lease))
+    with (
+        patch("jumpstarter.utils.env._current_client_config", return_value=config),
+        members_shell(monkeypatch),
+        env_members() as members,
+    ):
+        bt = members.forwards["bt"]
+        # the states at the start of the shell: an end without a state is Pending
+        assert [(e.member_name, e.state, e.message) for e in bt.ends] == [
+            ("headunit", "Ready", None),
+            ("phone", "Pending", None),
+        ]
+        bt.refresh()
+        assert [(e.member_name, e.state, e.message) for e in bt.ends] == [
+            ("headunit", "Ready", None),
+            ("phone", "Failed", "address in use"),
+        ]
+
+
 def test_pending_forward_without_a_client_config_times_out_with_the_reason(monkeypatch, no_controller):
     pending = [{**FORWARDS[0], "state": "Pending"}]
     monkeypatch.setenv(JMP_LEASE_FORWARDS, json.dumps(pending))

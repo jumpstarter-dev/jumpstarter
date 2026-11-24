@@ -15,6 +15,12 @@ _FORWARD_STATES = {
     "Connected": client_pb2.LEASE_FORWARD_STATE_CONNECTED,
     "Failed": client_pb2.LEASE_FORWARD_STATE_FAILED,
 }
+_FORWARD_END_STATES = {
+    "Pending": client_pb2.LEASE_FORWARD_END_STATE_PENDING,
+    "Ready": client_pb2.LEASE_FORWARD_END_STATE_READY,
+    "Connected": client_pb2.LEASE_FORWARD_END_STATE_CONNECTED,
+    "Failed": client_pb2.LEASE_FORWARD_END_STATE_FAILED,
+}
 _PORT_DIRECTIONS = {"provides": 1, "requires": 2, "connects": 3}
 _PORT_ATTACHMENTS = {"socket": 1, "wired": 2, "wireless": 3}
 _PORT_TRANSPORTS = {"stream": 1, "datagram": 2, "frame": 3}
@@ -29,10 +35,21 @@ def forward_pb(name="bt", *endpoints):
     return forward
 
 
-def forward_status_pb(name="bt", state="Listening", message=None):
+def forward_end_status_pb(member="headunit", state="Ready", message=None):
+    """The state of one end of a forward."""
+    end = client_pb2.LeaseForwardEndStatus(member_name=member, state=_FORWARD_END_STATES[state])
+    if message is not None:
+        end.message = message
+    return end
+
+
+def forward_status_pb(name="bt", state="Listening", message=None, ends=()):
+    """The state of a forward. ends are (member, state[, message]) tuples or `forward_end_status_pb` messages."""
     status = client_pb2.LeaseForwardStatus(name=name, state=_FORWARD_STATES[state])
     if message is not None:
         status.message = message
+    for end in ends:
+        status.ends.append(end if isinstance(end, client_pb2.LeaseForwardEndStatus) else forward_end_status_pb(*end))
     return status
 
 

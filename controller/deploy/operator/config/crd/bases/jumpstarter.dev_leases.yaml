@@ -550,6 +550,62 @@ spec:
                   description: LeaseForwardStatus is the observed state of one forward
                     of a lease.
                   properties:
+                    ends:
+                      description: |-
+                        Ends is the state of each bound end of the forward, in the order of
+                        the endpoints. The key is the member. The controller service writes
+                        the reports and the setup times; the lease controller calculates State
+                        from them.
+                      items:
+                        description: |-
+                          LeaseForwardEndStatus is the observed state of one end of a forward: the
+                          last report that the controller accepted from the exporter of the member,
+                          and the time of the last setup instruction.
+                        properties:
+                          member:
+                            description: Member is the role name of the member of
+                              this end.
+                            type: string
+                          message:
+                            description: Message is the cause that a Failed report
+                              gave.
+                            type: string
+                          reportTime:
+                            description: ReportTime is the time of the last report
+                              that the controller accepted.
+                            format: date-time
+                            type: string
+                          sequence:
+                            description: |-
+                              Sequence is the sequence number of the last report that the controller
+                              accepted. A report with a number that is not larger is ignored.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          setupTime:
+                            description: SetupTime is the time of the last setup instruction
+                              for this end.
+                            format: date-time
+                            type: string
+                          state:
+                            description: |-
+                              State is the state of the last accepted report. It is Pending until
+                              the exporter sends a report.
+                            enum:
+                            - Pending
+                            - Ready
+                            - Connected
+                            - Failed
+                            type: string
+                        required:
+                        - member
+                        - state
+                        type: object
+                      maxItems: 8
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - member
+                      x-kubernetes-list-type: map
                     message:
                       description: |-
                         Message is a human-readable message for the state: the role of the

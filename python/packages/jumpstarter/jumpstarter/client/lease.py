@@ -38,7 +38,14 @@ from xdg_base_dirs import xdg_runtime_dir
 from .base import DriverClient
 from .exceptions import ForwardError, LeaseError, LeaseMemberLostError
 from jumpstarter.client import client_from_path
-from jumpstarter.client.grpc import ClientService, ForwardEndpoint, LeaseForwardStatus, LeaseMemberStatus, PortReport
+from jumpstarter.client.grpc import (
+    ClientService,
+    ForwardEndpoint,
+    LeaseForwardEndStatus,
+    LeaseForwardStatus,
+    LeaseMemberStatus,
+    PortReport,
+)
 from jumpstarter.client.grpc import LeaseConstraint as LeaseConstraintModel
 from jumpstarter.client.grpc import LeaseForward as LeaseForwardModel
 from jumpstarter.client.grpc import LeaseMember as LeaseMemberModel
@@ -765,6 +772,16 @@ class Forward:
         """The cause of a `Failed` or `Disabled` state, when the controller gave one."""
         self._refresh_if_stale()
         return self._status()[1]
+
+    @property
+    def ends(self) -> tuple[LeaseForwardEndStatus, ...]:
+        """The state of each bound end of the forward, as its exporter reported it: `member_name`, `state`, `message`.
+
+        It is empty when the lease gives no state of the ends.
+        """
+        self._refresh_if_stale()
+        status = self._source.statuses.get(self._name) if self._source is not None else None
+        return tuple(status.ends) if status is not None else ()
 
     def refresh(self) -> Self:
         """Read the lease again.

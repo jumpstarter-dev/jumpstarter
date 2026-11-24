@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 // The controller service side of the forwards of a lease (JEP-0016).
@@ -108,9 +110,24 @@ func forwardService(t *testing.T, leases ...*jumpstarterdevv1alpha1.Lease) (*Con
 	return svc, c
 }
 
-func forwardEnd(t *testing.T, c client.Client, forward, member string) jumpstarterdevv1alpha1.ForwardEnd {
+// forwardEnd returns the status of an end of a forward of the lease. It
+// returns an empty status for an end that the lease does not have.
+func forwardEnd(t *testing.T, c client.Client, forward, member string) *jumpstarterdevv1alpha1.LeaseForwardEndStatus {
 	t.Helper()
-	return getLease(t, c, forwardLeaseName).ForwardEnds()[jumpstarterdevv1alpha1.ForwardEndKey(forward, member)]
+	if end := getLease(t, c, forwardLeaseName).ForwardEnd(forward, member); end != nil {
+		return end
+	}
+	return &jumpstarterdevv1alpha1.LeaseForwardEndStatus{}
+}
+
+// forwardEndCount returns the number of ends in the status of the lease.
+func forwardEndCount(t *testing.T, c client.Client) int {
+	t.Helper()
+	count := 0
+	for _, forwardStatus := range getLease(t, c, forwardLeaseName).Status.Forwards {
+		count += len(forwardStatus.Ends)
+	}
+	return count
 }
 
 func reportRequest(forward string, state pb.ForwardEndState, sequence uint64, message string) *pb.ReportForwardRequest {
@@ -256,15 +273,16 @@ func TestReportForward(t *testing.T) {
 
 	t.Run("records the state of the end of the caller only", func(t *testing.T) {
 		svc, c := forwardService(t, forwardLease(jumpstarterdevv1alpha1.LeaseForwardStatePending, btForward()))
-		before := time.Now().UnixMilli()
+		before := time.Now().Truncate(time.Second)
 		if _, err := svc.ReportForward(phone, reportRequest("bt", ready, 100, "")); err != nil {
 			t.Fatalf("expected the report to succeed, got %v", err)
 		}
 		end := forwardEnd(t, c, "bt", "phone")
-		if end.State != jumpstarterdevv1alpha1.ForwardEndStateReady || end.Sequence != 100 || end.ReportTime < before {
+		if end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateReady || end.Sequence != 100 ||
+			end.ReportTime == nil || end.ReportTime.Time.Before(before) {
 			t.Fatalf("unexpected record of the end: %+v", end)
 		}
-		if other := forwardEnd(t, c, "bt", "headunit"); other != (jumpstarterdevv1alpha1.ForwardEnd{}) {
+		if other := forwardEnd(t, c, "bt", "headunit"); *other != (jumpstarterdevv1alpha1.LeaseForwardEndStatus{}) {
 			t.Fatalf("the report changed the end of a different member: %+v", other)
 		}
 
@@ -272,10 +290,10 @@ func TestReportForward(t *testing.T) {
 			t.Fatalf("expected the report to succeed, got %v", err)
 		}
 		other := forwardEnd(t, c, "bt", "headunit")
-		if other.State != jumpstarterdevv1alpha1.ForwardEndStateFailed || other.Message != "connection refused" {
+		if other.State != jumpstarterdevv1alpha1.LeaseForwardEndStateFailed || other.Message != "connection refused" {
 			t.Fatalf("unexpected record of the end: %+v", other)
 		}
-		if end := forwardEnd(t, c, "bt", "phone"); end.State != jumpstarterdevv1alpha1.ForwardEndStateReady {
+		if end := forwardEnd(t, c, "bt", "phone"); end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateReady {
 			t.Fatalf("the report of headunit changed the end of phone: %+v", end)
 		}
 	})
@@ -295,7 +313,7 @@ func TestReportForward(t *testing.T) {
 			}
 		}
 		end := forwardEnd(t, c, "bt", "phone")
-		if end.State != jumpstarterdevv1alpha1.ForwardEndStateFailed || end.Sequence != 12 || end.Message != "address already in use" {
+		if end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateFailed || end.Sequence != 12 || end.Message != "address already in use" {
 			t.Fatalf("an old report replaced a newer one: %+v", end)
 		}
 
@@ -304,7 +322,7 @@ func TestReportForward(t *testing.T) {
 			t.Fatalf("expected the report to succeed, got %v", err)
 		}
 		end = forwardEnd(t, c, "bt", "phone")
-		if end.State != jumpstarterdevv1alpha1.ForwardEndStateConnected || end.Sequence != 13 || end.Message != "" {
+		if end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateConnected || end.Sequence != 13 || end.Message != "" {
 			t.Fatalf("expected the newer report, got %+v", end)
 		}
 	})
@@ -314,21 +332,16 @@ func TestReportForward(t *testing.T) {
 		if _, err := svc.ReportForward(phone, reportRequest("bt", ready, 0, "")); err != nil {
 			t.Fatalf("expected the report to succeed, got %v", err)
 		}
-		if end := forwardEnd(t, c, "bt", "phone"); end.State != jumpstarterdevv1alpha1.ForwardEndStateReady {
+		if end := forwardEnd(t, c, "bt", "phone"); end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateReady {
 			t.Fatalf("expected the first report to be accepted, got %+v", end)
 		}
 	})
 
 	t.Run("the current state again answers a repeated setup", func(t *testing.T) {
 		lease := forwardLease(jumpstarterdevv1alpha1.LeaseForwardStateListening, btForward())
-		past := time.Now().Add(-time.Hour).UnixMilli()
-		setup := time.Now().Add(-time.Second).UnixMilli()
-		if err := lease.SetForwardEnds(jumpstarterdevv1alpha1.ForwardEnds{
-			jumpstarterdevv1alpha1.ForwardEndKey("bt", "phone"): {
-				State: jumpstarterdevv1alpha1.ForwardEndStateReady, Sequence: 50, ReportTime: past, SetupTime: setup},
-		}); err != nil {
-			t.Fatal(err)
-		}
+		end := lease.EnsureForwardEnd("bt", "phone")
+		end.RecordReport(jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "", 50, time.Now().Add(-time.Hour))
+		end.RecordSetup(time.Now().Add(-time.Second))
 		svc, c := forwardService(t, lease)
 		if !forwardEnd(t, c, "bt", "phone").AwaitsReport() {
 			t.Fatalf("expected the end to wait for a report")
@@ -336,9 +349,76 @@ func TestReportForward(t *testing.T) {
 		if _, err := svc.ReportForward(phone, reportRequest("bt", ready, 50, "")); err != nil {
 			t.Fatalf("expected the report to succeed, got %v", err)
 		}
-		end := forwardEnd(t, c, "bt", "phone")
-		if end.AwaitsReport() || end.Sequence != 50 || end.State != jumpstarterdevv1alpha1.ForwardEndStateReady {
+		end = forwardEnd(t, c, "bt", "phone")
+		if end.AwaitsReport() || end.Sequence != 50 || end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateReady {
 			t.Fatalf("expected the report to answer the setup, got %+v", end)
+		}
+	})
+
+	t.Run("a report that races a different write of the lease status loses nothing", func(t *testing.T) {
+		// The lease controller, or the report of a different end, writes the
+		// status after ReportForward read the lease. The write of the report
+		// has the old resource version: it fails with a conflict, and the
+		// report is applied again to the new lease.
+		var raced atomic.Bool
+		funcs := interceptor.Funcs{SubResourceUpdate: func(
+			ctx context.Context, c client.Client, subResource string, obj client.Object, opts ...client.SubResourceUpdateOption,
+		) error {
+			if _, isLease := obj.(*jumpstarterdevv1alpha1.Lease); isLease && raced.CompareAndSwap(false, true) {
+				var current jumpstarterdevv1alpha1.Lease
+				if err := c.Get(ctx, client.ObjectKeyFromObject(obj), &current); err != nil {
+					return err
+				}
+				current.EnsureForwardEnd("bt", "headunit").RecordReport(
+					jumpstarterdevv1alpha1.LeaseForwardEndStateFailed, "connection refused", 7, time.Now())
+				current.SetForwardStatus("bt", jumpstarterdevv1alpha1.LeaseForwardStateFailed, "The setup failed")
+				if err := c.Status().Update(ctx, &current); err != nil {
+					return err
+				}
+			}
+			return c.SubResource(subResource).Update(ctx, obj, opts...)
+		}}
+		svc, c := memberService(t, &funcs, forwardLease(jumpstarterdevv1alpha1.LeaseForwardStatePending, btForward()))
+		if _, err := svc.ReportForward(phone, reportRequest("bt", ready, 100, "")); err != nil {
+			t.Fatalf("expected the report to succeed, got %v", err)
+		}
+		if !raced.Load() {
+			t.Fatalf("the report did not write the lease status")
+		}
+		if end := forwardEnd(t, c, "bt", "phone"); end.State != jumpstarterdevv1alpha1.LeaseForwardEndStateReady || end.Sequence != 100 {
+			t.Fatalf("the report was lost: %+v", end)
+		}
+		if other := forwardEnd(t, c, "bt", "headunit"); other.State != jumpstarterdevv1alpha1.LeaseForwardEndStateFailed ||
+			other.Sequence != 7 || other.Message != "connection refused" {
+			t.Fatalf("the report replaced the write that it raced: %+v", other)
+		}
+		if forwardStatus := getLease(t, c, forwardLeaseName).ForwardStatus("bt"); forwardStatus.State != jumpstarterdevv1alpha1.LeaseForwardStateFailed {
+			t.Fatalf("the report replaced the state of the forward: %+v", forwardStatus)
+		}
+	})
+
+	t.Run("writes the ends to the status and not to the metadata", func(t *testing.T) {
+		lease := forwardLease(jumpstarterdevv1alpha1.LeaseForwardStatePending, btForward())
+		svc, c := forwardService(t, lease)
+		if _, err := svc.ReportForward(phone, reportRequest("bt", ready, 100, "")); err != nil {
+			t.Fatalf("expected the report to succeed, got %v", err)
+		}
+		updated := getLease(t, c, forwardLeaseName)
+		if _, ok := updated.Annotations[jumpstarterdevv1alpha1.LegacyLeaseForwardEndsAnnotation]; ok {
+			t.Fatalf("the report wrote the annotation of an earlier build")
+		}
+		if len(updated.Status.Forwards) != 1 || len(updated.Status.Forwards[0].Ends) != 1 ||
+			updated.Status.Forwards[0].Ends[0].Member != "phone" {
+			t.Fatalf("expected the end in status.forwards, got %+v", updated.Status.Forwards)
+		}
+	})
+
+	t.Run("rejects a sequence number that the lease status cannot keep", func(t *testing.T) {
+		svc, c := forwardService(t, forwardLease(jumpstarterdevv1alpha1.LeaseForwardStatePending, btForward()))
+		_, err := svc.ReportForward(phone, reportRequest("bt", ready, 1<<63, ""))
+		requireCode(t, err, codes.InvalidArgument)
+		if count := forwardEndCount(t, c); count != 0 {
+			t.Fatalf("a rejected report changed the lease: %d ends", count)
 		}
 	})
 
@@ -376,8 +456,8 @@ func TestReportForward(t *testing.T) {
 			svc, c := forwardService(t, lease, scalarLease("rpi-1"))
 			_, err := svc.ReportForward(tt.ctx, tt.req)
 			requireCode(t, err, codes.PermissionDenied)
-			if ends := getLease(t, c, forwardLeaseName).ForwardEnds(); len(ends) != 0 {
-				t.Fatalf("a denied report changed the lease: %+v", ends)
+			if count := forwardEndCount(t, c); count != 0 {
+				t.Fatalf("a denied report changed the lease: %d ends", count)
 			}
 		})
 	}
@@ -642,7 +722,7 @@ func TestListenForwardSetup(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		before := time.Now().UnixMilli()
+		before := time.Now().Truncate(time.Second)
 		phone, phoneDone := listenAs(t, ctx, svc, "phone-1")
 		bt := nextInstruction(t, phone).GetForwardSetup()
 		uart := nextInstruction(t, phone).GetForwardSetup()
@@ -679,7 +759,8 @@ func TestListenForwardSetup(t *testing.T) {
 		// The time of the setup is on the lease: the report time limit starts there.
 		for _, end := range [][2]string{{"bt", "phone"}, {"uart", "phone"}, {"bt", "headunit"}, {"uart", "headunit"}} {
 			record := forwardEnd(t, c, end[0], end[1])
-			if record.SetupTime < before || !record.AwaitsReport() {
+			if record.SetupTime == nil || record.SetupTime.Time.Before(before) || !record.AwaitsReport() ||
+				record.State != jumpstarterdevv1alpha1.LeaseForwardEndStatePending {
 				t.Fatalf("expected the setup time of %v, got %+v", end, record)
 			}
 		}
@@ -701,7 +782,7 @@ func TestListenForwardSetup(t *testing.T) {
 			t.Fatalf("expected the setup of uart again, got %v", setup)
 		}
 		record := forwardEnd(t, c, "bt", "phone")
-		if !record.AwaitsReport() || record.State != jumpstarterdevv1alpha1.ForwardEndStateReady || record.Sequence != 5 {
+		if !record.AwaitsReport() || record.State != jumpstarterdevv1alpha1.LeaseForwardEndStateReady || record.Sequence != 5 {
 			t.Fatalf("a repeated setup keeps the last state and waits for a report, got %+v", record)
 		}
 
@@ -727,7 +808,7 @@ func TestListenForwardSetup(t *testing.T) {
 		phone, _ := listenAs(t, ctx, svc, "phone-1")
 		waitForListener(t, svc, forwardLeaseName, "phone-1")
 		expectNoInstruction(t, phone)
-		if forwardEnd(t, c, "bt", "phone").SetupTime != 0 {
+		if forwardEnd(t, c, "bt", "phone").SetupTime != nil {
 			t.Fatalf("the report time limit must not start before the setup")
 		}
 
@@ -735,7 +816,7 @@ func TestListenForwardSetup(t *testing.T) {
 		if setup := nextInstruction(t, phone).GetForwardSetup(); setup == nil || setup.ForwardName != "bt" {
 			t.Fatalf("expected the setup after the hook, got %v", setup)
 		}
-		if forwardEnd(t, c, "bt", "phone").SetupTime == 0 {
+		if forwardEnd(t, c, "bt", "phone").SetupTime == nil {
 			t.Fatalf("expected the setup time on the lease")
 		}
 	})
@@ -766,8 +847,8 @@ func TestListenForwardSetup(t *testing.T) {
 		phone, _ := listenAs(t, ctx, svc, "phone-1")
 		waitForListener(t, svc, forwardLeaseName, "phone-1")
 		expectNoInstruction(t, phone)
-		if ends := getLease(t, c, forwardLeaseName).ForwardEnds(); len(ends) != 0 {
-			t.Fatalf("an exporter without ports got a setup time: %+v", ends)
+		if count := forwardEndCount(t, c); count != 0 {
+			t.Fatalf("an exporter without ports got a setup time: %d ends", count)
 		}
 		// It serves client connections as before.
 		resp, err := svc.Dial(asClient(context.Background(), "owner"), dialRequest(forwardLeaseName, "phone"))
@@ -791,8 +872,8 @@ func TestListenForwardSetup(t *testing.T) {
 		phone, _ := listenAs(t, ctx, svc, "phone-1")
 		waitForListener(t, svc, forwardLeaseName, "phone-1")
 		expectNoInstruction(t, phone)
-		if _, ok := getLease(t, c, forwardLeaseName).Annotations[jumpstarterdevv1alpha1.LeaseForwardEndsAnnotation]; ok {
-			t.Fatalf("a lease without forwards got records of forward ends")
+		if lease := getLease(t, c, forwardLeaseName); len(lease.Status.Forwards) != 0 {
+			t.Fatalf("a lease without forwards got a forward status: %+v", lease.Status.Forwards)
 		}
 	})
 

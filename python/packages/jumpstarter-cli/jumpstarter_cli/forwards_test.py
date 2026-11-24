@@ -62,11 +62,14 @@ def parse(**kwargs):
     return parse_member_request(**{**defaults, **kwargs})
 
 
-def forwards_lease(state="Connected", message=None, **kwargs) -> Lease:
+ENDS = [("headunit", "Ready"), ("phone", "Failed", "address already in use")]
+
+
+def forwards_lease(state="Connected", message=None, ends=(), **kwargs) -> Lease:
     return Lease.from_protobuf(
         members_lease_pb(
             forwards=[forward_pb(), forward_pb("can", "headunit.can", "phone.can-remote")],
-            forward_statuses=[forward_status_pb("bt", state, message)],
+            forward_statuses=[forward_status_pb("bt", state, message, ends)],
             **kwargs,
         )
     )
@@ -346,6 +349,16 @@ class TestGetLeases:
         assert data["forwards"][0]["endpoints"][0] == {"member_name": "headunit", "port_name": "rootcanal"}
         assert data["forward_statuses"] == [{"name": "bt", "state": "Failed", "message": "no report in 60s"}]
 
+    @pytest.mark.parametrize("output", ["json", "yaml"])
+    def test_structured_output_has_the_ends_of_each_forward(self, output, capsys):
+        self._get(lease_config(forwards_lease("Pending", ends=ENDS)), name="lease-9m2qd", output=output)
+        out = capsys.readouterr().out
+        data = json.loads(out) if output == "json" else yaml.safe_load(out)
+        assert data["forward_statuses"][0]["ends"] == [
+            {"member_name": "headunit", "state": "Ready", "message": None},
+            {"member_name": "phone", "state": "Failed", "message": "address already in use"},
+        ]
+
     def test_lease_without_forwards_is_unchanged(self, capsys):
         self._get(lease_config(Lease.from_protobuf(members_lease_pb())), name="lease-9m2qd", output="json")
         data = json.loads(capsys.readouterr().out)
@@ -368,6 +381,28 @@ class TestDescribe:
         assert "Failed" in out and "port 'rootcanal' is not on exporter rack3-hu-2" in out
         # the exporters do not report the ports of `can`: no arrow
         assert "headunit.can, phone.can-remote" in out and "Pending" in out
+
+    def test_lease_shows_the_ends_of_a_forward_that_is_not_usable(self, capsys):
+        self._describe_lease(lease_config(forwards_lease("Failed", "The setup failed", ends=ENDS)))
+        out = capsys.readouterr().out
+        header = next(line for line in out.splitlines() if line.split()[:1] == ["Name"] and "Endpoints" in line)
+        assert header.split() == ["Name", "Endpoints", "State", "Message", "Ends"]
+        assert "headunit: Ready; phone: Failed (address already in use)" in out
+
+    @pytest.mark.parametrize("state", ["Listening", "Connected"])
+    def test_lease_does_not_show_the_ends_of_a_usable_forward(self, state, capsys):
+        self._describe_lease(lease_config(forwards_lease(state, ends=[("headunit", "Ready"), ("phone", "Ready")])))
+        out = capsys.readouterr().out
+        assert "Ends" not in out and "headunit: Ready" not in out
+
+    def test_lease_json_has_the_ends(self, capsys):
+        self._describe_lease(lease_config(forwards_lease("Failed", "The setup failed", ends=ENDS)), output="json")
+        data = json.loads(capsys.readouterr().out)
+        assert data["forward_statuses"][0]["ends"][1] == {
+            "member_name": "phone",
+            "state": "Failed",
+            "message": "address already in use",
+        }
 
     def test_directions_come_from_the_exporters_of_the_bound_members(self):
         lease = forwards_lease()

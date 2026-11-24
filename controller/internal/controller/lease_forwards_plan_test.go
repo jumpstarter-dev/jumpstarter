@@ -415,19 +415,20 @@ func TestForwardStateFromEnds(t *testing.T) {
 		{Member: "peer", Port: "controller", Direction: requires},
 	}}
 	now := time.Now()
-	ms := func(d time.Duration) int64 { return now.Add(d).UnixMilli() }
-	ready := jumpstarterdevv1alpha1.ForwardEnd{State: jumpstarterdevv1alpha1.ForwardEndStateReady, Sequence: 1,
+	ms := func(d time.Duration) *metav1.Time { return new(metav1.NewTime(now.Add(d)).Rfc3339Copy()) }
+	ready := jumpstarterdevv1alpha1.LeaseForwardEndStatus{State: jumpstarterdevv1alpha1.LeaseForwardEndStateReady, Sequence: 1,
 		SetupTime: ms(-10 * time.Second), ReportTime: ms(-9 * time.Second)}
 	connected := ready
-	connected.State = jumpstarterdevv1alpha1.ForwardEndStateConnected
+	connected.State = jumpstarterdevv1alpha1.LeaseForwardEndStateConnected
 	failed := ready
-	failed.State = jumpstarterdevv1alpha1.ForwardEndStateFailed
+	failed.State = jumpstarterdevv1alpha1.LeaseForwardEndStateFailed
 	failed.Message = "address already in use"
+	pending := jumpstarterdevv1alpha1.LeaseForwardEndStatePending
 
 	tests := []struct {
 		name     string
-		headunit jumpstarterdevv1alpha1.ForwardEnd
-		peer     jumpstarterdevv1alpha1.ForwardEnd
+		headunit jumpstarterdevv1alpha1.LeaseForwardEndStatus
+		peer     jumpstarterdevv1alpha1.LeaseForwardEndStatus
 		want     jumpstarterdevv1alpha1.LeaseForwardState
 		message  string
 		waits    bool
@@ -442,31 +443,37 @@ func TestForwardStateFromEnds(t *testing.T) {
 		{name: "one end failed", headunit: connected, peer: failed, want: jumpstarterdevv1alpha1.LeaseForwardStateFailed,
 			message: "role `peer`: address already in use"},
 		{name: "an end that got its setup a moment ago", headunit: ready,
-			peer: jumpstarterdevv1alpha1.ForwardEnd{SetupTime: ms(-10 * time.Second)},
+			peer: jumpstarterdevv1alpha1.LeaseForwardEndStatus{State: pending, SetupTime: ms(-10 * time.Second)},
 			want: jumpstarterdevv1alpha1.LeaseForwardStatePending, waits: true},
 		{name: "an end that sent no report in the time limit", headunit: ready,
-			peer: jumpstarterdevv1alpha1.ForwardEnd{SetupTime: ms(-61 * time.Second)},
+			peer: jumpstarterdevv1alpha1.LeaseForwardEndStatus{State: pending, SetupTime: ms(-61 * time.Second)},
 			want: jumpstarterdevv1alpha1.LeaseForwardStateFailed, message: "Role `peer` sent no report in 1m0s"},
 		{name: "a repeated setup keeps the last state while it waits", headunit: ready,
-			peer: jumpstarterdevv1alpha1.ForwardEnd{State: jumpstarterdevv1alpha1.ForwardEndStateReady, Sequence: 1,
+			peer: jumpstarterdevv1alpha1.LeaseForwardEndStatus{State: jumpstarterdevv1alpha1.LeaseForwardEndStateReady, Sequence: 1,
 				ReportTime: ms(-time.Hour), SetupTime: ms(-10 * time.Second)},
 			want: jumpstarterdevv1alpha1.LeaseForwardStateListening, waits: true},
 		{name: "a repeated setup with no report in the time limit", headunit: ready,
-			peer: jumpstarterdevv1alpha1.ForwardEnd{State: jumpstarterdevv1alpha1.ForwardEndStateReady, Sequence: 1,
+			peer: jumpstarterdevv1alpha1.LeaseForwardEndStatus{State: jumpstarterdevv1alpha1.LeaseForwardEndStateReady, Sequence: 1,
 				ReportTime: ms(-time.Hour), SetupTime: ms(-2 * time.Minute)},
 			want: jumpstarterdevv1alpha1.LeaseForwardStateFailed, message: "Role `peer` sent no report"},
 		{name: "a report after the time limit removes the failure", headunit: ready,
-			peer: jumpstarterdevv1alpha1.ForwardEnd{State: jumpstarterdevv1alpha1.ForwardEndStateReady, Sequence: 2,
+			peer: jumpstarterdevv1alpha1.LeaseForwardEndStatus{State: jumpstarterdevv1alpha1.LeaseForwardEndStateReady, Sequence: 2,
 				ReportTime: ms(-time.Second), SetupTime: ms(-2 * time.Minute)},
 			want: jumpstarterdevv1alpha1.LeaseForwardStateListening},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ends := jumpstarterdevv1alpha1.ForwardEnds{
-				jumpstarterdevv1alpha1.ForwardEndKey("bt", "headunit"): tt.headunit,
-				jumpstarterdevv1alpha1.ForwardEndKey("bt", "peer"):     tt.peer,
-				// The end of a different forward does not count.
-				jumpstarterdevv1alpha1.ForwardEndKey("other", "peer"): failed,
+			// An end that the status does not have counts as Pending.
+			var ends []jumpstarterdevv1alpha1.LeaseForwardEndStatus
+			for member, end := range map[string]jumpstarterdevv1alpha1.LeaseForwardEndStatus{
+				"headunit": tt.headunit, "peer": tt.peer,
+				// The end of a member that is not in the plan does not count.
+				"logger": failed,
+			} {
+				if end.State != "" {
+					end.Member = member
+					ends = append(ends, end)
+				}
 			}
 			state, message, wait := forwardStateFromEnds(plan, ends, now, DefaultForwardReportTimeout)
 			if state != tt.want {

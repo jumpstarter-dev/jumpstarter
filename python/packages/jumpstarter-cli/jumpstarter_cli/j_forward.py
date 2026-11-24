@@ -12,10 +12,10 @@ from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import handle_exceptions
 from jumpstarter_cli_common.opt import OutputMode, OutputType
 from jumpstarter_cli_common.print import model_print
-from pydantic import BaseModel, model_serializer
+from pydantic import BaseModel, Field, model_serializer
 
 from .describe import forward_directions
-from jumpstarter.client.grpc import ForwardEndpoint, Lease, LeaseForward
+from jumpstarter.client.grpc import ForwardEndpoint, Lease, LeaseForward, format_forward_end
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.utils.env import JMP_LEASE_FORWARDS, lease_forwards_from_env
@@ -43,11 +43,38 @@ class ForwardStatusEndpoint(BaseModel):
         return data
 
 
+class ForwardStatusEnd(BaseModel):
+    """The state of one end of a forward: what the exporter of the member reported last."""
+
+    member: str
+    # Pending, Ready, Connected or Failed
+    state: str
+    message: str | None = None
+
+
 class ForwardStatus(BaseModel):
     name: str
     endpoints: list[ForwardStatusEndpoint]
     state: str
     message: str | None = None
+    # The state of each bound end, from the lease status.
+    ends: list[ForwardStatusEnd] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_ends(self, handler):
+        data = handler(self)
+        if not self.ends:
+            data.pop("ends", None)
+        return data
+
+    def describe_ends(self) -> str:
+        """The state and the message of each end, one for each line.
+
+        Empty for a forward that is Listening or Connected.
+        """
+        if self.state in ("Listening", "Connected"):
+            return ""
+        return "\n".join(format_forward_end(end.member, end.state, end.message) for end in self.ends)
 
     def describe(self) -> str:
         """`a.x → b.y` from the `provides` port, `a.x ↔ b.y` for a path, or the endpoints in the order of the lease."""
@@ -65,6 +92,9 @@ class ForwardStatusList(BaseModel):
     def _show_message(self) -> bool:
         return any(forward.message for forward in self.forwards)
 
+    def _show_ends(self) -> bool:
+        return any(forward.describe_ends() for forward in self.forwards)
+
     def rich_add_columns(self, table, **kwargs):
         table.add_column("NAME", no_wrap=True)
         table.add_column("ENDPOINTS")
@@ -72,15 +102,21 @@ class ForwardStatusList(BaseModel):
         # The cause of a Failed or Disabled forward.
         if self._show_message():
             table.add_column("MESSAGE")
+        # The state and the message of each end of a forward that is not
+        # Listening or Connected.
+        if self._show_ends():
+            table.add_column("ENDS")
 
     def rich_add_rows(self, table, **kwargs):
         show_message = self._show_message()
+        show_ends = self._show_ends()
         for forward in self.forwards:
             table.add_row(
                 forward.name,
                 forward.describe(),
                 forward.state,
                 *([forward.message or ""] if show_message else []),
+                *([forward.describe_ends()] if show_ends else []),
             )
 
     def rich_add_names(self, names):
@@ -116,6 +152,10 @@ def _from_lease(config, lease: Lease, snapshot: list[dict]) -> ForwardStatusList
                 ],
                 state=lease.forward_state(forward.name),
                 message=status.message if status is not None else None,
+                ends=[
+                    ForwardStatusEnd(member=end.member_name, state=end.state, message=end.message)
+                    for end in (status.ends if status is not None else [])
+                ],
             )
         )
     return ForwardStatusList(lease=lease.name, forwards=forwards)
@@ -135,6 +175,12 @@ def _from_snapshot(name: str, snapshot: list[dict]) -> ForwardStatusList:
                 ],
                 state=entry.get("state") or "Pending",
                 message=entry.get("message"),
+                ends=[
+                    ForwardStatusEnd(
+                        member=end.get("member", ""), state=end.get("state") or "Pending", message=end.get("message")
+                    )
+                    for end in entry.get("ends") or []
+                ],
             )
             for entry in snapshot
         ],
@@ -198,8 +244,10 @@ def status(config, lease_name: str | None, output: OutputType):
     Show each forward of the lease and its state
 
     An arrow points from the 'provides' port to each 'requires' port, and a
-    double arrow connects the two ends of a path. The states come from the
-    lease status:
+    double arrow connects the two ends of a path. For a forward that is not
+    Listening or Connected, the ENDS column has the state and the message of
+    each end, as its exporter reported them. The states come from the lease
+    status:
 
     \b
       Pending     the controller did not complete the setup

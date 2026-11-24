@@ -228,6 +228,32 @@ message LeaseForwardStatus {
   LeaseForwardState state = 2;
   // A human-readable message for the state, for example the cause of a failure.
   optional string message = 3;
+  // The state of each bound end of the forward. The controller calculates the state of the forward from them.
+  repeated LeaseForwardEndStatus ends = 4;
+}
+
+// The state of one end of a forward: the last state that the exporter of an endpoint reported.
+enum LeaseForwardEndState {
+  // The state is not known.
+  LEASE_FORWARD_END_STATE_UNSPECIFIED = 0;
+  // The exporter of the end sent no report.
+  LEASE_FORWARD_END_STATE_PENDING = 1;
+  // The listener is open, or the forward is recorded.
+  LEASE_FORWARD_END_STATE_READY = 2;
+  // A minimum of one connection is open.
+  LEASE_FORWARD_END_STATE_CONNECTED = 3;
+  // The setup failed.
+  LEASE_FORWARD_END_STATE_FAILED = 4;
+}
+
+// The state of one end of a forward of a lease.
+message LeaseForwardEndStatus {
+  // The role name of the member of this end.
+  string member_name = 1;
+  // The state of the end.
+  LeaseForwardEndState state = 2;
+  // A human-readable message for the state: the cause that the exporter gave for a failure.
+  optional string message = 3;
 }
 
 // The state of one member of a lease.

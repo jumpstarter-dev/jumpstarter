@@ -83,17 +83,32 @@ var _ = Describe("Lease forwards", func() {
 		online(headunitExporter, headunitLabel, devicePort("rootcanal", provides))
 		online(peerExporter, peerLabel, devicePort("controller", requires))
 	}
-	// report writes the record of an end, as ReportForward does.
-	report := func(forwardName, member string, end jumpstarterdevv1alpha1.ForwardEnd) {
+	// setup writes the time of a setup instruction of an end, as Listen does.
+	setup := func(forwardName, member string, at time.Time) {
 		lease := getLease(ctx, leaseName)
-		ends := lease.ForwardEnds()
-		ends[jumpstarterdevv1alpha1.ForwardEndKey(forwardName, member)] = end
-		Expect(lease.SetForwardEnds(ends)).To(Succeed())
-		Expect(k8sClient.Update(ctx, lease)).To(Succeed())
+		lease.EnsureForwardEnd(forwardName, member).RecordSetup(at)
+		Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
 	}
-	reported := func(state jumpstarterdevv1alpha1.ForwardEndState, message string) jumpstarterdevv1alpha1.ForwardEnd {
-		now := time.Now().UnixMilli()
-		return jumpstarterdevv1alpha1.ForwardEnd{State: state, Message: message, Sequence: uint64(now), SetupTime: now - 1000, ReportTime: now}
+	// report writes the report of an end to the lease status, as
+	// ReportForward does, after a setup. Each report has a larger number.
+	var sequence uint64
+	report := func(forwardName, member string, state jumpstarterdevv1alpha1.LeaseForwardEndState, message string) {
+		lease := getLease(ctx, leaseName)
+		end := lease.EnsureForwardEnd(forwardName, member)
+		if end.SetupTime == nil {
+			end.RecordSetup(time.Now().Add(-time.Second))
+		}
+		sequence++
+		_, accepted := end.RecordReport(state, message, sequence, time.Now())
+		Expect(accepted).To(BeTrue())
+		Expect(k8sClient.Status().Update(ctx, lease)).To(Succeed())
+	}
+	endStates := func(name string) map[string]jumpstarterdevv1alpha1.LeaseForwardEndState {
+		states := map[string]jumpstarterdevv1alpha1.LeaseForwardEndState{}
+		for _, end := range getLease(ctx, leaseName).ForwardStatus(name).Ends {
+			states[end.Member] = end.State
+		}
+		return states
 	}
 	condition := func(t jumpstarterdevv1alpha1.LeaseConditionType) *metav1.Condition {
 		return leaseCondition(getLease(ctx, leaseName), t)
@@ -107,6 +122,7 @@ var _ = Describe("Lease forwards", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		exporters = nil
+		sequence = 0
 		Expect(k8sClient.DeleteAllOf(ctx, &jumpstarterdevv1alpha1.ExporterClaim{},
 			client.InNamespace("default"))).To(Succeed())
 	})
@@ -152,13 +168,13 @@ var _ = Describe("Lease forwards", func() {
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeDegraded)).To(BeNil())
 
 		// One end is ready: the forward waits for the other.
-		report("bt", "headunit", reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
 		reconcileLeaseOnly(ctx, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStatePending))
 		Expect(forwardStatus("bt").Message).To(ContainSubstring("`peer`"))
 
 		// Each bound end is ready.
-		report("bt", "peer", reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
 		reconcileLeaseOnly(ctx, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateListening))
 		Expect(forwardStatus("bt").Message).To(BeEmpty())
@@ -173,7 +189,7 @@ var _ = Describe("Lease forwards", func() {
 		Expect(getLease(ctx, leaseName).ResourceVersion).To(Equal(version))
 
 		// One end has a connection.
-		report("bt", "peer", reported(jumpstarterdevv1alpha1.ForwardEndStateConnected, ""))
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateConnected, "")
 		reconcileLeaseOnly(ctx, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateConnected))
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeForwardsReady).Status).To(Equal(metav1.ConditionTrue))
@@ -181,7 +197,7 @@ var _ = Describe("Lease forwards", func() {
 
 		// One failure report fails the forward and degrades the lease. The
 		// lease does not end, and its members stay bound.
-		report("bt", "peer", reported(jumpstarterdevv1alpha1.ForwardEndStateFailed, "address already in use"))
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateFailed, "address already in use")
 		reconcileLeaseOnly(ctx, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateFailed))
 		Expect(forwardStatus("bt").Message).To(ContainSubstring("role `peer`: address already in use"))
@@ -203,7 +219,7 @@ var _ = Describe("Lease forwards", func() {
 		Expect(lease.MemberStatus("headunit").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStateBound))
 
 		// A later report removes the failure.
-		report("bt", "peer", reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
 		reconcileLeaseOnly(ctx, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateListening))
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeDegraded)).To(BeNil())
@@ -279,8 +295,8 @@ var _ = Describe("Lease forwards", func() {
 		// for the port that the two forwards name.
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStatePending))
 
-		report("bt", "headunit", reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
-		report("bt", "peer", reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
 		reconcileLeaseOnly(ctx, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateListening))
 		Expect(forwardStatus("log").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateDisabled))
@@ -332,9 +348,9 @@ var _ = Describe("Lease forwards", func() {
 		bind(btLease())
 
 		// The two ends got their setup now. One reports.
-		now := time.Now().UnixMilli()
-		report("bt", "headunit", reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
-		report("bt", "peer", jumpstarterdevv1alpha1.ForwardEnd{SetupTime: now})
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		setup("bt", "peer", time.Now())
+		Expect(endStates("bt")).To(HaveKeyWithValue("peer", jumpstarterdevv1alpha1.LeaseForwardEndStatePending))
 		result := reconcileLeaseOnly(ctx, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStatePending))
 		// The reconciler looks again when the time limit passes.
@@ -353,9 +369,7 @@ var _ = Describe("Lease forwards", func() {
 			To(Equal(jumpstarterdevv1alpha1.LeaseReasonForwardFailed))
 
 		// A later READY report from that endpoint removes the failure.
-		late := reported(jumpstarterdevv1alpha1.ForwardEndStateReady, "")
-		late.SetupTime = now
-		report("bt", "peer", late)
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
 		reconcileLeaseWith(ctx, short, leaseName)
 		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateListening))
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeDegraded)).To(BeNil())
@@ -375,7 +389,7 @@ var _ = Describe("Lease forwards", func() {
 		bind(lease)
 		for _, end := range [][2]string{{"bt", "headunit"}, {"bt", "peer"},
 			{"console", "headunit"}, {"console", "peer"}, {"console", "logger"}} {
-			report(end[0], end[1], reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
+			report(end[0], end[1], jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
 		}
 		reconcileLeaseOnly(ctx, leaseName)
 		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady).Status).To(Equal(metav1.ConditionTrue))
@@ -399,11 +413,11 @@ var _ = Describe("Lease forwards", func() {
 		Expect(updated.Status.Ended).To(BeFalse())
 	})
 
-	It("removes the records of the ends when the lease ends", func() {
+	It("removes the states of the ends when the lease ends", func() {
 		twoExporters()
 		bind(btLease())
-		report("bt", "headunit", reported(jumpstarterdevv1alpha1.ForwardEndStateReady, ""))
-		Expect(getLease(ctx, leaseName).Annotations).To(HaveKey(jumpstarterdevv1alpha1.LeaseForwardEndsAnnotation))
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		Expect(getLease(ctx, leaseName).ForwardStatus("bt").Ends).To(HaveLen(2))
 
 		lease := getLease(ctx, leaseName)
 		lease.Spec.Release = true
@@ -412,7 +426,139 @@ var _ = Describe("Lease forwards", func() {
 
 		ended := getLease(ctx, leaseName)
 		Expect(ended.Status.Ended).To(BeTrue())
-		Expect(ended.Annotations).NotTo(HaveKey(jumpstarterdevv1alpha1.LeaseForwardEndsAnnotation))
+		Expect(ended.Status.Forwards).To(HaveLen(1))
+		Expect(ended.Status.Forwards[0].Ends).To(BeEmpty())
+	})
+
+	It("has a Pending end for each bound endpoint, in the order of the endpoints", func() {
+		online(headunitExporter, headunitLabel, devicePort("rootcanal", provides), devicePort("console", provides))
+		online(peerExporter, peerLabel, devicePort("controller", requires))
+		lease := btLease()
+		logger := selectorMember("logger", loggerLabel)
+		logger.Optional = true
+		lease.Spec.Members = append(lease.Spec.Members, logger)
+		lease.Spec.Forwards = []jumpstarterdevv1alpha1.LeaseForward{
+			forward("bt", "peer", "controller", "headunit", "rootcanal"),
+			forward("console", "headunit", "console", "logger", "console"),
+		}
+		bind(lease)
+
+		ends := forwardStatus("bt").Ends
+		Expect(ends).To(HaveLen(2))
+		Expect(ends[0]).To(Equal(jumpstarterdevv1alpha1.LeaseForwardEndStatus{
+			Member: "peer", State: jumpstarterdevv1alpha1.LeaseForwardEndStatePending}))
+		Expect(ends[1]).To(Equal(jumpstarterdevv1alpha1.LeaseForwardEndStatus{
+			Member: "headunit", State: jumpstarterdevv1alpha1.LeaseForwardEndStatePending}))
+		// A Disabled forward gets no setup: it has no ends.
+		Expect(forwardStatus("console").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateDisabled))
+		Expect(forwardStatus("console").Ends).To(BeEmpty())
+
+		// A report that arrives before the lease controller knows the end
+		// goes to its place.
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		reconcileLeaseOnly(ctx, leaseName)
+		ends = forwardStatus("bt").Ends
+		Expect(ends).To(HaveLen(2))
+		Expect(ends[0].Member).To(Equal("peer"))
+		Expect(ends[1].Member).To(Equal("headunit"))
+		Expect(ends[1].State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardEndStateReady))
+		Expect(ends[1].Sequence).NotTo(BeZero())
+		Expect(ends[1].SetupTime).NotTo(BeNil())
+		Expect(ends[1].ReportTime).NotTo(BeNil())
+	})
+
+	It("keeps the ends and their sequence numbers over a restart of the controller", func() {
+		twoExporters()
+		bind(btLease())
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateConnected, "")
+		reconcileLeaseOnly(ctx, leaseName)
+		before := getLease(ctx, leaseName)
+		Expect(before.ForwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateConnected))
+
+		// A new controller has no memory: it has only the lease. Its first
+		// reconcile keeps each end as it is, and writes nothing.
+		restarted := newLeaseReconciler(k8sClient)
+		restarted.StartedAt = time.Now()
+		reconcileLeaseWith(ctx, restarted, leaseName)
+		after := getLease(ctx, leaseName)
+		Expect(after.ResourceVersion).To(Equal(before.ResourceVersion))
+		Expect(after.Status.Forwards).To(Equal(before.Status.Forwards))
+		Expect(after.ForwardEnd("bt", "headunit").Sequence).To(Equal(uint64(1)))
+		Expect(after.ForwardEnd("bt", "peer").Sequence).To(Equal(uint64(2)))
+		Expect(after.ForwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateConnected))
+	})
+
+	It("does not lose a report that arrives during a reconcile", func() {
+		twoExporters()
+		bind(btLease())
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		reconcileLeaseOnly(ctx, leaseName)
+		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStatePending))
+
+		// The reconcile reads the lease, and then the report of the other
+		// end arrives. The status update of the reconcile has the old
+		// resource version: the API server rejects it, and the reconcile is
+		// done again. It does not write its old copy of the ends.
+		stale := &staleLeaseClient{Client: k8sClient, lease: getLease(ctx, leaseName)}
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		result := reconcileLeaseWith(ctx, newLeaseReconciler(stale), leaseName)
+		Expect(result.Requeue).To(BeTrue()) //nolint:staticcheck
+		Expect(endStates("bt")).To(Equal(map[string]jumpstarterdevv1alpha1.LeaseForwardEndState{
+			"headunit": jumpstarterdevv1alpha1.LeaseForwardEndStateReady,
+			"peer":     jumpstarterdevv1alpha1.LeaseForwardEndStateReady,
+		}))
+		Expect(getLease(ctx, leaseName).ForwardEnd("bt", "peer").Sequence).To(Equal(uint64(2)))
+		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStatePending))
+
+		reconcileLeaseOnly(ctx, leaseName)
+		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateListening))
+		Expect(condition(jumpstarterdevv1alpha1.LeaseConditionTypeReady).Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("removes the end of a member that is Lost", func() {
+		twoExporters()
+		bind(btLease())
+		report("bt", "headunit", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		report("bt", "peer", jumpstarterdevv1alpha1.LeaseForwardEndStateReady, "")
+		reconcileLeaseOnly(ctx, leaseName)
+
+		setExporterOnlineConditions(ctx, peerExporter, metav1.ConditionFalse)
+		reconcileLeaseOnly(ctx, leaseName)
+		Expect(getLease(ctx, leaseName).MemberStatus("peer").State).To(Equal(jumpstarterdevv1alpha1.LeaseMemberStateLost))
+		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStateFailed))
+		Expect(endStates("bt")).To(Equal(map[string]jumpstarterdevv1alpha1.LeaseForwardEndState{
+			"headunit": jumpstarterdevv1alpha1.LeaseForwardEndStateReady,
+		}))
+	})
+
+	It("ignores the annotation of an earlier build, and deletes it", func() {
+		twoExporters()
+		bind(btLease())
+		lease := getLease(ctx, leaseName)
+		lease.Annotations = map[string]string{
+			jumpstarterdevv1alpha1.LegacyLeaseForwardEndsAnnotation: `{"bt/headunit":{"state":"Ready","sequence":5},"bt/peer":{"state":"Ready","sequence":6}}`,
+		}
+		Expect(k8sClient.Update(ctx, lease)).To(Succeed())
+
+		reconcileLeaseOnly(ctx, leaseName)
+		updated := getLease(ctx, leaseName)
+		Expect(updated.Annotations).NotTo(HaveKey(jumpstarterdevv1alpha1.LegacyLeaseForwardEndsAnnotation))
+		Expect(forwardStatus("bt").State).To(Equal(jumpstarterdevv1alpha1.LeaseForwardStatePending))
+		Expect(endStates("bt")).To(Equal(map[string]jumpstarterdevv1alpha1.LeaseForwardEndState{
+			"headunit": jumpstarterdevv1alpha1.LeaseForwardEndStatePending,
+			"peer":     jumpstarterdevv1alpha1.LeaseForwardEndStatePending,
+		}))
+	})
+
+	It("reconciles a lease after a write of its status only", func() {
+		// A report and a setup change only the status of the lease. The
+		// lease controller has no predicate on the generation: the change
+		// makes it reconcile.
+		oldLease := btLease()
+		newLease := btLease()
+		newLease.EnsureForwardEnd("bt", "peer")
+		Expect(skipEndedPredicate().Update(event.UpdateEvent{ObjectOld: oldLease, ObjectNew: newLease})).To(BeTrue())
 	})
 
 	It("gives a lease without forwards no forward status and no ForwardsReady condition", func() {

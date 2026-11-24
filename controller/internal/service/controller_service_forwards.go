@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"slices"
@@ -56,7 +57,7 @@ const (
 	// connection (DialPeer). It limits only the time to open the stream.
 	forwardTokenLifetime = 60 * time.Second
 	// maxForwardMessageLength bounds the cause that an exporter reports for a
-	// failed forward end, which is kept on the lease.
+	// failed forward end, which is kept in the lease status.
 	maxForwardMessageLength = 1024
 	// maxDevicePorts is the maximum number of ports of one driver report
 	// (the limit of Exporter.status.devices[].ports).
@@ -194,9 +195,15 @@ func forwardEndpointMember(
 }
 
 // ReportForward records the state that an exporter reports for its end of a
-// forward. The record is kept on the lease (LeaseForwardEndsAnnotation); the
-// lease controller calculates the state of the forward from the records of
-// all its ends.
+// forward. The state is kept in the lease status
+// (status.forwards[].ends[]); the lease controller calculates the state of
+// the forward from the states of all its ends.
+//
+// The write goes through the status subresource with the resource version
+// that the lease was read with. When the lease controller, or the report of
+// another end, changed the lease in between, the write fails with a conflict
+// and is done again on the new lease: no writer replaces the change of
+// another.
 //
 // A report is accepted when its sequence number is larger than the last
 // accepted number of that end. A report that is not accepted is ignored, and
@@ -216,12 +223,16 @@ func (s *ControllerService) ReportForward(
 		"lease_id", lease.Name, "lease_member", member.Name, "forward", req.GetForwardName(),
 		"sequence", req.GetSequence())
 
-	state, ok := jumpstarterdevv1alpha1.ForwardEndStateFromProto(req.GetState())
+	state, ok := jumpstarterdevv1alpha1.LeaseForwardEndStateFromProto(req.GetState())
 	if !ok {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid forward end state %s", req.GetState())
 	}
+	// The lease status keeps the number as a 64-bit signed integer.
+	if req.GetSequence() > math.MaxInt64 {
+		return nil, status.Errorf(codes.InvalidArgument, "sequence %d is too large", req.GetSequence())
+	}
 	message := truncateUTF8(req.GetMessage(), maxForwardMessageLength)
-	key := jumpstarterdevv1alpha1.ForwardEndKey(req.GetForwardName(), member.Name)
+	role := member.Name
 
 	accepted := false
 	first := true
@@ -234,36 +245,21 @@ func (s *ControllerService) ReportForward(
 				}
 				return err
 			}
+			// The member can have another role name only on another lease,
+			// which has another UID.
 			if _, err := forwardEndpointMember(lease, exporter.Name, req.GetLeaseUid(), req.GetForwardName()); err != nil {
 				return err
 			}
 		}
 		first = false
-		accepted = false
 
-		ends := lease.ForwardEnds()
-		end := ends[key]
-		now := time.Now().UnixMilli()
-		switch {
-		case end.State == "" || req.GetSequence() > end.Sequence:
-			end.State = state
-			end.Message = message
-			end.Sequence = req.GetSequence()
-			end.ReportTime = max(now, end.SetupTime)
-			accepted = true
-		case req.GetSequence() == end.Sequence && end.State == state && end.AwaitsReport():
-			// The current state again, after a repeated setup instruction.
-			end.ReportTime = max(now, end.SetupTime)
-		default:
+		var changed bool
+		end := lease.EnsureForwardEnd(req.GetForwardName(), role)
+		changed, accepted = end.RecordReport(state, message, req.GetSequence(), time.Now())
+		if !changed {
 			return nil
 		}
-		ends[key] = end
-
-		original := client.MergeFromWithOptions(lease.DeepCopy(), client.MergeFromWithOptimisticLock{})
-		if err := lease.SetForwardEnds(ends); err != nil {
-			return err
-		}
-		return s.Client.Patch(ctx, lease, original)
+		return s.Client.Status().Update(ctx, lease)
 	})
 	if err != nil {
 		if _, ok := status.FromError(err); ok {
@@ -522,8 +518,9 @@ func (f *listenForwards) sync(ctx context.Context) error {
 }
 
 // recordForwardSetups writes the time of the setup instructions of one member
-// to the records of the forward ends. The report time limit of the lease
-// controller starts there.
+// to the status of its forward ends. The report time limit of the lease
+// controller starts there. As ReportForward does, it writes the status with
+// the resource version that the lease was read with.
 func (s *ControllerService) recordForwardSetups(
 	ctx context.Context,
 	lease *jumpstarterdevv1alpha1.Lease,
@@ -542,21 +539,11 @@ func (s *ControllerService) recordForwardSetups(
 			}
 		}
 		first = false
-		ends := lease.ForwardEnds()
-		now := time.Now().UnixMilli()
+		now := time.Now()
 		for _, setup := range setups {
-			key := jumpstarterdevv1alpha1.ForwardEndKey(setup.ForwardName, member)
-			end := ends[key]
-			// A report that the controller accepted in this millisecond is
-			// before this setup.
-			end.SetupTime = max(now, end.ReportTime+1)
-			ends[key] = end
+			lease.EnsureForwardEnd(setup.ForwardName, member).RecordSetup(now)
 		}
-		original := client.MergeFromWithOptions(lease.DeepCopy(), client.MergeFromWithOptimisticLock{})
-		if err := lease.SetForwardEnds(ends); err != nil {
-			return err
-		}
-		return s.Client.Patch(ctx, lease, original)
+		return s.Client.Status().Update(ctx, lease)
 	})
 }
 

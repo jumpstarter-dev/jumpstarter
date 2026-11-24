@@ -17,8 +17,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"encoding/json"
 	"fmt"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	cpb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/client/v1"
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
@@ -29,107 +31,147 @@ import (
 //
 // A forward has one state in status.forwards, which the lease controller
 // calculates from the reports of its endpoint exporters (ReportForward). The
-// reports themselves are kept on the lease, in the annotation
-// LeaseForwardEndsAnnotation: the controller service writes them, and the
-// write makes the lease controller reconcile. They are on the lease, and not
-// in the memory of the controller, so that a restart of the controller loses
+// reports themselves are kept in the lease status, in
+// status.forwards[].ends[]: the controller service writes them, and the write
+// makes the lease controller reconcile. They are on the lease, and not in the
+// memory of the controller, so that a restart of the controller loses
 // nothing: the sequence numbers stay, and a forward does not go back to
 // Pending.
+//
+// The times of an end have the precision of the API: one second. The setup
+// time and the report time are compared only with each other and with the
+// report time limit, and the writers keep them in order (RecordSetup,
+// RecordReport).
 
-// LeaseForwardEndsAnnotation has the state of the ends of the forwards of a
-// lease, as the JSON of a ForwardEnds. Only the controller writes it.
-const LeaseForwardEndsAnnotation = "jumpstarter.dev/forward-ends"
+// LegacyLeaseForwardEndsAnnotation had the state of the ends of the forwards
+// of a lease before status.forwards[].ends[] did. A lease that an earlier
+// build created can have it. Nothing reads it, and the lease controller
+// deletes it.
+const LegacyLeaseForwardEndsAnnotation = "jumpstarter.dev/forward-ends"
 
-// ForwardEndState is the state that an exporter reported for its end of a
-// forward. No value means that the end sent no report.
-type ForwardEndState string
-
-const (
-	// ForwardEndStateReady: the listener is open, or the forward is recorded.
-	ForwardEndStateReady ForwardEndState = "Ready"
-	// ForwardEndStateConnected: a minimum of one connection is open.
-	ForwardEndStateConnected ForwardEndState = "Connected"
-	// ForwardEndStateFailed: the setup failed.
-	ForwardEndStateFailed ForwardEndState = "Failed"
-)
-
-// ForwardEnd is the record of one end of a forward: the last report that the
-// controller accepted, and the time of the last setup instruction.
-type ForwardEnd struct {
-	// State is the state of the last accepted report.
-	State ForwardEndState `json:"state,omitempty"`
-	// Message is the cause that a Failed report gave.
-	Message string `json:"message,omitempty"`
-	// Sequence is the sequence number of the last accepted report. A report
-	// with a number that is not larger is ignored.
-	Sequence uint64 `json:"sequence,omitempty"`
-	// ReportTime is when the controller accepted the last report, in Unix
-	// milliseconds.
-	ReportTime int64 `json:"reportTime,omitempty"`
-	// SetupTime is when the controller sent the last setup instruction to
-	// the exporter of this end, in Unix milliseconds.
-	SetupTime int64 `json:"setupTime,omitempty"`
+// Reported reports whether the exporter of the end sent a report that the
+// controller accepted. It is false for nil.
+func (e *LeaseForwardEndStatus) Reported() bool {
+	return e != nil && e.State != "" && e.State != LeaseForwardEndStatePending
 }
 
 // AwaitsReport reports whether the end got a setup instruction and sent no
-// report after it.
-func (e ForwardEnd) AwaitsReport() bool {
-	return e.SetupTime != 0 && e.ReportTime < e.SetupTime
-}
-
-// ForwardEnds has the record of each end of the forwards of a lease, by
-// ForwardEndKey.
-type ForwardEnds map[string]ForwardEnd
-
-// ForwardEndKey is the key of the end of a forward on a member. Forward names
-// and role names are DNS labels: they contain no "/".
-func ForwardEndKey(forward, member string) string {
-	return forward + "/" + member
-}
-
-// ForwardEnds returns the records of the ends of the forwards of the lease.
-// It never returns nil. An annotation that cannot be read counts as empty:
-// the exporters report again after the next setup instruction.
-func (l *Lease) ForwardEnds() ForwardEnds {
-	ends := ForwardEnds{}
-	raw := l.Annotations[LeaseForwardEndsAnnotation]
-	if raw == "" {
-		return ends
+// report after it. It is false for nil.
+func (e *LeaseForwardEndStatus) AwaitsReport() bool {
+	if e == nil || e.SetupTime == nil {
+		return false
 	}
-	if err := json.Unmarshal([]byte(raw), &ends); err != nil || ends == nil {
-		return ForwardEnds{}
-	}
-	return ends
+	return e.ReportTime == nil || e.ReportTime.Before(e.SetupTime)
 }
 
-// SetForwardEnds writes the records of the ends of the forwards to the lease
-// metadata. The caller writes the lease.
-func (l *Lease) SetForwardEnds(ends ForwardEnds) error {
-	if len(ends) == 0 {
-		delete(l.Annotations, LeaseForwardEndsAnnotation)
+func forwardEndTime(t time.Time) *metav1.Time {
+	return new(metav1.NewTime(t).Rfc3339Copy())
+}
+
+// RecordSetup records a setup instruction that is sent at this time. The
+// setup time is always after the last report, so that the end waits for a
+// new report: a report that the controller accepted in the same second is
+// before this setup.
+func (e *LeaseForwardEndStatus) RecordSetup(now time.Time) {
+	setup := forwardEndTime(now)
+	if e.ReportTime != nil && !e.ReportTime.Before(setup) {
+		setup = forwardEndTime(e.ReportTime.Add(time.Second))
+	}
+	e.SetupTime = setup
+}
+
+// RecordReport applies a report of the exporter of the end that arrives at
+// this time, and reports whether the end changed and whether the report is a
+// new state (accepted).
+//
+// A report is accepted when the end has no report, or when its sequence
+// number is larger than the last accepted number. The same state with the
+// same number is the answer to a repeated setup instruction: it is not a new
+// state, and it counts as the report that the setup waits for. Each other
+// report changes nothing.
+func (e *LeaseForwardEndStatus) RecordReport(
+	state LeaseForwardEndState,
+	message string,
+	sequence uint64,
+	now time.Time,
+) (changed, accepted bool) {
+	switch {
+	case !e.Reported() || sequence > e.Sequence:
+		e.State = state
+		e.Message = message
+		e.Sequence = sequence
+		accepted = true
+	case sequence == e.Sequence && e.State == state && e.AwaitsReport():
+	default:
+		return false, false
+	}
+	// The report is never before the setup that it answers.
+	report := forwardEndTime(now)
+	if e.SetupTime != nil && report.Before(e.SetupTime) {
+		report = e.SetupTime.DeepCopy()
+	}
+	e.ReportTime = report
+	return true, accepted
+}
+
+// End returns the status of the end of the forward on this member, or nil.
+func (s *LeaseForwardStatus) End(member string) *LeaseForwardEndStatus {
+	if s == nil {
 		return nil
 	}
-	raw, err := json.Marshal(ends)
-	if err != nil {
-		return fmt.Errorf("SetForwardEnds: %w", err)
+	for i := range s.Ends {
+		if s.Ends[i].Member == member {
+			return &s.Ends[i]
+		}
 	}
-	if l.Annotations == nil {
-		l.Annotations = map[string]string{}
-	}
-	l.Annotations[LeaseForwardEndsAnnotation] = string(raw)
 	return nil
 }
 
-// ForwardEndStateFromProto converts the state of a ReportForward request. ok
-// is false for an unspecified or unknown state.
-func ForwardEndStateFromProto(state pb.ForwardEndState) (ForwardEndState, bool) {
+// ForwardEnd returns the status of the end of the named forward on this
+// member, or nil when status.forwards has none.
+func (l *Lease) ForwardEnd(forward, member string) *LeaseForwardEndStatus {
+	return l.ForwardStatus(forward).End(member)
+}
+
+// EnsureForwardEnd returns the status of the end of the named forward on this
+// member. It adds a Pending end, and a Pending forward status, if
+// status.forwards has none. The caller writes the status.
+func (l *Lease) EnsureForwardEnd(forward, member string) *LeaseForwardEndStatus {
+	forwardStatus := l.ForwardStatus(forward)
+	if forwardStatus == nil {
+		l.Status.Forwards = append(l.Status.Forwards, LeaseForwardStatus{Name: forward, State: LeaseForwardStatePending})
+		forwardStatus = &l.Status.Forwards[len(l.Status.Forwards)-1]
+	}
+	if end := forwardStatus.End(member); end != nil {
+		return end
+	}
+	forwardStatus.Ends = append(forwardStatus.Ends, LeaseForwardEndStatus{Member: member, State: LeaseForwardEndStatePending})
+	return &forwardStatus.Ends[len(forwardStatus.Ends)-1]
+}
+
+// ClearForwardEnds removes the ends of each forward from the status, and
+// reports whether it removed one. The caller writes the status.
+func (l *Lease) ClearForwardEnds() bool {
+	cleared := false
+	for i := range l.Status.Forwards {
+		if len(l.Status.Forwards[i].Ends) > 0 {
+			l.Status.Forwards[i].Ends = nil
+			cleared = true
+		}
+	}
+	return cleared
+}
+
+// LeaseForwardEndStateFromProto converts the state of a ReportForward
+// request. ok is false for an unspecified or unknown state.
+func LeaseForwardEndStateFromProto(state pb.ForwardEndState) (LeaseForwardEndState, bool) {
 	switch state {
 	case pb.ForwardEndState_FORWARD_END_STATE_READY:
-		return ForwardEndStateReady, true
+		return LeaseForwardEndStateReady, true
 	case pb.ForwardEndState_FORWARD_END_STATE_CONNECTED:
-		return ForwardEndStateConnected, true
+		return LeaseForwardEndStateConnected, true
 	case pb.ForwardEndState_FORWARD_END_STATE_FAILED:
-		return ForwardEndStateFailed, true
+		return LeaseForwardEndStateFailed, true
 	}
 	return "", false
 }
@@ -259,5 +301,27 @@ func (s *LeaseForwardStatus) ToProtobuf() *cpb.LeaseForwardStatus {
 	if s.Message != "" {
 		forwardStatus.Message = new(s.Message)
 	}
+	for i := range s.Ends {
+		forwardStatus.Ends = append(forwardStatus.Ends, s.Ends[i].ToProtobuf())
+	}
 	return forwardStatus
+}
+
+var leaseForwardEndStateToProto = map[LeaseForwardEndState]cpb.LeaseForwardEndState{
+	LeaseForwardEndStatePending:   cpb.LeaseForwardEndState_LEASE_FORWARD_END_STATE_PENDING,
+	LeaseForwardEndStateReady:     cpb.LeaseForwardEndState_LEASE_FORWARD_END_STATE_READY,
+	LeaseForwardEndStateConnected: cpb.LeaseForwardEndState_LEASE_FORWARD_END_STATE_CONNECTED,
+	LeaseForwardEndStateFailed:    cpb.LeaseForwardEndState_LEASE_FORWARD_END_STATE_FAILED,
+}
+
+// ToProtobuf converts the status of an end of a forward.
+func (e *LeaseForwardEndStatus) ToProtobuf() *cpb.LeaseForwardEndStatus {
+	endStatus := &cpb.LeaseForwardEndStatus{
+		MemberName: e.Member,
+		State:      leaseForwardEndStateToProto[e.State],
+	}
+	if e.Message != "" {
+		endStatus.Message = new(e.Message)
+	}
+	return endStatus
 }

@@ -13,6 +13,7 @@ from jumpstarter_kubernetes import (
     V1Alpha1Exporter,
     V1Alpha1ExporterList,
     V1Alpha1Lease,
+    V1Alpha1LeaseForwardEndStatus,
     V1Alpha1LeaseList,
     V1Alpha1LeaseTemplate,
     V1Alpha1LeaseTemplateList,
@@ -141,6 +142,28 @@ def test_get_lease_structured_output_carries_the_forwards(_load_kube_config_mock
             {"name": "uart", "state": "Failed", "message": "port 'uart' is not on exporter peer-1"},
         ]
     assert "bt=Listening uart=Failed" in as_table.output
+
+
+@patch.object(LeasesV1Alpha1Api, "get_lease")
+@patch.object(LeasesV1Alpha1Api, "_load_kube_config")
+def test_get_lease_structured_output_carries_the_ends_of_a_forward(_load_kube_config_mock, get_lease_mock: AsyncMock):
+    ends = [
+        {"member": "headunit", "state": "Ready", "sequence": 12, "setupTime": "2026-11-24T10:00:00Z"},
+        {"member": "peer", "state": "Failed", "message": "address already in use", "sequence": 7},
+    ]
+    lease = FORWARD_LEASE.model_copy(deep=True)
+    assert lease.status.forwards is not None
+    lease.status.forwards[1].ends = [V1Alpha1LeaseForwardEndStatus.model_validate(end) for end in ends]
+    get_lease_mock.return_value = lease
+    runner = CliRunner()
+
+    as_json = runner.invoke(get, ["lease", "headunit-peer-7c2", "--output", "json"])
+    as_yaml = runner.invoke(get, ["lease", "headunit-peer-7c2", "--output", "yaml"])
+
+    assert as_json.exit_code == 0 and as_yaml.exit_code == 0
+    for parsed in (json.loads(as_json.output), yaml.safe_load(as_yaml.output)):
+        assert parsed["status"]["forwards"][0] == {"name": "bt", "state": "Listening"}
+        assert parsed["status"]["forwards"][1]["ends"] == ends
 
 
 @patch.object(LeasesV1Alpha1Api, "get_lease")

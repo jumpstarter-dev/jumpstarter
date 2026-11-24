@@ -298,6 +298,9 @@ def forward_directions(config, lease: Lease) -> dict[tuple[str, str], str]:
 
 
 def _print_lease_forwards(lease: Lease, directions: dict[tuple[str, str], str]) -> None:
+    # The state of each end, for a forward that is not Listening or Connected.
+    ends = {status.name: status.describe_ends("; ") for status in lease.forward_statuses}
+    show_ends = any(ends.values())
     rows = []
     for forward in lease.forwards:
         status = lease.forward_status(forward.name)
@@ -307,9 +310,10 @@ def _print_lease_forwards(lease: Lease, directions: dict[tuple[str, str], str]) 
                 forward.describe(directions),
                 lease.forward_state(forward.name),
                 _format_value(status.message if status else None),
+                *([ends.get(forward.name, "")] if show_ends else []),
             ]
         )
-    _print_table("Forwards", ["Name", "Endpoints", "State", "Message"], rows)
+    _print_table("Forwards", ["Name", "Endpoints", "State", "Message", *(["Ends"] if show_ends else [])], rows)
 
 
 def _print_template_forwards(forwards: list[LeaseForward]) -> None:

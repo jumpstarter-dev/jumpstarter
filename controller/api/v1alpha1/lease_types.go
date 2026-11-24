@@ -170,6 +170,52 @@ type LeaseForwardStatus struct {
 	// Message is a human-readable message for the state: the role of the
 	// Omitted member of a Disabled forward, or the cause of a failure.
 	Message string `json:"message,omitempty"`
+	// Ends is the state of each bound end of the forward, in the order of
+	// the endpoints. The key is the member. The controller service writes
+	// the reports and the setup times; the lease controller calculates State
+	// from them.
+	// +listType=map
+	// +listMapKey=member
+	// +kubebuilder:validation:MaxItems=8
+	Ends []LeaseForwardEndStatus `json:"ends,omitempty"`
+}
+
+// LeaseForwardEndState is the state of one end of a forward: the last state
+// that the exporter of the endpoint reported.
+// +kubebuilder:validation:Enum=Pending;Ready;Connected;Failed
+type LeaseForwardEndState string
+
+const (
+	// LeaseForwardEndStatePending: the exporter of the end sent no report.
+	LeaseForwardEndStatePending LeaseForwardEndState = "Pending"
+	// LeaseForwardEndStateReady: the listener is open, or the forward is
+	// recorded.
+	LeaseForwardEndStateReady LeaseForwardEndState = "Ready"
+	// LeaseForwardEndStateConnected: a minimum of one connection is open.
+	LeaseForwardEndStateConnected LeaseForwardEndState = "Connected"
+	// LeaseForwardEndStateFailed: the setup failed.
+	LeaseForwardEndStateFailed LeaseForwardEndState = "Failed"
+)
+
+// LeaseForwardEndStatus is the observed state of one end of a forward: the
+// last report that the controller accepted from the exporter of the member,
+// and the time of the last setup instruction.
+type LeaseForwardEndStatus struct {
+	// Member is the role name of the member of this end.
+	Member string `json:"member"`
+	// State is the state of the last accepted report. It is Pending until
+	// the exporter sends a report.
+	State LeaseForwardEndState `json:"state"`
+	// Message is the cause that a Failed report gave.
+	Message string `json:"message,omitempty"`
+	// Sequence is the sequence number of the last report that the controller
+	// accepted. A report with a number that is not larger is ignored.
+	// +kubebuilder:validation:Minimum=0
+	Sequence uint64 `json:"sequence,omitempty"`
+	// SetupTime is the time of the last setup instruction for this end.
+	SetupTime *metav1.Time `json:"setupTime,omitempty"`
+	// ReportTime is the time of the last report that the controller accepted.
+	ReportTime *metav1.Time `json:"reportTime,omitempty"`
 }
 
 // LeaseMember is one member of a member-form lease: a role name and the

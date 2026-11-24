@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import grpc
 import pytest
+import yaml
 from google.protobuf import duration_pb2
 from jumpstarter_protocol import client_pb2
 from rich.console import Console
@@ -13,6 +14,7 @@ from rich.table import Table
 
 from jumpstarter.client._members_testing import (
     exporter_pb,
+    forward_end_status_pb,
     forward_pb,
     forward_status_pb,
     members_lease_pb,
@@ -26,6 +28,7 @@ from jumpstarter.client.grpc import (
     ForwardEndpoint,
     Lease,
     LeaseForward,
+    LeaseForwardEndStatus,
     LeaseForwardStatus,
     LeaseList,
     LeaseMember,
@@ -91,6 +94,46 @@ class TestForwardModels:
 
     def test_unspecified_state_is_unknown(self):
         assert LeaseForwardStatus.from_protobuf(client_pb2.LeaseForwardStatus(name="bt")).state == "Unknown"
+
+    @pytest.mark.parametrize("state", ["Pending", "Ready", "Connected", "Failed"])
+    def test_each_end_state_has_its_name(self, state):
+        end = LeaseForwardEndStatus.from_protobuf(forward_end_status_pb("headunit", state))
+        assert (end.member_name, end.state, end.message) == ("headunit", state, None)
+        assert end.describe() == f"headunit: {state}"
+
+    def test_unspecified_end_state_is_unknown(self):
+        end = LeaseForwardEndStatus.from_protobuf(client_pb2.LeaseForwardEndStatus(member_name="headunit"))
+        assert end.state == "Unknown"
+
+    def test_status_has_the_state_and_the_message_of_each_end(self):
+        status = LeaseForwardStatus.from_protobuf(
+            forward_status_pb(
+                "bt",
+                "Failed",
+                "The setup failed on role `phone`: address already in use",
+                ends=[("headunit", "Ready"), ("phone", "Failed", "address already in use")],
+            )
+        )
+        assert status.ends == [
+            LeaseForwardEndStatus(member_name="headunit", state="Ready"),
+            LeaseForwardEndStatus(member_name="phone", state="Failed", message="address already in use"),
+        ]
+        phone = status.end("phone")
+        assert phone is not None and phone.state == "Failed" and status.end("tablet") is None
+        assert status.describe_ends() == "headunit: Ready\nphone: Failed (address already in use)"
+        assert status.describe_ends("; ") == "headunit: Ready; phone: Failed (address already in use)"
+
+    @pytest.mark.parametrize("state", ["Listening", "Connected"])
+    def test_ends_of_a_usable_forward_are_not_described(self, state):
+        status = LeaseForwardStatus.from_protobuf(
+            forward_status_pb("bt", state, ends=[("headunit", "Ready"), ("phone", "Connected")])
+        )
+        assert len(status.ends) == 2 and status.describe_ends() == ""
+
+    def test_status_of_a_controller_without_ends(self):
+        status = LeaseForwardStatus.from_protobuf(forward_status_pb("bt", "Pending"))
+        assert status.ends == [] and status.describe_ends() == ""
+        assert "ends" not in status.model_dump(mode="json")
 
     def test_failure_text_has_the_forward_and_the_cause(self):
         failed = LeaseForwardStatus.from_protobuf(
@@ -171,6 +214,31 @@ class TestLeaseWithForwards:
         }
         assert data["forward_statuses"] == [{"name": "bt", "state": "Failed", "message": "no report in 60s"}]
         json.dumps(data)
+
+    def test_json_and_yaml_have_the_ends_of_each_forward(self):
+        lease = Lease.from_protobuf(
+            members_lease_pb(
+                forwards=[forward_pb()],
+                forward_statuses=[
+                    forward_status_pb(
+                        "bt", "Pending", ends=[("headunit", "Ready"), ("phone", "Failed", "address already in use")]
+                    )
+                ],
+            )
+        )
+        data = lease.model_dump(mode="json")
+        assert data["forward_statuses"] == [
+            {
+                "name": "bt",
+                "state": "Pending",
+                "message": None,
+                "ends": [
+                    {"member_name": "headunit", "state": "Ready", "message": None},
+                    {"member_name": "phone", "state": "Failed", "message": "address already in use"},
+                ],
+            }
+        ]
+        assert yaml.safe_load(yaml.safe_dump(data)) == json.loads(json.dumps(data))
 
     def test_lease_without_forwards_prints_as_before(self):
         members = Lease.from_protobuf(members_lease_pb()).model_dump(mode="json")

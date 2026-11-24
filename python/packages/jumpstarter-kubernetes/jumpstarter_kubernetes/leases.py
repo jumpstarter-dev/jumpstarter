@@ -69,11 +69,28 @@ class V1Alpha1LeaseForward(JsonBaseModel):
         return f"{self.name}({','.join(f'{e.member}.{e.port}' for e in self.endpoints)})"
 
 
+class V1Alpha1LeaseForwardEndStatus(OmitNoneModel):
+    """The state of one end of a forward: the last report of the exporter of the member."""
+
+    member: str
+    # Pending, Ready, Connected or Failed
+    state: str
+    message: str | None = None
+    # The sequence number of the last report that the controller accepted.
+    sequence: int | None = None
+    # The time of the last setup instruction for this end.
+    setup_time: str | None = Field(alias="setupTime", default=None)
+    # The time of the last report that the controller accepted.
+    report_time: str | None = Field(alias="reportTime", default=None)
+
+
 class V1Alpha1LeaseForwardStatus(OmitNoneModel):
     name: str
     # Pending, Disabled, Listening, Connected or Failed
     state: str
     message: str | None = None
+    # The state of each bound end of the forward.
+    ends: list[V1Alpha1LeaseForwardEndStatus] | None = None
 
 
 class V1Alpha1LeaseTemplateReference(JsonBaseModel):

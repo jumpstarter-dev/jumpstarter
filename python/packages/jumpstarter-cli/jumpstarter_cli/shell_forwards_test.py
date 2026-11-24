@@ -39,12 +39,12 @@ BT_ENVIRONMENT = {
 class ForwardsLease(FakeLease):
     """What the shell uses of a MembersLease with forwards."""
 
-    def __init__(self, state="Listening", message=None, directions=True):
+    def __init__(self, state="Listening", message=None, directions=True, ends=()):
         super().__init__()
         self._model = Lease.from_protobuf(
             members_lease_pb(
                 forwards=[forward_pb(), forward_pb("can", "headunit.can", "phone.can-remote")],
-                forward_statuses=[forward_status_pb("bt", state, message)],
+                forward_statuses=[forward_status_pb("bt", state, message, ends)],
             )
         )
         self.lease_forwards = list(self._model.forwards)
@@ -167,6 +167,15 @@ class TestEnvironment:
 
     def test_failed_forward_has_its_cause(self):
         assert _forwards_environment(ForwardsLease("Failed", FAILURE))[0]["message"] == FAILURE
+
+    def test_forward_has_the_state_of_each_end_that_the_controller_gives(self):
+        ends = [("headunit", "Ready"), ("phone", "Failed", "address already in use")]
+        bt, can = _forwards_environment(ForwardsLease("Failed", FAILURE, ends=ends))
+        assert bt["ends"] == [
+            {"member": "headunit", "state": "Ready", "message": None},
+            {"member": "phone", "state": "Failed", "message": "address already in use"},
+        ]
+        assert "ends" not in can
 
     def test_lease_without_forwards(self):
         assert _forwards_environment(FakeLease()) == []

@@ -66,6 +66,38 @@ LEASE_FORWARD_STATE_FAILED: LeaseForwardState.ValueType  # 5
 """The validation or the setup failed, or a necessary member is lost."""
 Global___LeaseForwardState: typing_extensions.TypeAlias = LeaseForwardState
 
+class _LeaseForwardEndState:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: typing_extensions.TypeAlias = ValueType
+
+class _LeaseForwardEndStateEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_LeaseForwardEndState.ValueType], builtins.type):
+    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+    LEASE_FORWARD_END_STATE_UNSPECIFIED: _LeaseForwardEndState.ValueType  # 0
+    """The state is not known."""
+    LEASE_FORWARD_END_STATE_PENDING: _LeaseForwardEndState.ValueType  # 1
+    """The exporter of the end sent no report."""
+    LEASE_FORWARD_END_STATE_READY: _LeaseForwardEndState.ValueType  # 2
+    """The listener is open, or the forward is recorded."""
+    LEASE_FORWARD_END_STATE_CONNECTED: _LeaseForwardEndState.ValueType  # 3
+    """A minimum of one connection is open."""
+    LEASE_FORWARD_END_STATE_FAILED: _LeaseForwardEndState.ValueType  # 4
+    """The setup failed."""
+
+class LeaseForwardEndState(_LeaseForwardEndState, metaclass=_LeaseForwardEndStateEnumTypeWrapper):
+    """The state of one end of a forward: the last state that the exporter of an endpoint reported."""
+
+LEASE_FORWARD_END_STATE_UNSPECIFIED: LeaseForwardEndState.ValueType  # 0
+"""The state is not known."""
+LEASE_FORWARD_END_STATE_PENDING: LeaseForwardEndState.ValueType  # 1
+"""The exporter of the end sent no report."""
+LEASE_FORWARD_END_STATE_READY: LeaseForwardEndState.ValueType  # 2
+"""The listener is open, or the forward is recorded."""
+LEASE_FORWARD_END_STATE_CONNECTED: LeaseForwardEndState.ValueType  # 3
+"""A minimum of one connection is open."""
+LEASE_FORWARD_END_STATE_FAILED: LeaseForwardEndState.ValueType  # 4
+"""The setup failed."""
+Global___LeaseForwardEndState: typing_extensions.TypeAlias = LeaseForwardEndState
+
 class _LeaseMemberState:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: typing_extensions.TypeAlias = ValueType
@@ -468,24 +500,58 @@ class LeaseForwardStatus(google.protobuf.message.Message):
     NAME_FIELD_NUMBER: builtins.int
     STATE_FIELD_NUMBER: builtins.int
     MESSAGE_FIELD_NUMBER: builtins.int
+    ENDS_FIELD_NUMBER: builtins.int
     name: builtins.str
     """The name of the forward."""
     state: Global___LeaseForwardState.ValueType
     """The state of the forward."""
     message: builtins.str
     """A human-readable message for the state, for example the cause of a failure."""
+    @property
+    def ends(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LeaseForwardEndStatus]:
+        """The state of each bound end of the forward. The controller calculates the state of the forward from them."""
+
     def __init__(
         self,
         *,
         name: builtins.str = ...,
         state: Global___LeaseForwardState.ValueType = ...,
         message: builtins.str | None = ...,
+        ends: collections.abc.Iterable[Global___LeaseForwardEndStatus] | None = ...,
     ) -> None: ...
     def HasField(self, field_name: typing.Literal["_message", b"_message", "message", b"message"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["_message", b"_message", "message", b"message", "name", b"name", "state", b"state"]) -> None: ...
+    def ClearField(self, field_name: typing.Literal["_message", b"_message", "ends", b"ends", "message", b"message", "name", b"name", "state", b"state"]) -> None: ...
     def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
 
 Global___LeaseForwardStatus: typing_extensions.TypeAlias = LeaseForwardStatus
+
+@typing.final
+class LeaseForwardEndStatus(google.protobuf.message.Message):
+    """The state of one end of a forward of a lease."""
+
+    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+
+    MEMBER_NAME_FIELD_NUMBER: builtins.int
+    STATE_FIELD_NUMBER: builtins.int
+    MESSAGE_FIELD_NUMBER: builtins.int
+    member_name: builtins.str
+    """The role name of the member of this end."""
+    state: Global___LeaseForwardEndState.ValueType
+    """The state of the end."""
+    message: builtins.str
+    """A human-readable message for the state: the cause that the exporter gave for a failure."""
+    def __init__(
+        self,
+        *,
+        member_name: builtins.str = ...,
+        state: Global___LeaseForwardEndState.ValueType = ...,
+        message: builtins.str | None = ...,
+    ) -> None: ...
+    def HasField(self, field_name: typing.Literal["_message", b"_message", "message", b"message"]) -> builtins.bool: ...
+    def ClearField(self, field_name: typing.Literal["_message", b"_message", "member_name", b"member_name", "message", b"message", "state", b"state"]) -> None: ...
+    def WhichOneof(self, oneof_group: typing.Literal["_message", b"_message"]) -> typing.Literal["message"] | None: ...
+
+Global___LeaseForwardEndStatus: typing_extensions.TypeAlias = LeaseForwardEndStatus
 
 @typing.final
 class LeaseMember(google.protobuf.message.Message):

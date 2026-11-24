@@ -409,13 +409,44 @@ func ForwardExporters(
 	return exporters, nil
 }
 
+// forwardEnds returns the ends of a forward for status.forwards[].ends[], in
+// the order of the endpoints: the end that the status has for each endpoint
+// on a Bound member, and a Pending end for each endpoint of a forward that
+// passed the validation and has none. The end of a member that is not Bound
+// goes: its exporter has no forward, and the member does not become Bound
+// again. Only the controller service changes an end that exists (the reports
+// and the setup times); the lease controller keeps it as it read it.
+func forwardEnds(
+	lease *jumpstarterdevv1alpha1.Lease,
+	forward *jumpstarterdevv1alpha1.LeaseForward,
+	plan *ForwardPlan,
+) []jumpstarterdevv1alpha1.LeaseForwardEndStatus {
+	var ends []jumpstarterdevv1alpha1.LeaseForwardEndStatus
+	for i := range forward.Endpoints {
+		name := forward.Endpoints[i].Member
+		member := lease.MemberStatus(name)
+		if member == nil || member.State != jumpstarterdevv1alpha1.LeaseMemberStateBound {
+			continue
+		}
+		switch end := lease.ForwardEnd(forward.Name, name); {
+		case end != nil:
+			ends = append(ends, *end.DeepCopy())
+		case plan.Active() && plan.Endpoint(name) != nil:
+			ends = append(ends, jumpstarterdevv1alpha1.LeaseForwardEndStatus{
+				Member: name, State: jumpstarterdevv1alpha1.LeaseForwardEndStatePending,
+			})
+		}
+	}
+	return ends
+}
+
 // forwardStateFromEnds calculates the state of a forward that passed the
-// validation from the records of its ends. It returns the time until the
+// validation from the status of its ends. It returns the time until the
 // report time limit of an end that got a setup and sent no report after it,
 // or zero when no end waits.
 func forwardStateFromEnds(
 	plan *ForwardPlan,
-	ends jumpstarterdevv1alpha1.ForwardEnds,
+	ends []jumpstarterdevv1alpha1.LeaseForwardEndStatus,
 	now time.Time,
 	timeout time.Duration,
 ) (jumpstarterdevv1alpha1.LeaseForwardState, string, time.Duration) {
@@ -423,9 +454,14 @@ func forwardStateFromEnds(
 	var wait time.Duration
 	connected := false
 	for _, endpoint := range plan.Endpoints {
-		end := ends[jumpstarterdevv1alpha1.ForwardEndKey(plan.Name, endpoint.Member)]
+		var end jumpstarterdevv1alpha1.LeaseForwardEndStatus
+		for i := range ends {
+			if ends[i].Member == endpoint.Member {
+				end = ends[i]
+			}
+		}
 		if end.AwaitsReport() {
-			remaining := time.UnixMilli(end.SetupTime).Add(timeout).Sub(now)
+			remaining := end.SetupTime.Add(timeout).Sub(now)
 			if remaining <= 0 {
 				silent = append(silent, endpoint.Member)
 				continue
@@ -435,16 +471,17 @@ func forwardStateFromEnds(
 			}
 		}
 		switch end.State {
-		case jumpstarterdevv1alpha1.ForwardEndStateFailed:
+		case jumpstarterdevv1alpha1.LeaseForwardEndStateFailed:
 			cause := end.Message
 			if cause == "" {
 				cause = "the setup failed"
 			}
 			failed = append(failed, fmt.Sprintf("role `%s`: %s", endpoint.Member, cause))
-		case jumpstarterdevv1alpha1.ForwardEndStateConnected:
+		case jumpstarterdevv1alpha1.LeaseForwardEndStateConnected:
 			connected = true
-		case jumpstarterdevv1alpha1.ForwardEndStateReady:
+		case jumpstarterdevv1alpha1.LeaseForwardEndStateReady:
 		default:
+			// Pending, or no end: the exporter sent no report.
 			waiting = append(waiting, endpoint.Member)
 		}
 	}
@@ -507,7 +544,12 @@ func (r *LeaseReconciler) forwardReportTimeout() time.Duration {
 
 // reconcileForwards validates the forwards of a bound member-form lease and
 // sets status.forwards, the ForwardsReady condition and, for a failed forward,
-// the Degraded condition. membersReady says that the lease is Ready as far as
+// the Degraded condition. The state of a forward comes from
+// status.forwards[].ends[], which the controller service writes. The status
+// update of the reconcile has the resource version that the lease was read
+// with: a report that the service writes during the reconcile makes that
+// update fail with a conflict, and the next reconcile reads the report. Thus
+// the lease controller never replaces a report with an older one. membersReady says that the lease is Ready as far as
 // its members are concerned (JEP-0015): the forwards then decide Ready. When
 // it is false, the caller has set Ready already.
 func (r *LeaseReconciler) reconcileForwards(
@@ -521,7 +563,6 @@ func (r *LeaseReconciler) reconcileForwards(
 		return err
 	}
 	plans := PlanForwards(lease, exporters)
-	ends := lease.ForwardEnds()
 	now := time.Now()
 
 	statuses := make([]jumpstarterdevv1alpha1.LeaseForwardStatus, 0, len(plans))
@@ -529,6 +570,8 @@ func (r *LeaseReconciler) reconcileForwards(
 	for i := range plans {
 		plan := &plans[i]
 		state, message := plan.State, plan.Message
+		// PlanForwards gives one plan for each forward, in spec order.
+		ends := forwardEnds(lease, &lease.Spec.Forwards[i], plan)
 		if plan.Active() {
 			var wait time.Duration
 			state, message, wait = forwardStateFromEnds(plan, ends, now, r.forwardReportTimeout())
@@ -542,7 +585,7 @@ func (r *LeaseReconciler) reconcileForwards(
 			pending = append(pending, plan.Name)
 		}
 		statuses = append(statuses, jumpstarterdevv1alpha1.LeaseForwardStatus{
-			Name: plan.Name, State: state, Message: message,
+			Name: plan.Name, State: state, Message: message, Ends: ends,
 		})
 	}
 	lease.Status.Forwards = statuses

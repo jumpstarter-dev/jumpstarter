@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from jumpstarter.client import client_from_path
 from jumpstarter.client.exceptions import LeaseError, LeaseMemberLostError
-from jumpstarter.client.grpc import ForwardEndpoint, LeaseForwardStatus
+from jumpstarter.client.grpc import ForwardEndpoint, LeaseForwardEndStatus, LeaseForwardStatus
 from jumpstarter.client.lease import Forward, LeaseMembers, LostMember, _ForwardStatusSource
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
@@ -271,7 +271,20 @@ def forwards_from_env(portal) -> dict[str, Forward]:
         read,
         portal,
         [
-            LeaseForwardStatus(name=entry["name"], state=entry.get("state") or "Pending", message=entry.get("message"))
+            LeaseForwardStatus(
+                name=entry["name"],
+                state=entry.get("state") or "Pending",
+                message=entry.get("message"),
+                ends=[
+                    LeaseForwardEndStatus(
+                        member_name=end.get("member", ""),
+                        state=end.get("state") or "Pending",
+                        message=end.get("message"),
+                    )
+                    for end in entry.get("ends") or []
+                    if isinstance(end, dict)
+                ],
+            )
             for entry in entries
         ],
     )
