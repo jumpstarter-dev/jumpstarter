@@ -339,10 +339,30 @@ func createPrometheusInstance(testNamespace string) {
 
 func cleanupPrometheusInstance() {
 	By("cleaning up the Prometheus fixture")
+	// Set the name and namespace: a Delete on an object with only a GVK fails
+	// with "resource name may not be empty" and would leave the fixture behind.
 	prom := &unstructured.Unstructured{}
 	prom.SetGroupVersionKind(prometheusGVK)
+	prom.SetName(prometheusCRName)
+	prom.SetNamespace(prometheusNamespace)
 	_ = k8sClient.Delete(ctx, prom)
+	// Wait for the CR to go so the operator removes the StatefulSet before the
+	// namespace starts terminating.
+	Eventually(func(g Gomega) {
+		err := k8sClient.Get(ctx, types.NamespacedName{
+			Name: prometheusCRName, Namespace: prometheusNamespace,
+		}, prom)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Prometheus fixture should be deleted: %v", err)
+	}, time.Minute, time.Second).Should(Succeed())
+
 	_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: prometheusNamespace}})
+	// A terminating namespace makes the next run's ServiceAccount creation fail,
+	// so do not return until it is gone.
+	Eventually(func(g Gomega) {
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: prometheusNamespace}, &corev1.Namespace{})
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Prometheus fixture namespace should be deleted: %v", err)
+	}, 2*time.Minute, 2*time.Second).Should(Succeed())
+
 	_ = k8sClient.Delete(ctx, &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: prometheusServiceAccount}})
 	_ = k8sClient.Delete(ctx, &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: prometheusServiceAccount}})
 }
