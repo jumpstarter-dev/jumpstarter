@@ -25,7 +25,7 @@ class FakeDevice:
 
 def _sdwire(device: FakeDevice) -> SDWire:
     sdwire = object.__new__(SDWire)
-    sdwire.dev = device
+    sdwire.dev = device  # ty: ignore[invalid-assignment]
     sdwire.logger = logging.getLogger("test-sdwire")
     return sdwire
 

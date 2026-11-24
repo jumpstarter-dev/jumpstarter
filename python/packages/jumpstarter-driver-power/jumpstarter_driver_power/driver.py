@@ -1,9 +1,13 @@
 import time
 from abc import ABCMeta, abstractmethod
 from collections.abc import AsyncGenerator, Generator
+from typing import TYPE_CHECKING
 
 from .common import PowerReading
 from jumpstarter.driver import Driver, export
+
+if TYPE_CHECKING:
+    from jumpstarter.metrics.driver import DriverMetrics
 
 
 class PowerInterface(metaclass=ABCMeta):
@@ -51,6 +55,13 @@ class VirtualPowerInterface(metaclass=ABCMeta):
 
 class _PowerTelemetry:
     """Shared telemetry for the reference power drivers (JEP-0013 Phase 4)."""
+
+    if TYPE_CHECKING:
+        # Provided by Driver, which every class using this mixin also inherits.
+        # Declared here so the mixin type-checks on its own.
+        metrics: DriverMetrics
+
+        def emit_event(self, message: str, **attributes: object) -> None: ...
 
     def _record_transition(self, state: str, result: str, started: float) -> None:
         metrics = self.metrics
