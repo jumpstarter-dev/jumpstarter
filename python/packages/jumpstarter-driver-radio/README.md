@@ -326,6 +326,12 @@ What this cannot do:
   person comparing the two screens sees two codes that need not match, and each is nonetheless the right one
   for its device. Nobody compares a code *with the bridge*: the half agrees when the far device has agreed.
 - The half cannot see a dialog: it knows that its device is pairing, and how that ended.
+- Where the called device asks is the device's own business. An Android that is called shows the pairing
+  dialog only while its Bluetooth settings are in front (or it was discoverable a moment ago); otherwise it
+  posts a "Pairing request" notification, as it does for any device that calls it. A suite that wants the
+  dialog opens the Bluetooth settings ("Pair new device") on the device that is *not* starting, too.
+- An Android that pairs from its settings may pair and hang up, and come back a second or two later for
+  what it wants of the other device: both devices are then hung up on once, and reconnect without being asked.
 - A device that only looks the other one up (SDP, without pairing) still makes the far half call and
   authenticate the far device, which then asks its person to pair.
 
