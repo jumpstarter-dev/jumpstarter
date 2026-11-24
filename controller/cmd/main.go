@@ -240,7 +240,7 @@ func main() {
 	}
 
 	var legacyTokens *authentication.StoredTokenAuthenticator
-	if !cfg.DisableLegacyTokenAuthentication {
+	if cfg.AllowStoredTokenFallback {
 		legacyTokens = &authentication.StoredTokenAuthenticator{
 			Primary: cfg.Authenticator, Cache: mgr.GetCache(), Reader: mgr.GetAPIReader(), Namespace: watchNamespace,
 			Issuer: oidcSigner.Issuer(), Audience: oidcSigner.Audience(), Prefix: cfg.Prefix,
@@ -249,7 +249,7 @@ func main() {
 	}
 
 	if err = (&controller.ExporterReconciler{
-		DisableLegacyTokenAuthentication: cfg.DisableLegacyTokenAuthentication,
+		DisableLegacyTokenAuthentication: !cfg.AllowStoredTokenFallback,
 		Client:                           mgr.GetClient(),
 		Scheme:                           mgr.GetScheme(),
 		Signer:                           oidcSigner,
@@ -259,7 +259,7 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.ClientReconciler{
-		DisableLegacyTokenAuthentication: cfg.DisableLegacyTokenAuthentication,
+		DisableLegacyTokenAuthentication: !cfg.AllowStoredTokenFallback,
 		Client:                           mgr.GetClient(),
 		Scheme:                           mgr.GetScheme(),
 		Signer:                           oidcSigner,

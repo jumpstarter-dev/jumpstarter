@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 )
 
@@ -12,9 +13,9 @@ func TestConfigRoundTrip(t *testing.T) {
 	original := Config{
 		Authentication: Authentication{
 			Internal: Internal{
-				DisableLegacyTokenAuthentication: true,
-				Prefix:                           "internal:",
-				TokenLifetime:                    "43800h",
+				AllowStoredTokenFallback: ptr.To(false),
+				Prefix:                   "internal:",
+				TokenLifetime:            "43800h",
 			},
 			K8s: K8s{
 				Enabled: true,
@@ -48,8 +49,8 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 
 	// Verify key fields
-	if !parsed.Authentication.Internal.DisableLegacyTokenAuthentication {
-		t.Fatal("legacy token disable switch did not survive the config round trip")
+	if parsed.Authentication.Internal.AllowStoredTokenFallback == nil || *parsed.Authentication.Internal.AllowStoredTokenFallback {
+		t.Fatal("stored token fallback opt-out did not survive the config round trip")
 	}
 	if parsed.Authentication.Internal.Prefix != original.Authentication.Internal.Prefix {
 		t.Errorf("Internal prefix mismatch: got %s, want %s",

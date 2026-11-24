@@ -66,11 +66,11 @@ spec:
                       Built-in authenticator that issues tokens for clients and exporters.
                       This is the simplest authentication method and is enabled by default.
                     properties:
-                      disableLegacyTokenAuthentication:
-                        default: false
+                      allowStoredTokenFallback:
                         description: |-
-                          Disable the exact-stored-token fallback used during signing-key migrations.
-                          Set to true after clients and exporters have adopted their replacement tokens.
+                          Allow exact stored credentials during signing-key migrations.
+                          Set to false after clients and exporters have adopted their replacement tokens.
+                          When omitted, uses the controller's current default (true).
                         type: boolean
                       enabled:
                         default: true

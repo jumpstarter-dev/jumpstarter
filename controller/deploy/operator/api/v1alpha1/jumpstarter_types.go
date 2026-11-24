@@ -711,10 +711,10 @@ type InternalAuthConfig struct {
 	// +kubebuilder:default="43800h"
 	TokenLifetime *metav1.Duration `json:"tokenLifetime,omitempty"`
 
-	// Disable the exact-stored-token fallback used during signing-key migrations.
-	// Set to true after clients and exporters have adopted their replacement tokens.
-	// +kubebuilder:default=false
-	DisableLegacyTokenAuthentication bool `json:"disableLegacyTokenAuthentication,omitempty"`
+	// Allow exact stored credentials during signing-key migrations.
+	// Set to false after clients and exporters have adopted their replacement tokens.
+	// When omitted, uses the controller's current default (true).
+	AllowStoredTokenFallback *bool `json:"allowStoredTokenFallback,omitempty"`
 }
 
 // K8sAuthConfig defines Kubernetes service account authentication.

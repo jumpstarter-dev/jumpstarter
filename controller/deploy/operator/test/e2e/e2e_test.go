@@ -42,6 +42,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	apiserverv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
@@ -1008,7 +1009,7 @@ provisioning:
 			previousHash := deployment.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]
 			key := types.NamespacedName{Name: "jumpstarter", Namespace: dynamicTestNamespace}
 			updateJumpstarter(key, func(js *operatorv1alpha1.Jumpstarter) {
-				js.Spec.Authentication.Internal.DisableLegacyTokenAuthentication = true
+				js.Spec.Authentication.Internal.AllowStoredTokenFallback = ptr.To(false)
 			})
 			Eventually(func(g Gomega) {
 				cm := &corev1.ConfigMap{}
@@ -1016,7 +1017,7 @@ provisioning:
 				var cfg map[string]any
 				g.Expect(yaml.Unmarshal([]byte(cm.Data["config"]), &cfg)).To(Succeed())
 				internal := cfg["authentication"].(map[string]any)["internal"].(map[string]any)
-				g.Expect(internal["disableLegacyTokenAuthentication"]).To(BeTrue())
+				g.Expect(internal["allowStoredTokenFallback"]).To(BeFalse())
 				g.Expect(k8sClient.Get(ctx, deploymentKey, deployment)).To(Succeed())
 				g.Expect(deployment.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]).NotTo(
 					Equal(previousHash), "config changes must trigger a controller rollout")

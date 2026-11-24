@@ -67,7 +67,7 @@ controller ConfigMap's `config` section:
 ```yaml
 authentication:
   internal:
-    disableLegacyTokenAuthentication: true
+    allowStoredTokenFallback: false
 ```
 
 For operator-managed installations, set the same switch on the `Jumpstarter` CR:
@@ -76,8 +76,12 @@ For operator-managed installations, set the same switch on the `Jumpstarter` CR:
 spec:
   authentication:
     internal:
-      disableLegacyTokenAuthentication: true
+      allowStoredTokenFallback: false
 ```
+
+When omitted, `allowStoredTokenFallback` uses the controller's current default
+(`true`). Explicit `true` and `false` values are preserved; there is no CRD
+default, so omitted values can follow a future release's default.
 
 The operator updates the controller configuration and triggers a rolling restart.
 For manually managed deployments, restart the controller after editing its

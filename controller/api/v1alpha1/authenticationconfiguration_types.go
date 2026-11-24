@@ -16,8 +16,8 @@ type AuthenticationConfiguration struct {
 }
 
 type Internal struct {
-	Prefix                           string `json:"prefix"`
-	DisableLegacyTokenAuthentication bool   `json:"disableLegacyTokenAuthentication,omitempty"`
+	Prefix                   string `json:"prefix"`
+	AllowStoredTokenFallback *bool  `json:"allowStoredTokenFallback,omitempty"`
 }
 
 func init() {

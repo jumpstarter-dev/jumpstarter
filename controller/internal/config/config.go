@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -101,7 +102,7 @@ func LoadConfiguration(
 	if ok {
 		// backwards compatibility
 		// TODO: remove in 0.7.0
-		auth, prefix, disableLegacyTokens, err := oidc.LoadAuthenticationConfiguration(
+		auth, prefix, allowStoredTokens, err := oidc.LoadAuthenticationConfiguration(
 			ctx,
 			scheme,
 			[]byte(rawAuthenticationConfiguration),
@@ -113,10 +114,10 @@ func LoadConfiguration(
 		}
 
 		return &LoadedConfig{
-			DisableLegacyTokenAuthentication: disableLegacyTokens,
-			Authenticator:                    auth,
-			Prefix:                           prefix,
-			Router:                           router,
+			AllowStoredTokenFallback: allowStoredTokens,
+			Authenticator:            auth,
+			Prefix:                   prefix,
+			Router:                   router,
 			ServerOptions: []grpc.ServerOption{
 				grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
 					MinTime:             1 * time.Second,
@@ -160,15 +161,15 @@ func LoadConfiguration(
 	}
 
 	return &LoadedConfig{
-		DisableLegacyTokenAuthentication: config.Authentication.Internal.DisableLegacyTokenAuthentication,
-		Authenticator:                    auth,
-		Prefix:                           prefix,
-		Router:                           router,
-		ServerOptions:                    serverOptions,
-		Provisioning:                     &config.Provisioning,
-		LeasePolicy:                      &config.LeasePolicy,
-		HiddenLabels:                     &config.HiddenLabels,
-		DeprecatedLabels:                 &config.DeprecatedLabels,
-		Telemetry:                        telemetry,
+		AllowStoredTokenFallback: ptr.Deref(config.Authentication.Internal.AllowStoredTokenFallback, true),
+		Authenticator:            auth,
+		Prefix:                   prefix,
+		Router:                   router,
+		ServerOptions:            serverOptions,
+		Provisioning:             &config.Provisioning,
+		LeasePolicy:              &config.LeasePolicy,
+		HiddenLabels:             &config.HiddenLabels,
+		DeprecatedLabels:         &config.DeprecatedLabels,
+		Telemetry:                telemetry,
 	}, nil
 }

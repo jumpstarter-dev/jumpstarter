@@ -16,7 +16,7 @@ The separate operator suite (`controller/deploy/operator/test/e2e`, run with
 `make -C controller/deploy/operator test-e2e`) also checks
 `should disable legacy token authentication through the operator`: with the
 operator and its dynamic-ingress test installation running, it changes
-`spec.authentication.internal.disableLegacyTokenAuthentication` to `true`, then
+`spec.authentication.internal.allowStoredTokenFallback` to `false`, then
 verifies the controller ConfigMap and a changed Deployment pod-template
 annotation that triggers a rollout. It needs no hardware.
 

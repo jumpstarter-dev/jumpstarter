@@ -13,6 +13,7 @@ import (
 	tokenunion "k8s.io/apiserver/pkg/authentication/token/union"
 	"k8s.io/apiserver/pkg/server/dynamiccertificates"
 	"k8s.io/apiserver/plugin/pkg/authenticator/token/oidc"
+	"k8s.io/utils/ptr"
 )
 
 func LoadAuthenticationConfiguration(
@@ -58,7 +59,7 @@ func LoadAuthenticationConfiguration(
 	if err != nil {
 		return nil, "", false, err
 	}
-	return authn, authenticationConfiguration.Internal.Prefix, authenticationConfiguration.Internal.DisableLegacyTokenAuthentication, nil
+	return authn, authenticationConfiguration.Internal.Prefix, ptr.Deref(authenticationConfiguration.Internal.AllowStoredTokenFallback, true), nil
 }
 
 // Reference: https://github.com/kubernetes/kubernetes/blob/v1.32.1/pkg/kubeapiserver/authenticator/config.go#L244
