@@ -380,6 +380,15 @@ make sure that a forward does not stay `Pending`:
 
 - The exporter sends a report again, with a delay between the tries, until
   the controller accepts it or the lease ends.
+- The exporter keeps only the latest state of each end. A new state
+  replaces a report that the controller did not accept. Thus the exporter
+  does not send an old state after a newer state.
+- Each report has a sequence number for its end. The exporter increases
+  the number for each new state. The first number of an exporter process
+  is its start time in milliseconds, thus the numbers after a restart are
+  larger. The controller keeps the largest number that it accepted for
+  each end. It ignores a report with a number that is not larger. Thus an
+  old `READY` report cannot replace a newer `FAILED` report.
 - The exporter reports its current state each time that it gets a setup
   instruction, also for a setup that it applied before.
 - If an endpoint sends no report in 60 seconds after its setup instruction,
@@ -771,6 +780,9 @@ message ReportForwardRequest {
   string forward_name = 2;
   ForwardEndState state = 3;
   optional string message = 4;       // The cause of a failure.
+  // Increases with each new state of this end. The controller ignores a
+  // report with a number that is not larger than the last one it accepted.
+  uint64 sequence = 5;
 }
 
 message ReportForwardResponse {}
@@ -1425,7 +1437,8 @@ captures of a simulated medium for the test results.
   endpoints. One failure report sets the forward to `Failed`. The
   controller rejects a report from an exporter that is not an endpoint of
   the forward. An exporter sends a report again after a failure and after
-  a repeated setup. An endpoint with no report in the time limit sets the
+  a repeated setup. The controller ignores a report with an old sequence
+  number. An endpoint with no report in the time limit sets the
   forward to `Failed`.
 - **Paths:** Two `connects` ports make a path for each combination of local
   modes. Only the initiator calls `DialPeer`. A path opens again after a
@@ -1697,7 +1710,8 @@ These items are not part of this JEP:
   Wi-Fi moved to *Future Possibilities*.
 - 2026-11-24: Changes from the review. An exporter sends a report again
   after a failure, and a report has a time limit. `ReportForward` accepts
-  only the endpoints of the forward. A forward with no bound end is
+  only the endpoints of the forward, and each report has a sequence
+  number. A forward with no bound end is
   `Disabled`.
 
 ## References
