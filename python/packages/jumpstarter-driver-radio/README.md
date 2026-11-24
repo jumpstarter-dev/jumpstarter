@@ -445,7 +445,7 @@ serves one host at a time is held from `start` to `stop`.
 | `linked`, `calling`, `pairing`, `encrypted` | The same as flags; `opened_by` is `device` or `bridge` |
 | `bonded` | A key is kept here for the device |
 | `paired` | Both devices have a secure link to the bridge: the conversation is whole |
-| `far` | What the far half says of its own link: `{"link": …, "pairing": …}` |
+| `far` | What the far half says of itself: `{"link": …, "pairing": …, "stopped": …}`. `stopped`: it is on the path, and its radio was stopped |
 | `last_error` | Why the last call or pairing failed; empty once a link is good again |
 | `call_backoff` | Seconds before the device is called again after a call that failed |
 | `device_up`, `identity_source` | What the identity source says: the device's Bluetooth is on; whether it answers |
@@ -468,6 +468,11 @@ phone.status()  # {"state": "secure", "paired": True, "bonded": True, "heard": 2
 phone.wait_until_idle()  # nothing is in flight: no call, no pairing
 phone.stop()  # out of each other's reach; phone.start() brings it back
 ```
+
+`stop` takes one radio off the air; the forward stays `Connected`, because the path between the two exporters
+is still there. `wait_until_joined` starts only the radio it is called on: after both were stopped, start both
+(`phone.start()`, `headunit.start()`) before waiting on either. A half whose far half is stopped says so in
+`status()["far"]["stopped"]`, and in the error of a `wait_until_joined` that times out.
 
 ```console
 $ j phone bluetooth status

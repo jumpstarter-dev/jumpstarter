@@ -366,5 +366,9 @@ async def test_with_an_identity_source_each_device_sees_the_other_under_its_real
         assert (phones.air.dialog.shown, head_units.air.dialog.shown) == (1, 1)
         status = await phones.status()
         assert status["paired"] and status["bonded"] and status["state"] == "secure"
-        assert status["opened_by"] == "bridge" and status["far"] == {"link": "device", "pairing": "complete"}
+        assert status["opened_by"] == "bridge" and status["far"] == {
+            "link": "device",
+            "pairing": "complete",
+            "stopped": False,
+        }
         await link.disconnect()

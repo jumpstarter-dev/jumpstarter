@@ -45,8 +45,20 @@ class RadioClient(CompositeClient):
         return self._wait_until("attached", timeout, "the radio was not found (is the device powered on?)")
 
     def wait_until_joined(self, timeout: float = 120) -> dict:
-        """Start the local end and wait until a far end is joined to it (the forward's path is open)."""
-        return self._wait_until("peer", timeout, "no far end joined (does the lease have a forward for this port?)")
+        """Start the local end and wait until a far end is joined to it (the forward's path is open).
+
+        This starts only the radio it is called on. A far end that was stopped has to be started too, on its
+        own member, before either is joined.
+        """
+        try:
+            return self._wait_until("peer", timeout, "no far end joined (does the lease have a forward for this port?)")
+        except TimeoutError as error:
+            if (self.status().get("far") or {}).get("stopped"):
+                raise TimeoutError(
+                    "the far end is there, and its radio is stopped: start the radio of the other member "
+                    "(the path between the two is open)"
+                ) from error
+            raise
 
     def cli(self):
         base = super().cli()

@@ -304,12 +304,15 @@ async def test_when_the_far_half_is_stopped_the_device_here_is_hung_up_on():
         await until(lambda: not bridged.phone_air.device.connections)
         assert beside_phone.status()["peer"] is False
         assert beside_head_unit.status()["running"] is False
+        # ... and it is said why there is no far end: the far half is there, stopped. (The path is open.)
+        assert beside_phone.status()["far"]["stopped"] is True
         # The half beside the phone stays in the radio under the name it had: the phone still knows it.
         assert beside_phone.device is not None
 
         # Started again, the far half says who it is, and the bridge is whole again.
         async with running(beside_head_unit):
             await until(lambda: beside_phone.joined and beside_head_unit.device)
+            assert beside_phone.status()["far"]["stopped"] is False
             link = await bridged.phone_calls()
             await bridged.phone_uses_the_service(link)
 

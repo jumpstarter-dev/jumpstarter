@@ -234,6 +234,8 @@ class BridgeHalf:
         self.far_version = VERSION
         self.far_link: str | None = None
         self.far_pairing: str | None = None
+        # The far half is on the path and has said it is stopped (its radio was stopped, not the path cut).
+        self.far_stopped = False
 
         self._to_far: Any = None  # the send side of the current path
         self._changed: anyio.Event | None = None
@@ -265,6 +267,7 @@ class BridgeHalf:
             if self._to_far is to_far:
                 self._to_far = None
                 self._far_left()
+                self.far_stopped = False
 
     def _send(self, data: bytes) -> bool:
         if self._to_far is None:
@@ -303,7 +306,7 @@ class BridgeHalf:
     def _far_said(self, kind: int, payload: bytes) -> None:
         if kind == HELLO:
             persona, self.far_version = read_hello(payload)
-            self.joined = True
+            self.joined, self.far_stopped = True, False
             before, self.persona = self.persona, persona
             if _on_air(before) != _on_air(persona):
                 self.logger.info("Bluetooth bridge: the far device is %r (%s)", persona.name, persona.address or "?")
@@ -317,6 +320,7 @@ class BridgeHalf:
             self._far_hung_up()
         elif kind == BYE:
             self._far_left()
+            self.far_stopped = True
         elif kind == LINK:
             self._far_linked(str(read_said(payload).get("by")))
         elif kind == PAIRING:
@@ -950,7 +954,7 @@ class BridgeHalf:
             "encrypted": self.secure(),
             "bonded": self.bonded(),
             "paired": self.paired(),
-            "far": {"link": self.far_link or "", "pairing": self.far_pairing or ""},
+            "far": {"link": self.far_link or "", "pairing": self.far_pairing or "", "stopped": self.far_stopped},
             "persona": self.persona.name if self.persona else "",
             "device_up": self.device_up,
             "call_backoff": round(max(0.0, self._call_after - time.monotonic()), 1),
