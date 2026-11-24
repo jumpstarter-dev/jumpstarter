@@ -8,6 +8,7 @@ or no.
 
 import anyio
 import pytest
+from bumble import hci
 from bumble.core import PhysicalTransport
 
 from .bluetooth_bridge import CALLING, IDLE, SECURE
@@ -290,3 +291,28 @@ async def test_a_device_that_calls_while_the_half_is_calling_has_opened_its_own_
         await anyio.sleep(0.2)
         assert beside_head_unit.link is not None and beside_head_unit.state != IDLE
         await link.disconnect()
+
+
+async def test_a_device_that_takes_the_lead_of_a_link_it_was_called_on_has_not_opened_it():
+    """An Android that is called asks to lead the link as it accepts it. The link is still one the bridge
+    opened: the bridge pairs it, and the far half, whose device started, waits for that."""
+    _, phone, head_unit, beside_phone, beside_head_unit = await bridged_and_on_air()
+    linked = beside_head_unit.linked
+
+    def linked_and_led_by_the_device(connection) -> None:
+        connection.role = hci.Role.PERIPHERAL  # (as after the role switch)
+        linked(connection)
+
+    beside_head_unit.linked = linked_and_led_by_the_device
+    phone.dialog.answer = head_unit.dialog.answer = None
+    async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
+        await until(lambda: beside_phone.device and beside_head_unit.device)
+        async with anyio.create_task_group() as tasks:
+            attempt = Attempt(tasks, phone)
+            await until(lambda: phone.dialog.shown == 1 and head_unit.dialog.shown == 1)
+            assert (beside_phone.opened_by, beside_head_unit.opened_by) == ("device", "bridge")
+            phone.dialog.press(True)
+            head_unit.dialog.press(True)
+            await attempt.finished()
+        assert attempt.error is None
+        await until(lambda: beside_phone.paired() and beside_head_unit.paired())

@@ -212,6 +212,7 @@ class BridgeHalf:
         self.state = OFF
         self.link: Connection | None = None
         self.opened_by: str | None = None  # "device" or "bridge": who opened the link
+        self._device_asked = False  # the device has asked the radio for a link (it is calling the bridge)
         self.held: list[tuple[int, bytes]] = []
         self.reaching = False  # the bridge is calling the device
         self.recalling = False  # ... for the second time, after a key the device no longer had
@@ -484,8 +485,10 @@ class BridgeHalf:
     def linked(self, connection: Connection) -> None:
         self.link = connection
         # Who opened it is what the radio says, not what the bridge was doing: a device that calls while the
-        # bridge is calling it has opened its own link, and pairs it itself.
-        self.opened_by = "bridge" if connection.role == hci.Role.CENTRAL else "device"
+        # bridge is calling it has opened its own link, and pairs it itself. What the radio says is whether
+        # the device asked for the link. (Not who leads it: an Android that is called takes the lead of the
+        # link as it accepts it, and the link then looks as if the device had opened it.)
+        self.opened_by = "device" if self._device_asked else "bridge"
         self.fresh = self._told_complete = self._explained = False
         self._call_failures, self._call_after = 0, 0.0
         self._to(LINKED, f"the {self.opened_by} opened a link")
@@ -506,6 +509,10 @@ class BridgeHalf:
         connection.on("pairing_failure", self._not_made_secure)
         connection.on("disconnection", self.left)
         self.release()
+
+    def _device_calls(self, _address: Any, _class_of_device: int, link_type: int) -> None:
+        if link_type == hci.HCI_Connection_Complete_Event.LinkType.ACL:
+            self._device_asked = True
 
     def _encryption_changed(self) -> None:
         if self.secure():
@@ -559,6 +566,7 @@ class BridgeHalf:
             # the device went before both had agreed: what was made of a key is forgotten
             self._forget_keys()
         self.link, self.held, self.opened_by = None, [], None  # (a call that is still being placed ends by itself)
+        self._device_asked = False
         self.fresh = self._told_complete = False
         self._tell_news()
         self._to(CALLING if self.reaching else IDLE, "the link is gone")
@@ -796,6 +804,7 @@ class BridgeHalf:
         # everything above the link is relayed, none of it answered
         device.l2cap_channel_manager.on_pdu = self.heard  # ty: ignore[invalid-assignment]
         device.on("connection", self.linked)
+        device.host.on("connection_request", self._device_calls)
         return device
 
     async def _put_on_air(self, device: Device) -> None:
@@ -836,7 +845,7 @@ class BridgeHalf:
                 self.logger.debug("Bluetooth bridge: power off: %r", error)
         finally:
             self.link, self.held, self.reaching, self.recalling = None, [], False, False
-            self.opened_by, self.fresh, self._told_complete = None, False, False
+            self.opened_by, self.fresh, self._told_complete, self._device_asked = None, False, False, False
             self.closing = False
             self._to(OFF, "the half left the radio")
 
