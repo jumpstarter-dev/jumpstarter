@@ -457,6 +457,32 @@ func TestPodLabelsDoNotChangeSelector(t *testing.T) {
 	}
 }
 
+func TestObservabilityRequeueAfterTelemetryCAWins(t *testing.T) {
+	// A missing telemetry CA is retried every 30s. When the ServiceMonitor CRD
+	// is also absent, that shorter interval must win instead of being replaced
+	// by the two-minute CRD retry.
+	s := runtime.NewScheme()
+	if err := corev1.AddToScheme(s); err != nil {
+		t.Fatalf("add core scheme: %v", err)
+	}
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add operator scheme: %v", err)
+	}
+
+	js := testJumpstarter()
+	js.Spec.CertManager.Enabled = true
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{Enabled: true}
+
+	// No CA secret exists in the fake client, so telemetryCANeedsRequeue is true.
+	r := &JumpstarterReconciler{Client: fake.NewClientBuilder().WithScheme(s).Build(), Scheme: s}
+
+	got := r.observabilityRequeueAfter(context.Background(), js,
+		serviceMonitorResult{phase: serviceMonitorWaitingForCRD, reason: serviceMonitorReasonCRDNotFound})
+	if got != telemetryCARequeueInterval {
+		t.Fatalf("requeue = %s, want %s", got, telemetryCARequeueInterval)
+	}
+}
+
 func TestObservabilityRequeueAfterPhases(t *testing.T) {
 	// Probe and apply failures return an error, so the caller never reaches the
 	// requeue calculation; only the waiting phase shortens the interval here.

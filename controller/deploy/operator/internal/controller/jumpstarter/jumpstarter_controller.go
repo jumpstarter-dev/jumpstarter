@@ -325,19 +325,18 @@ func (r *JumpstarterReconciler) observabilityRequeueAfter(
 	js *operatorv1alpha1.Jumpstarter,
 	serviceMonitor serviceMonitorResult,
 ) time.Duration {
-	requeueAfter := 30 * time.Minute
+	// The CA interval is shorter than every other candidate, so it wins outright.
+	// Returning early keeps that precedence visible without comparing sizes.
 	if r.telemetryCANeedsRequeue(ctx, js) {
-		requeueAfter = telemetryCARequeueInterval
+		return telemetryCARequeueInterval
 	}
-	if requeueAfter > 2*time.Minute {
-		// Only the waiting phase can reach this point: a probe or apply failure
-		// always returns an error, and the caller returns before computing the
-		// requeue.
-		if serviceMonitor.phase == serviceMonitorWaitingForCRD {
-			requeueAfter = 2 * time.Minute
-		}
+	// Only the waiting phase can reach this point: a probe or apply failure
+	// always returns an error, and the caller returns before computing the
+	// requeue.
+	if serviceMonitor.phase == serviceMonitorWaitingForCRD {
+		return 2 * time.Minute
 	}
-	return requeueAfter
+	return 30 * time.Minute
 }
 
 // emitEventf emits a Kubernetes event on the Jumpstarter object.
