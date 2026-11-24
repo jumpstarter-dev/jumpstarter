@@ -83,6 +83,8 @@ async def write_to_storage_device(
                         )
                         next_print += 50 * 1024 * 1024
 
+            await to_thread.run_sync(file.flush)
+
             with fail_after(fsync_timeout):
                 while True:
                     try:
