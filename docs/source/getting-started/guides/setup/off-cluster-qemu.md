@@ -22,7 +22,9 @@ Each remote host must have:
 
 - **Podman** installed (for running containers)
 - **systemd** (for quadlet-based container lifecycle)
-- **SSH access** with key-based authentication
+- **SSH access** as `root` with key-based authentication: the provisioner
+  writes under `/etc` over SFTP and runs `systemctl` and rootful `podman`
+  without `sudo`. It does not verify the host's SSH key.
 - (Optional) **KVM** support (`/dev/kvm` present) for hardware-accelerated
   emulation
 
@@ -46,7 +48,7 @@ metadata:
   namespace: jumpstarter
 spec:
   exporterSets:
-    image: quay.io/jumpstarter-dev/exporter-set-controller:latest
+    image: quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
     provisioners:
       - name: qemu.jumpstarter.dev
         enabled: true
@@ -67,9 +69,10 @@ kubectl create secret generic lab-ssh-key \
   -n jumpstarter
 ```
 
-The Secret uses the standard `kubernetes.io/ssh-auth` type. The key must be in
-the `ssh-privatekey` field. The SSH username is configured in the
-VirtualTargetClass parameters (not in the Secret).
+The key must be in the `ssh-privatekey` field, the field name of the standard
+`kubernetes.io/ssh-auth` type; the provisioner does not check the Secret type.
+The SSH user and port are set with `host.user` and `host.port` in the
+VirtualTargetClass or ExporterSet parameters (not in the Secret).
 
 ## Step 3: Create a VirtualTargetClass
 
@@ -89,11 +92,10 @@ spec:
   bindingMode: Immediate
   reclaimPolicy: Delete
   parameters:
-    ssh:
-      user: root
-      port: 22
     host:
       name: lab-host-01.example.com
+      user: root
+      port: 22
     runtime:
       kvm: true
     arch: aarch64
@@ -108,13 +110,11 @@ spec:
 
 | Parameter | Description |
 |-----------|-------------|
-| `ssh.user` | Default SSH username (fallback: `root`) |
-| `ssh.port` | Default SSH port (fallback: `22`) |
-| `host.name` | FQDN or IP of the remote host |
-| `host.user` | Per-host SSH user override |
-| `host.port` | Per-host SSH port override |
+| `host.name` | FQDN or IP of the remote host (required) |
+| `host.user` | SSH username (default: `root`) |
+| `host.port` | SSH port (default: `22`) |
 | `runtime.kvm` | Pass `/dev/kvm` to the runtime container |
-| `runtime.devices` | Additional devices to pass through (list of paths) |
+| `runtime.devices` | Additional devices to pass through (list of `/dev/` paths) |
 | `runtime.host_network` | Run both containers on the host network instead of Podman's bridge (default `false`). Needed when the exporter must reach a service on the host's own `127.0.0.1`; only one instance per host can then use a given forwarded port |
 | `arch` | Default QEMU architecture |
 | `resources.cpu` | Default vCPU count |
@@ -209,9 +209,9 @@ missing or SSH to the host fails, cleanup skips the remote teardown and lets
 the finalizer clear — but the remote containers and volume are orphaned on the
 host. Delete the class and the Secret only after the ExporterSet is gone.
 If remote resources were orphaned (missing Secret, unreachable host), remove
-them by hand on the host. The full teardown order matters — the quadlet files
-set `Restart=always`, so removing a container without stopping the service
-first will just restart it:
+them by hand on the host. The full teardown order matters — the runtime quadlet
+sets `Restart=always` and the exporter quadlet `Restart=on-failure`, so removing
+a container without stopping its service first will just restart it:
 
 ```bash
 # 1. Stop the services (suppresses Restart=always)
@@ -252,7 +252,7 @@ Users lease off-cluster targets the same way as any other target — the
 placement is transparent:
 
 ```bash
-jmp lease -l board=aarch64-qemu,virtual=true
+jmp shell -l board=aarch64-qemu,virtual=true
 ```
 
 ## Troubleshooting

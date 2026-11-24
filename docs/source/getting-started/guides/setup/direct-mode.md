@@ -68,6 +68,8 @@ $ jmp run --exporter-config example-direct.yaml \
     --passphrase my-secret
 ```
 
+Without TLS the passphrase is sent in plaintext, and `jmp run` prints a warning.
+
 ### Connect a Client
 
 ```console

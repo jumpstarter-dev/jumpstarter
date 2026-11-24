@@ -39,6 +39,9 @@ comma-separated list of client names):
 $ jmp create lease -l board=rpi4 --duration 2h --share client-alice,client-bob
 ```
 
+A lease can be shared with at most 10 clients; a name given more than once
+counts once.
+
 ## Managing sharing on an existing lease
 
 Use the `jmp share` command group to change sharing after the lease exists. All
@@ -49,6 +52,9 @@ $ jmp share add my-lease client-alice client-bob
 $ jmp share remove my-lease client-alice
 $ jmp share list my-lease
 ```
+
+`jmp update lease my-lease --share-add client-alice --share-remove client-bob`
+makes the same changes; both options can be repeated.
 
 `jmp share list` distinguishes the owner's **intent** from what the controller
 actually **granted**:
@@ -68,15 +74,16 @@ not allow that client to reach this exporter. See
 
 ## Working with a lease shared with you
 
-A shared client does not create a lease — the owner already did. To find leases
-shared with you, list across all clients with `-A`/`--all-clients`:
+A shared client does not create a lease — the owner already did. `jmp get leases`
+lists the leases shared with you together with your own (`-A`/`--all-clients`
+also adds leases you cannot reach):
 
 ```{code-block} console
-$ jmp get leases -A
+$ jmp get leases
 ```
 
-Leases you can reach but do not own are annotated with `shared by <owner>` so
-you can tell them apart from your own.
+Leases you can reach but do not own show `<owner> (shared)` in the `CLIENT`
+column so you can tell them apart from your own.
 
 To open a shell against a lease shared with you, pass its ID with `--lease`:
 
@@ -84,8 +91,11 @@ To open a shell against a lease shared with you, pass its ID with `--lease`:
 $ jmp shell --lease my-lease
 ```
 
-If you hold exactly one accessible lease, `jmp shell` selects it automatically;
-`--lease` is required to disambiguate when you can reach more than one.
+If you can reach exactly one active lease, `jmp shell` without `--lease`,
+`--selector` or `--name` selects it automatically. When you can reach more than
+one, it lists them (marking leases shared with you `shared by <owner>`) and asks
+you to pick one if it runs in a terminal; otherwise it exits and asks for
+`--lease`.
 
 ## Access policies and effective sharing
 
@@ -93,9 +103,11 @@ Sharing is always subject to the exporter's
 [access policies](../../../reference/crds/exporteraccesspolicy.md). Adding a
 client to a lease expresses *intent*; the controller then evaluates the policies
 and computes the **effective** share set — the clients that are actually
-granted access. A client the owner shared with but that the policy denies (or a
-name that matches no client) is silently excluded from the effective set and
-never gains access.
+granted access. A name that matches no client is rejected when you share, and so
+is a client the policy denies if the lease already has an exporter. A client the
+policy denies later (after a policy change, or once an exporter is assigned to a
+lease shared at creation), or a client that has since been deleted, is silently
+excluded from the effective set and never gains access.
 
 This is why `jmp share list` reports two states: the requested list and whether
 each entry is currently active.
@@ -114,8 +126,9 @@ each entry is currently active.
 - Removal does **not** forcibly tear down a router stream the exporter has
   already established.
 
-Transferring the lease clears its share list, so the previous owner's and every
-shared client's `jmp shell` session ends the same way.
+Transferring the lease (`jmp update lease my-lease --to-client client-carol`)
+clears its share list, so the previous owner's and every shared client's
+`jmp shell` session ends the same way.
 
 If you need to cut off everyone immediately — including the owner and all shared
 clients — end the lease itself:

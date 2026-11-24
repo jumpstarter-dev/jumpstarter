@@ -4,9 +4,11 @@ This guide walks you through the process of creating an {term}`exporter` using t
 {term}`controller` {term}`service`, configuring drivers, and running the exporter.
 
 ```{warning}
-The jumpstarter-controller endpoints are secured by TLS. However, in release 0.7.x,
-the certificates are self-signed and rotated on every restart. This means the client
-will not be able to verify the server certificate. To bypass this, you should use the
+The jumpstarter-controller endpoints are secured by TLS. However, unless the operator
+manages certificates with cert-manager (`spec.certManager.enabled`) or you provide your
+own certificate secrets, the controller and router generate self-signed certificates
+on every restart. This means the client will not be able to verify the server
+certificate. To bypass this, you should use the
 `--insecure-tls` flag when creating clients and {term}`exporter`s.
 Alternatively, you can configure the ingress/route in reencrypt mode with your own key and certificate.
 ```
@@ -31,8 +33,8 @@ cluster with admin access. For installation instructions, refer to the
 
 ### Create an Exporter Configuration
 
-Create an exporter using the controller service API. The `jmp admin` CLI
-provides commands to interact with the {term}`controller` directly.
+Create an exporter in the cluster. The `jmp admin` CLI manages Jumpstarter
+resources through the Kubernetes API, using your kubeconfig.
 
 Run this command to create an {term}`exporter` named `example-distributed` and save the
 configuration locally:
@@ -42,7 +44,7 @@ $ jmp admin create exporter example-distributed --label foo=bar --save --insecur
 ```
 
 After creating the exporter, find the new exporter config file at
-`/etc/jumpstarter/exporters/example-distributed.yaml`. Edit the configuration
+`${HOME}/.config/jumpstarter/exporters/example-distributed.yaml`. Edit the configuration
 using your default text editor with:
 
 ```console
@@ -75,7 +77,9 @@ Start the {term}`exporter` locally using the {term}`jmp` CLI tool:
 $ jmp run --exporter example-distributed
 ```
 
-The {term}`exporter` runs until you terminate the process with or close the shell.
+The {term}`exporter` runs until you terminate the process with Ctrl+C or close the shell.
+Add `--exit-on-lease-end` to make it exit after the current {term}`lease` ends
+instead of waiting for a new one.
 
 ### Create a Client
 
@@ -95,9 +99,13 @@ List the {term}`exporter`s your client can reach, to find one to select:
 
 ```console
 $ jmp get exporters
-NAME                 LABELS
-example-distributed  foo=bar
+NAME                    LABELS
+example-distributed  +  foo=bar
 ```
+
+The unnamed column shows each exporter's status: `+` available, `~` leased,
+`*` hook running, `!` hook failed, `x` offline and `?` unknown. Terminals that
+support emoji show emoji instead; set `NO_ICONS` to keep these characters.
 
 `jmp describe` shows one resource in full, including the labels you select on
 and the {term}`lease` holding it, if any:
@@ -105,7 +113,7 @@ and the {term}`lease` holding it, if any:
 ```console
 $ jmp describe exporter example-distributed
 Name:       example-distributed
-Namespace:  jumpstarter-lab
+Namespace:  default
 Labels:
   foo=bar
 Online:   yes
@@ -120,7 +128,7 @@ see why one is still waiting:
 ```console
 $ jmp describe lease 01a05822-e378-71cc-a98c-a216ad4a9432
 Name:                  01a05822-e378-71cc-a98c-a216ad4a9432
-Namespace:             jumpstarter-lab
+Namespace:             default
 Selector:              foo=bar
 Exporter:              example-distributed
 Client:                hello
@@ -166,7 +174,7 @@ Alias:      hello
 Path:       /home/user/.config/jumpstarter/clients/hello.yaml
 Current:    yes
 Name:       hello
-Namespace:  jumpstarter-lab
+Namespace:  default
 Endpoint:   grpc.jumpstarter.example.com:443
 TLS:
   CA:        configured
@@ -190,12 +198,12 @@ on an {term}`exporter`. Once the {term}`lease` is acquired, you can interact wit
 through your shell {term}`session`.
 
 ```console
-$ jmp shell --client hello --selector example.com/board=foo
+$ jmp shell --client hello --selector foo=bar
 ```
 
 ### Exiting the Exporter Shell
 
-To terminate the local {term}`exporter`, simply exit the shell:
+To end the session and release the {term}`lease`, exit the shell:
 
 ```console
 $ exit

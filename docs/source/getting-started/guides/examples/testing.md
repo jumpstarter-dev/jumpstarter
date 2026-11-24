@@ -25,8 +25,9 @@ the test class. It connects to a Jumpstarter {term}`exporter` in one of two ways
 1. **Shell mode**: when the `JUMPSTARTER_HOST` environment variable is set (for
    example, inside a `jmp shell` session), it connects to the {term}`exporter` from that
    environment.
-2. **{term}`Lease` mode**: when `JUMPSTARTER_HOST` is not set, it loads the default
-   client config and acquires a {term}`lease` using the `selector` class variable.
+2. **{term}`Lease` mode**: when `JUMPSTARTER_HOST` is not set, it loads the client
+   config named `default` and acquires a {term}`lease` using the `selector` class
+   variable.
 
 ```python
 from jumpstarter_testing.pytest import JumpstarterTest
@@ -67,15 +68,18 @@ active {term}`exporter`. The `selector` class variable is ignored.
 
 ### With automatic lease acquisition
 
-Run `pytest` directly without a shell {term}`session`. `JumpstarterTest` loads the default
-client configuration and acquires a {term}`lease` matching your `selector`:
+Run `pytest` directly without a shell {term}`session`. `JumpstarterTest` loads the client
+configuration named `default` and acquires a {term}`lease` matching your `selector`:
 
 ```console
 $ pytest test_my_device.py
 ```
 
-This requires a configured client (see
-[Setup Distributed Mode](../setup/distributed-mode.md)).
+This requires a client config with the alias `default`, normally
+`~/.config/jumpstarter/clients/default.yaml` (see
+[Setup Distributed Mode](../setup/distributed-mode.md)). The client selected
+with `jmp config client use` does not change which config `JumpstarterTest`
+loads.
 
 ## Writing custom fixtures
 
@@ -262,10 +266,14 @@ hardware-test:
 ```
 ````
 
+`jmp shell` exits with the exit code of `pytest`, so failing tests fail the job.
+
 ### Lease mode in CI
 
-When tests use `selector` and run outside a shell, configure the client before
-running `pytest`:
+When tests use `selector` and run outside a shell, `JumpstarterTest` acquires the
+{term}`lease` with the runner's client config named `default`, so create that
+config on the runner before running `pytest` (`jmp config client use` has no
+effect here):
 
 ````{tab} GitHub
 ```yaml
@@ -275,8 +283,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
-      - name: Configure client
-        run: jmp config client use ci-client
       - name: Run tests
         run: pytest tests/
 ```
@@ -289,16 +295,17 @@ hardware-test:
   tags:
     - self-hosted
   script:
-    - jmp config client use ci-client
     - pytest tests/
 ```
 ````
 
 ## Troubleshooting
 
-**Tests fail with `RuntimeError` about missing environment**
-: Ensure you are either running inside a `jmp shell` session or have a default
-  client configured with `jmp config client use <name>`.
+**Tests fail because `clients/default.yaml` does not exist**
+: Outside a `jmp shell` session `JUMPSTARTER_HOST` is not set, so
+  `JumpstarterTest` loads the client config named `default`. Run the tests inside
+  a `jmp shell` session, or create a client config with that alias, for example
+  with `jmp config client create default`.
 
 **Lease acquisition times out**
 : Verify that an {term}`exporter` matching your `selector` labels is running and
@@ -310,5 +317,5 @@ hardware-test:
 
 **`client` fixture setup fails**
 : Confirm that `jumpstarter-testing` is installed, and either: `JUMPSTARTER_HOST`
-  is set correctly in shell mode, or a valid default client is configured for
-  {term}`lease` mode.
+  is set correctly in shell mode, or a valid client config named `default` exists
+  for {term}`lease` mode.

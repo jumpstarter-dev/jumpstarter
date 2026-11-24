@@ -12,7 +12,7 @@ spec:
     # Container image for the exporter-set controller binary.
     # All provisioners share the same binary; --provisioner selects
     # the backend at startup.
-    image: quay.io/jumpstarter-dev/exporter-set-controller:latest
+    image: quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
     provisioners:
       # In-cluster QEMU provisioner (creates Pods with QEMU sidecar)
       - name: qemu.jumpstarter.dev

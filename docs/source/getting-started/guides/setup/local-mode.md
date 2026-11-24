@@ -49,6 +49,13 @@ instance in the background for the duration of your shell {term}`session`.
 $ jmp shell --exporter example-local
 ```
 
+To run a single command instead of an interactive shell, pass it after `--`.
+`jmp shell` exits with the command's exit status, so scripts can check it:
+
+```console
+$ jmp shell --exporter example-local -- j power on
+```
+
 ### Exiting the Exporter Shell
 
 To terminate the local {term}`exporter`, simply exit the shell:

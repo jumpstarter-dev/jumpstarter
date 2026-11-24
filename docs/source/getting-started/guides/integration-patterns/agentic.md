@@ -4,6 +4,16 @@ Jumpstarter exposes hardware control as structured {term}`MCP` tools, enabling
 AI coding agents to interact with {term}`device`s using natural language from
 IDEs and AI assistants.
 
+The {term}`MCP` server runs on your machine, started by the assistant over
+stdio, and acts with your client identity. An agent can lease only the
+{term}`exporter`s your client can, within the same access policies and
+{term}`lease` limits, and the {term}`lease`s it creates show up in
+`jmp get leases` like any other. `jmp_run` runs the same `j` commands a person
+types in `jmp shell`, and the lease tools do what `jmp create lease` and
+`jmp delete lease` do, so anything an agent does can be repeated in a terminal
+or a CI job. Because the server speaks plain {term}`MCP` over stdio, any
+assistant that can run a local {term}`MCP` server can use it.
+
 ```{mermaid}
 flowchart TB
     subgraph "Developer"
@@ -153,19 +163,19 @@ sequenceDiagram
     MCP-->>Agent: Lease created
 
     Agent->>MCP: jmp_connect(lease_id)
-    MCP-->>Agent: Connected
+    MCP-->>Agent: Connection ID
 
-    Agent->>MCP: jmp_explore()
+    Agent->>MCP: jmp_explore(connection_id)
     MCP-->>Agent: Available commands: power, ssh, serial, storage
 
     User->>Agent: "Power it on and check the OS"
-    Agent->>MCP: jmp_run(["power", "on"])
-    Agent->>MCP: jmp_run(["ssh", "--", "cat", "/etc/os-release"])
+    Agent->>MCP: jmp_run(connection_id, ["power", "on"])
+    Agent->>MCP: jmp_run(connection_id, ["ssh", "--", "cat", "/etc/os-release"])
     MCP-->>Agent: OS info
 
     User->>Agent: "Done, release it"
-    Agent->>MCP: jmp_disconnect()
-    Agent->>MCP: jmp_delete_lease()
+    Agent->>MCP: jmp_disconnect(connection_id)
+    Agent->>MCP: jmp_delete_lease(lease_id)
 ```
 
 ## Tips
@@ -173,10 +183,13 @@ sequenceDiagram
 - **Use `jmp_explore` first** - each {term}`device` type exposes different
   commands
 - **Set `timeout_seconds` for streaming commands** - commands like `serial pipe`
-  block indefinitely
-- **Use `jmp_drivers` for Python access** - inspect the driver tree to discover
-  methods and signatures
+  block indefinitely; when the timeout is reached, `jmp_run` stops the command
+  and returns the output captured so far
+- **Use `jmp_drivers` and `jmp_driver_methods` for Python access** - inspect the
+  driver tree, then a driver's method signatures
 - **Connections are persistent** - create once, run many commands
+- **Poll `jmp_list_events`** - {term}`lease` expiry warnings, lease transfers and
+  connection failures are queued until the agent asks for them
 
 ## Logging
 

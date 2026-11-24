@@ -45,6 +45,7 @@ jobs:
         run: |
           jmp config client use ci-client
           LEASE_ID=$(jmp create lease --selector project=myproject --duration 30m -o name)
+          echo "LEASE_ID=${LEASE_ID}" >> "$GITHUB_ENV"
       - name: Run tests
         run: jmp shell --lease ${LEASE_ID} pytest tests/hardware_tests/
       - name: Release hardware lease
@@ -62,9 +63,10 @@ hardware-test:
   script:
     - jmp config client use ci-client
     - LEASE_ID=$(jmp create lease --selector project=myproject --duration 30m -o name)
+    - echo "${LEASE_ID}" > lease-id
     - jmp shell --lease ${LEASE_ID} pytest tests/hardware_tests/
   after_script:
-    - jmp delete lease ${LEASE_ID}
+    - jmp delete lease $(cat lease-id)
 ```
 ````
 
@@ -133,3 +135,6 @@ hardware-test:
     - jmp shell --exporter-config=./.jumpstarter/local-config.yaml pytest tests/hardware_tests/
 ```
 ````
+
+In both setups, `jmp shell` exits with the exit code of the command it runs, so
+failing tests fail the CI job.

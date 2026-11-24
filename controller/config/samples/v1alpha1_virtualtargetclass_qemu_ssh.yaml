@@ -27,8 +27,9 @@ spec:
   bindingMode: Immediate
   reclaimPolicy: Delete
   parameters:
-    # SSH connection defaults (per-host overrides available in ExporterSet)
-    ssh:
+    # SSH connection defaults; each ExporterSet sets host.name and can
+    # override these
+    host:
       user: root
       port: 22
     # Runtime container configuration

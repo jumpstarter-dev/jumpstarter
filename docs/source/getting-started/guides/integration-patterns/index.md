@@ -6,7 +6,8 @@ workflows.
 - [CI/CD](cicd.md): Pipeline configs for GitHub Actions, GitLab CI, and other
   CI/CD systems
 - [Development](development.md): Local and cloud-native development setups
-- [Agentic](agentic.md): AI agent interaction with hardware via {term}`MCP`
+- [Agentic](agentic.md): Give AI assistants that support local {term}`MCP`
+  servers access to hardware, under your identity and access policies
 - [Best Practices](practices.md): Labeling, security, and resource management
 
 ```{toctree}
