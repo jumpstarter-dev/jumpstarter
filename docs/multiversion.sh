@@ -48,6 +48,11 @@ for BRANCH in "${BRANCHES[@]}"; do
     "${UV_RUN[@]}" python3 "${GRPC_SCRIPT}"
   fi
 
+  FSM_SCRIPT="${DOCS_DIR}/source/reference/generate_fsm_diagram.py"
+  if [[ -f "${FSM_SCRIPT}" ]]; then
+    "${UV_RUN[@]}" python3 "${FSM_SCRIPT}"
+  fi
+
   "${UV_RUN[@]}" make -C "${DOCS_DIR}" html SPHINXOPTS="-D version=${BRANCH}"
 
   cp -r "${DOCS_DIR}/build/html" "${OUTPUT_DIR}/${BRANCH}"
