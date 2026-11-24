@@ -11,6 +11,8 @@ development workflow.
   KubeVirt cluster using the `kubevirt.jumpstarter.dev` provisioner
 - [Appium UI Automation](ui-automation.md): Drive iOS and Android targets
   through one Appium interface
+- [Observability](observability.md): Metrics, logs, and the optional telemetry
+  service
 
 ```{toctree}
 :maxdepth: 1
@@ -20,4 +22,5 @@ examples/index.md
 integration-patterns/index.md
 kubevirt-provisioner.md
 ui-automation.md
+observability.md
 ```
