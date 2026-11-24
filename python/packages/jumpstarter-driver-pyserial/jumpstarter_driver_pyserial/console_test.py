@@ -1,76 +1,98 @@
 import logging
 import os
+import termios
 import threading
 import time
-from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+import tty
+from contextlib import ExitStack, asynccontextmanager, contextmanager, nullcontext
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
 
 from anyio import BrokenResourceError
+from jumpstarter_driver_power.client import PowerClient
 
 from .console import Console, ConsoleStreamDrop, HotkeyDetector
 from .driver import PySerial
 from jumpstarter.common.utils import serve
 
+EXIT_HOTKEY = b"\x02" * 3
+POWER_HOTKEY = b"\x1d" * 3
 
-def _start_console(client, power_control=None):
-    """Run Console.run() in a thread with a PTY substituted for stdin.
 
-    Returns (master_fd, thread, result_dict). Write keypresses to master_fd;
-    the result dict gets an 'exc' key if the console thread raises.
+@contextmanager
+def _pty_pair():
+    """Open a raw PTY: its slave as the reader and its master as an unbuffered writer."""
+    master, slave = os.openpty()
+    tty.setraw(slave)
+    with os.fdopen(master, "r+b", buffering=0) as writer, os.fdopen(slave, "r") as reader:
+        yield SimpleNamespace(reader=reader, writer=writer)
+
+
+@contextmanager
+def _running_console(console, keyboard, stdout=None):
+    """Run Console.run() in a worker with borrowed streams.
+
+    On the way out, a live worker gets Ctrl-B x3 if the keyboard writer is
+    still open and is joined; teardown fails if it has not stopped.
     """
-    master_fd, slave_fd = os.openpty()
-    slave_file = os.fdopen(slave_fd, "rb", buffering=0)
+    run = SimpleNamespace(error=None)
 
-    mock_stdin = MagicMock()
-    mock_stdin.fileno.return_value = slave_fd
-    mock_stdin.buffer = slave_file
+    def worker():
+        try:
+            console.run()
+        except Exception as error:  # noqa: BLE001 - expose the worker's failure to the test
+            run.error = error
 
-    result = {}
+    with ExitStack() as stack:
+        if stdout is None:
+            stdout = stack.enter_context(open(os.devnull, "w"))
+        stack.enter_context(patch("sys.stdin", keyboard.reader))
+        stack.enter_context(patch("sys.stdout", stdout))
+        # A PTY keyboard is raw already and tty.setraw() would flush its input; a pipe needs no setup.
+        stack.enter_context(patch.object(console, "setraw", nullcontext))
+        run.thread = threading.Thread(target=worker, daemon=True)
+        run.thread.start()
+        try:
+            yield run
+        finally:
+            if run.thread.is_alive():
+                if not keyboard.writer.closed:
+                    keyboard.writer.write(EXIT_HOTKEY)
+                run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console worker did not stop during teardown"
 
-    def _run():
-        with patch("sys.stdin", mock_stdin):
-            console = Console(serial_client=client, power_control=power_control)
-            try:
-                console.run()
-            except Exception as e:  # noqa: BLE001 - test infrastructure captures all exceptions from console thread
-                result["exc"] = e
-        slave_file.close()
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    _wait_attached(client, t)
-    return master_fd, t, result
-
-
-def _wait_attached(client, thread, timeout=5):
-    """Wait until the console holds the write token, or its thread has already died.
-
-    Console.run() puts the tty in raw mode before it attaches, so once attached
-    keypresses are no longer discarded or line-buffered.
-    """
+def _wait_registered(client, run, timeout=5):
+    """Wait until the exporter has registered the console, which may still be waiting for its port."""
     deadline = time.monotonic() + timeout
-    while thread.is_alive() and time.monotonic() < deadline:
+    while time.monotonic() < deadline:
+        assert run.thread.is_alive(), f"console stopped before registering: {run.error!r}"
         if client.call("console_status")["write_token_held"]:
             return
         time.sleep(0.01)
-    assert not thread.is_alive(), "console did not attach"
+    raise AssertionError("console did not register with the exporter")
+
+
+def test_setraw_restores_the_terminal():
+    master, slave = os.openpty()
+    with os.fdopen(master, "r+b", buffering=0), os.fdopen(slave, "r") as reader, patch("sys.stdin", reader):
+        cooked = termios.tcgetattr(reader)
+        with Console(Mock()).setraw():
+            assert termios.tcgetattr(reader) != cooked
+        assert termios.tcgetattr(reader) == cooked
 
 
 def test_ctrl_b_exits():
-    with serve(PySerial(url="loop://")) as client:
-        master_fd, t, result = _start_console(client)
-        try:
-            os.write(master_fd, b"a")
-            os.write(master_fd, b"\x02\x02\x02")
-            t.join(timeout=5)
-        finally:
-            os.close(master_fd)
-
-    assert not t.is_alive(), "console did not exit after Ctrl-B x3"
-    assert "exc" not in result
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(b"a" + EXIT_HOTKEY)
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console did not exit after Ctrl-B x3"
+        assert run.error is None
 
 
-class _FakePowerControl:
+class _FakePowerControl(PowerClient):
     """Power client double that records the thread cycle() ran on."""
 
     def __init__(self, error=None):
@@ -78,7 +100,7 @@ class _FakePowerControl:
         self.cycle_thread = None
         self.error = error
 
-    def cycle(self):
+    def cycle(self, wait=2):
         self.cycle_thread = threading.current_thread()
         self.cycled.set()
         if self.error is not None:
@@ -88,20 +110,15 @@ class _FakePowerControl:
 def test_ctrl_bracket_triggers_power_cycle():
     power = _FakePowerControl()
 
-    with serve(PySerial(url="loop://")) as client:
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
         loop_thread = client.portal.call(threading.current_thread)
-        master_fd, t, result = _start_console(client, power_control=power)
-        try:
-            os.write(master_fd, b"\x1d\x1d\x1d")
+        with _running_console(Console(client, power_control=power), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(POWER_HOTKEY)
             assert power.cycled.wait(timeout=5), "power cycle was not triggered"
-            assert t.is_alive(), "console exited after power cycle"
-            os.write(master_fd, b"\x02\x02\x02")
-            t.join(timeout=5)
-        finally:
-            os.close(master_fd)
+            assert run.thread.is_alive(), "console exited after power cycle"
+        assert run.error is None
 
-    assert not t.is_alive()
-    assert "exc" not in result
     # cycle() blocks, so it must not run on the thread of the event loop driving the console
     assert power.cycle_thread is not None
     assert power.cycle_thread is not loop_thread
@@ -111,37 +128,26 @@ def test_power_cycle_failure_does_not_kill_console(caplog):
     caplog.set_level(logging.WARNING, logger="jumpstarter_driver_pyserial.console")
     power = _FakePowerControl(error=RuntimeError("PDU unreachable"))
 
-    with serve(PySerial(url="loop://")) as client:
-        master_fd, t, result = _start_console(client, power_control=power)
-        try:
-            os.write(master_fd, b"\x1d\x1d\x1d")
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        with _running_console(Console(client, power_control=power), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(POWER_HOTKEY)
             assert power.cycled.wait(timeout=5), "power cycle was not triggered"
             time.sleep(0.1)
-            assert t.is_alive(), "console exited after a failed power cycle"
-            os.write(master_fd, b"\x02\x02\x02")
-            t.join(timeout=5)
-        finally:
-            os.close(master_fd)
+            assert run.thread.is_alive(), "console exited after a failed power cycle"
+        assert run.error is None
 
-    assert not t.is_alive()
-    assert "exc" not in result
     assert any("power cycle failed" in r.message for r in caplog.records)
 
 
 def test_ctrl_bracket_without_power_client():
-    with serve(PySerial(url="loop://")) as client:
-        master_fd, t, result = _start_console(client, power_control=None)
-        try:
-            os.write(master_fd, b"\x1d\x1d\x1d")
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(POWER_HOTKEY)
             time.sleep(0.1)
-            assert t.is_alive(), "console exited unexpectedly on Ctrl-] without power client"
-            os.write(master_fd, b"\x02\x02\x02")
-            t.join(timeout=5)
-        finally:
-            os.close(master_fd)
-
-    assert not t.is_alive()
-    assert "exc" not in result
+            assert run.thread.is_alive(), "console exited unexpectedly on Ctrl-] without power client"
+        assert run.error is None
 
 
 def test_send_failure_does_not_kill_console(caplog):
@@ -163,7 +169,7 @@ def test_send_failure_does_not_kill_console(caplog):
         async def aclose(self):
             await self._inner.aclose()
 
-    with serve(PySerial(url="loop://")) as client:
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
         original_stream_async = client.stream_async
 
         @asynccontextmanager
@@ -172,18 +178,12 @@ def test_send_failure_does_not_kill_console(caplog):
                 yield _BrokenSendStream(stream)
 
         with patch.object(client, "stream_async", wrapped_stream_async):
-            master_fd, t, result = _start_console(client)
-            try:
-                os.write(master_fd, b"a")
+            with _running_console(Console(client), keyboard) as run:
+                _wait_registered(client, run)
+                keyboard.writer.write(b"a")
                 time.sleep(0.1)
-                assert t.is_alive(), "console crashed on send failure"
-                os.write(master_fd, b"\x02\x02\x02")
-                t.join(timeout=5)
-            finally:
-                os.close(master_fd)
-
-    assert not t.is_alive()
-    assert "exc" not in result, f"console raised unexpected exception: {result.get('exc')}"
+                assert run.thread.is_alive(), "console crashed on send failure"
+            assert run.error is None, f"console raised unexpected exception: {run.error!r}"
 
     # three failed sends (a, ^B, ^B) warn once
     warnings = [r for r in caplog.records if "send failed" in r.message]
@@ -195,7 +195,7 @@ def test_receive_failure_raises_stream_drop():
     broken_stream = AsyncMock()
     broken_stream.receive.side_effect = BrokenResourceError("simulated receive failure")
 
-    with serve(PySerial(url="loop://")) as client:
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
         original_stream_async = client.stream_async
 
         @asynccontextmanager
@@ -203,16 +203,14 @@ def test_receive_failure_raises_stream_drop():
             async with original_stream_async(method=method) as _stream:
                 yield broken_stream
 
-        with patch.object(client, "stream_async", wrapped_stream_async):
-            master_fd, t, result = _start_console(client)
-            try:
-                t.join(timeout=5)
-            finally:
-                os.close(master_fd)
+        with (
+            patch.object(client, "stream_async", wrapped_stream_async),
+            _running_console(Console(client), keyboard) as run,
+        ):
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console did not end when its stream broke"
 
-    assert not t.is_alive()
-    assert "exc" in result, "console did not raise an exception"
-    assert isinstance(result["exc"], ConsoleStreamDrop), f"expected ConsoleStreamDrop, got {type(result['exc'])}"
+    assert isinstance(run.error, ConsoleStreamDrop), f"expected ConsoleStreamDrop, got {run.error!r}"
 
 
 def test_hotkey_detector_three_presses():
