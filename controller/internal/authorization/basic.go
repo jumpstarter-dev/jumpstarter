@@ -50,7 +50,8 @@ func (b *BasicAuthorizer) Authorize(
 			Name:      attributes.GetName(),
 		}, &c)
 		if err != nil {
-			if apierrors.IsNotFound(err) && b.provisioning {
+			if apierrors.IsNotFound(err) && b.provisioning &&
+				attributes.GetName() == normalizeOIDCUsername(attributes.GetUser().GetName()) {
 				c = jumpstarterdevv1alpha1.Client{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: attributes.GetNamespace(),
