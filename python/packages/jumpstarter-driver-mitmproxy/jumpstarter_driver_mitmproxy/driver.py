@@ -2077,9 +2077,9 @@ class MitmproxyDriver(Driver):
         its standalone defaults.
         """
         values = {
-            "_DRIVER_MOCK_DIR": self.directories.mocks,
+            "_DRIVER_MOCK_DIR": self.directories.mocks,  # ty: ignore[unresolved-attribute]
             "_DRIVER_CAPTURE_SOCKET": self._capture_socket_path,
-            "_DRIVER_CAPTURE_SPOOL_DIR": str(Path(self.directories.data) / "capture-spool"),
+            "_DRIVER_CAPTURE_SPOOL_DIR": str(Path(self.directories.data) / "capture-spool"),  # ty: ignore[unresolved-attribute]
         }
         for name, value in values.items():
             placeholder = f"{name}: str | None = None"

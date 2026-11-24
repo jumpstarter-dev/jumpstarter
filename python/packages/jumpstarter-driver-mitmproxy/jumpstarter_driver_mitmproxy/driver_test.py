@@ -992,9 +992,9 @@ class TestAddonPaths:
         mod = self._fresh_import(monkeypatch)
 
         base = Path(tempfile.gettempdir()) / f"jumpstarter-mitmproxy-{getpass.getuser()}"
-        assert mod.CAPTURE_SPOOL_DIR == str(base / "capture-spool")  # ty: ignore[unresolved-attribute]
-        assert mod.CAPTURE_SOCKET == str(base / "capture.sock")  # ty: ignore[unresolved-attribute]
-        assert mod.MitmproxyMockAddon.MOCK_DIR == str(base / "mock-responses")  # ty: ignore[unresolved-attribute]
+        assert mod.CAPTURE_SPOOL_DIR == str(base / "capture-spool")
+        assert mod.CAPTURE_SOCKET == str(base / "capture.sock")
+        assert mod.MitmproxyMockAddon.MOCK_DIR == str(base / "mock-responses")
 
     def test_data_dir_env_moves_every_default(self, monkeypatch, tmp_path):
         """MITMPROXY_DATA_DIR moves the socket, spool and mock directories together."""
@@ -1002,9 +1002,9 @@ class TestAddonPaths:
         monkeypatch.delenv("MITMPROXY_MOCK_DIR", raising=False)
         mod = self._fresh_import(monkeypatch)
 
-        assert mod.CAPTURE_SPOOL_DIR == str(tmp_path / "capture-spool")  # ty: ignore[unresolved-attribute]
-        assert mod.CAPTURE_SOCKET == str(tmp_path / "capture.sock")  # ty: ignore[unresolved-attribute]
-        assert mod.MitmproxyMockAddon.MOCK_DIR == str(tmp_path / "mock-responses")  # ty: ignore[unresolved-attribute]
+        assert mod.CAPTURE_SPOOL_DIR == str(tmp_path / "capture-spool")
+        assert mod.CAPTURE_SOCKET == str(tmp_path / "capture.sock")
+        assert mod.MitmproxyMockAddon.MOCK_DIR == str(tmp_path / "mock-responses")
 
     def test_standalone_default_survives_a_missing_login_name(self, monkeypatch):
         """A UID with no login name still gets a usable default."""
@@ -1018,7 +1018,7 @@ class TestAddonPaths:
         monkeypatch.setattr(getpass, "getuser", no_user)
         mod = self._fresh_import(monkeypatch)
 
-        assert "jumpstarter-mitmproxy-" in mod.CAPTURE_SPOOL_DIR  # ty: ignore[unresolved-attribute]
+        assert "jumpstarter-mitmproxy-" in mod.CAPTURE_SPOOL_DIR
 
     def test_installed_addon_uses_the_driver_directories(self, driver, tmp_path):
         """Executing the filled-in source resolves to the driver's paths."""
@@ -1031,9 +1031,9 @@ class TestAddonPaths:
         module = types.ModuleType("installed_addon")
         exec(compile(source, "mock_addon.py", "exec"), module.__dict__)  # noqa: S102
 
-        assert module.CAPTURE_SPOOL_DIR == str(Path(driver.directories.data) / "capture-spool")  # ty: ignore[unresolved-attribute]
-        assert module.CAPTURE_SOCKET == driver._capture_socket_path  # ty: ignore[unresolved-attribute]
-        assert module.MitmproxyMockAddon.MOCK_DIR == driver.directories.mocks  # ty: ignore[unresolved-attribute]
+        assert module.CAPTURE_SPOOL_DIR == str(Path(driver.directories.data) / "capture-spool")
+        assert module.CAPTURE_SOCKET == driver._capture_socket_path
+        assert module.MitmproxyMockAddon.MOCK_DIR == driver.directories.mocks
 
     def test_fill_refuses_source_without_placeholders(self, driver):
         """A renamed placeholder is an error, not a silent fall-back to the defaults."""
