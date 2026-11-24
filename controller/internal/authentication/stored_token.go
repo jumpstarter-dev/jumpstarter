@@ -23,10 +23,12 @@ const LegacyTokenHashAnnotation = "jumpstarter.dev/legacy-token-hash"
 
 // StoredTokenAuthenticator is a last-resort migration path for credentials issued
 // before a signing-key change. It trusts exact credentials in Kubernetes, never
-// signatures made with an old key. Reader must bypass the informer cache so a
+// signatures made with an old key. Cache rejects fabricated credentials without
+// API-server reads. Reader must bypass the informer cache so a
 // removed allowance cannot continue authenticating through a stale Secret.
 type StoredTokenAuthenticator struct {
 	Primary   authenticator.Token
+	Cache     client.Reader
 	Reader    client.Reader
 	Namespace string
 	Issuer    string
@@ -89,16 +91,19 @@ func (a *StoredTokenAuthenticator) Match(ctx context.Context, token string) (*co
 		namespace = parts[1]
 	}
 	var secret corev1.Secret
-	if err := a.Reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: parts[2] + "-" + parts[0]}, &secret); err != nil {
-		if apierrors.IsNotFound(err) {
+	digest := sha256.Sum256([]byte(token))
+	for _, reader := range []client.Reader{a.Cache, a.Reader} {
+		secret = corev1.Secret{}
+		if err := reader.Get(ctx, client.ObjectKey{Namespace: namespace, Name: parts[2] + "-" + parts[0]}, &secret); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, nil, nil
+			}
+			return nil, nil, fmt.Errorf("read stored credential: %w", err)
+		}
+		if subtle.ConstantTimeCompare([]byte(token), secret.Data["token"]) != 1 &&
+			subtle.ConstantTimeCompare([]byte(hex.EncodeToString(digest[:])), []byte(secret.Annotations[LegacyTokenHashAnnotation])) != 1 {
 			return nil, nil, nil
 		}
-		return nil, nil, fmt.Errorf("read stored credential: %w", err)
-	}
-	digest := sha256.Sum256([]byte(token))
-	if subtle.ConstantTimeCompare([]byte(token), secret.Data["token"]) != 1 &&
-		subtle.ConstantTimeCompare([]byte(hex.EncodeToString(digest[:])), []byte(secret.Annotations[LegacyTokenHashAnnotation])) != 1 {
-		return nil, nil, nil
 	}
 	var owner interface {
 		client.Object

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -61,7 +62,7 @@ func TestLegacyExporterTokenMigration(t *testing.T) {
 		}
 		return &authenticator.Response{User: &user.DefaultInfo{Name: "internal:" + subject}}, true, nil
 	})
-	fallback := &authentication.StoredTokenAuthenticator{Primary: primary, Reader: kc, Namespace: "lab", Issuer: newSigner.Issuer(), Audience: newSigner.Audience(), Prefix: "internal:"}
+	fallback := &authentication.StoredTokenAuthenticator{Primary: primary, Cache: kc, Reader: kc, Namespace: "lab", Issuer: newSigner.Issuer(), Audience: newSigner.Audience(), Prefix: "internal:"}
 	svc := &ControllerService{
 		Client: kc, Signer: newSigner, LegacyTokens: fallback,
 		Authn: authentication.NewBearerTokenAuthenticator(fallback),
@@ -153,5 +154,7 @@ func TestStatusStreamAdvisesTokenRotation(t *testing.T) {
 		}
 	}
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Status shutdown: %v", err)
+	}
 }

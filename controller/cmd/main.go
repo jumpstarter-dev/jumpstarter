@@ -242,7 +242,7 @@ func main() {
 	var legacyTokens *authentication.StoredTokenAuthenticator
 	if !cfg.DisableLegacyTokenAuthentication {
 		legacyTokens = &authentication.StoredTokenAuthenticator{
-			Primary: cfg.Authenticator, Reader: mgr.GetAPIReader(), Namespace: watchNamespace,
+			Primary: cfg.Authenticator, Cache: mgr.GetCache(), Reader: mgr.GetAPIReader(), Namespace: watchNamespace,
 			Issuer: oidcSigner.Issuer(), Audience: oidcSigner.Audience(), Prefix: cfg.Prefix,
 		}
 		cfg.Authenticator = legacyTokens

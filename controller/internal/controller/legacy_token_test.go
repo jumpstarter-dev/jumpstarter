@@ -101,7 +101,7 @@ func TestSigningKeyMigration(t *testing.T) {
 				if (secret.Annotations[authentication.LegacyTokenHashAnnotation] == TokenHash(oldToken)) == disabled {
 					t.Fatal("wrong retained credential")
 				}
-				fallback := &authentication.StoredTokenAuthenticator{Reader: kc, Namespace: "lab", Issuer: updated.Issuer(), Audience: updated.Audience()}
+				fallback := &authentication.StoredTokenAuthenticator{Cache: kc, Reader: kc, Namespace: "lab", Issuer: updated.Issuer(), Audience: updated.Audience()}
 				matched, _, err := fallback.Match(ctx, oldToken)
 				if err != nil || (matched != nil) == disabled {
 					t.Fatalf("migration match=%v error=%v", matched != nil, err)
