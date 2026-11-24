@@ -1,6 +1,7 @@
 package authorization
 
 import (
+	"cmp"
 	"context"
 	"regexp"
 	"strings"
@@ -128,22 +129,7 @@ func (b *MetadataAttributesGetter) ContextAttributes(
 		}
 		resourceName = providedName
 	} else {
-		// For external OIDC providers with auto-provisioning, derive the name from the username
-		// to prevent identity confusion.
-		expectedName := normalizeOIDCUsername(userInfo.GetName())
-
-		// If a name was provided and doesn't match the expected OIDC-derived name, reject it
-		if providedName != "" && providedName != expectedName {
-			return nil, status.Errorf(
-				codes.InvalidArgument,
-				"resource name mismatch: provided %q but expected %q (derived from OIDC username %q)",
-				providedName,
-				expectedName,
-				userInfo.GetName(),
-			)
-		}
-
-		resourceName = expectedName
+		resourceName = cmp.Or(providedName, normalizeOIDCUsername(userInfo.GetName()))
 	}
 
 	return authorizer.AttributesRecord{
