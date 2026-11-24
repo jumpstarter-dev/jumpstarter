@@ -476,32 +476,20 @@ func TestObservabilityRequeueAfterTelemetryCAWins(t *testing.T) {
 	// No CA secret exists in the fake client, so telemetryCANeedsRequeue is true.
 	r := &JumpstarterReconciler{Client: fake.NewClientBuilder().WithScheme(s).Build(), Scheme: s}
 
-	got := r.observabilityRequeueAfter(context.Background(), js,
-		serviceMonitorResult{phase: serviceMonitorWaitingForCRD, reason: serviceMonitorReasonCRDNotFound})
+	got := r.observabilityRequeueAfter(context.Background(), js)
 	if got != telemetryCARequeueInterval {
 		t.Fatalf("requeue = %s, want %s", got, telemetryCARequeueInterval)
 	}
 }
 
-func TestObservabilityRequeueAfterPhases(t *testing.T) {
-	// Probe and apply failures return an error, so the caller never reaches the
-	// requeue calculation; only the waiting phase shortens the interval here.
+func TestObservabilityRequeueAfterDefault(t *testing.T) {
+	// Without a pending telemetry CA the operator reconciles periodically. A
+	// missing ServiceMonitor CRD does not shorten this: the CRD watch reacts to
+	// the CRD being served, and every other change to the CRD is a watch event.
+	js := testJumpstarter()
 	r := &JumpstarterReconciler{}
-	js := &operatorv1alpha1.Jumpstarter{}
 
-	tests := []struct {
-		phase serviceMonitorPhase
-		want  time.Duration
-	}{
-		{serviceMonitorActive, 30 * time.Minute},
-		{serviceMonitorDisabled, 30 * time.Minute},
-		{serviceMonitorWaitingForCRD, 2 * time.Minute},
-	}
-
-	for _, tc := range tests {
-		result := serviceMonitorResult{phase: tc.phase}
-		if got := r.observabilityRequeueAfter(context.Background(), js, result); got != tc.want {
-			t.Errorf("phase %v: requeue = %s, want %s", tc.phase, got, tc.want)
-		}
+	if got := r.observabilityRequeueAfter(context.Background(), js); got != 30*time.Minute {
+		t.Fatalf("requeue = %s, want 30m", got)
 	}
 }

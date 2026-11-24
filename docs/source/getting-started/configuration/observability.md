@@ -65,10 +65,10 @@ seconds), so a slower scrape configuration relaxes the freshness check.
 
 If the Prometheus Operator is not installed, reconciliation still succeeds: the
 metrics Services are created, ServiceMonitors are skipped, and the
-`ServiceMonitorReady` condition reports `CRDNotFound`. When the CRD is installed
-later, the operator's CustomResourceDefinition watch reconciles immediately
-without changing the CR; while the API is unavailable it retries every two
-minutes.
+`ServiceMonitorReady` condition reports `CRDNotFound`. Installing the CRD later
+does not require changing the CR: the operator watches CustomResourceDefinitions
+and reconciles as soon as the ServiceMonitor kind is served. If the API cannot be
+reached, the failed reconcile is retried with exponential backoff.
 
 Disable autodiscovery with `serviceMonitor: false`; the Services and
 ServiceMonitors are removed.

@@ -110,10 +110,12 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 		t.Fatalf("expected NoMatch error for absent CRD, got %v", err)
 	}
 
-	t.Run("deterministic requeue window", func(t *testing.T) {
+	t.Run("deterministic periodic requeue", func(t *testing.T) {
+		// A missing CRD does not shorten the interval: the watch is what reacts
+		// to the CRD being installed, so the periodic reconcile stays at 30m.
 		const (
 			requeueCycles = 5
-			wantRequeue   = 2 * time.Minute
+			wantRequeue   = 30 * time.Minute
 		)
 
 		elapsed := time.Duration(0)
@@ -126,7 +128,7 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 				t.Fatalf("status update %d must succeed: %v", i+1, err)
 			}
 
-			requeueAfter := r.observabilityRequeueAfter(ctx, js, serviceMonitor)
+			requeueAfter := r.observabilityRequeueAfter(ctx, js)
 			if requeueAfter != wantRequeue {
 				t.Fatalf("requeue %d = %s, want %s", i+1, requeueAfter, wantRequeue)
 			}
@@ -142,8 +144,8 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 			}
 		}
 
-		if elapsed != 10*time.Minute {
-			t.Fatalf("virtual requeue window = %s, want 10m", elapsed)
+		if elapsed != requeueCycles*wantRequeue {
+			t.Fatalf("virtual requeue window = %s, want %s", elapsed, requeueCycles*wantRequeue)
 		}
 
 		crdMissingEvents := 0

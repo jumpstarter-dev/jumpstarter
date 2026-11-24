@@ -312,29 +312,22 @@ func (r *JumpstarterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("observability: %w", observabilityErr)
 	}
 
-	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter, serviceMonitor)
+	requeueAfter := r.observabilityRequeueAfter(ctx, &jumpstarter)
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-// observabilityRequeueAfter keeps the normal periodic reconciliation interval
-// but shortens it while observability needs attention. A missing ServiceMonitor
-// CRD or a failed probe/apply uses a two-minute retry; a later-installed CRD is
-// also picked up immediately by the CRD watch.
+// observabilityRequeueAfter returns the periodic reconcile interval. Only a
+// missing telemetry CA shortens it: that resolves within seconds of cert-manager
+// issuing the certificate. A missing ServiceMonitor CRD is reported through the
+// condition and needs no short retry, because the CustomResourceDefinition watch
+// reconciles as soon as the kind is served, and every other change to the CRD is
+// a watch event as well.
 func (r *JumpstarterReconciler) observabilityRequeueAfter(
 	ctx context.Context,
 	js *operatorv1alpha1.Jumpstarter,
-	serviceMonitor serviceMonitorResult,
 ) time.Duration {
-	// The CA interval is shorter than every other candidate, so it wins outright.
-	// Returning early keeps that precedence visible without comparing sizes.
 	if r.telemetryCANeedsRequeue(ctx, js) {
 		return telemetryCARequeueInterval
-	}
-	// Only the waiting phase can reach this point: a probe or apply failure
-	// always returns an error, and the caller returns before computing the
-	// requeue.
-	if serviceMonitor.phase == serviceMonitorWaitingForCRD {
-		return 2 * time.Minute
 	}
 	return 30 * time.Minute
 }
