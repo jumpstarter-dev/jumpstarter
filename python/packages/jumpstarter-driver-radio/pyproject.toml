@@ -19,7 +19,9 @@ dependencies = [
 ControllerBluetooth = "jumpstarter_driver_radio.bluetooth:ControllerBluetooth"
 GatewayWifi = "jumpstarter_driver_radio.gateway:GatewayWifi"
 MockRadio = "jumpstarter_driver_radio.driver:MockRadio"
+RemoteController = "jumpstarter_driver_radio.direct:RemoteController"
 RootcanalBluetooth = "jumpstarter_driver_radio.bluetooth:RootcanalBluetooth"
+RootcanalController = "jumpstarter_driver_radio.direct:RootcanalController"
 WmediumdWifi = "jumpstarter_driver_radio.wmediumd:WmediumdWifi"
 
 [tool.hatch.version]
