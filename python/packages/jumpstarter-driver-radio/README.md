@@ -289,6 +289,9 @@ What a half does beside its radio, each for a reason that was found the hard way
   When a half is stopped, or the path is cut, both devices are hung up on. The devices' bonds stay.
 - The keys of the pairings done in a radio are kept for as long as the lease's session, so a device that
   paired can reconnect after its radio or the far half came back.
+- A device that was made to forget its pairings (a factory reset of its Bluetooth, "Forget" in its settings)
+  refuses a link the half authenticates with the key it kept. The half then forgets the key too, hangs up and
+  calls once more, and pairs anew. A link that cannot be made secure at all is hung up, not left standing.
 
 ### The port
 

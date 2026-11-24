@@ -141,6 +141,7 @@ class BridgeHalf:
         self.link: Connection | None = None
         self.held: list[tuple[int, bytes]] = []
         self.reaching = False  # the bridge is calling the device
+        self.recalling = False  # ... for the second time, after a key the device no longer had
         self.closing = False  # the bridge is being taken away: it hangs up the link itself
         self.called = False  # the link is one the bridge opened (see `reach`), not one the device opened
         self.stats = {"heard": 0, "sent": 0, "dropped": 0}
@@ -307,6 +308,10 @@ class BridgeHalf:
         self.release()
 
     def left(self, _reason: int) -> None:
+        if self.recalling:
+            # the bridge hung up a link the device refused, to call it again: what is held is for the next link
+            self.link = None
+            return
         self.link, self.held = None, []  # (a call that is still being placed ends by itself)
         if not self.closing and self.joined:
             self._send(record(HANGUP))
@@ -331,19 +336,57 @@ class BridgeHalf:
 
         Only a link the bridge opened is authenticated by the bridge, and only once: a device that called is
         the one that pairs, and the radio's link manager does not survive being asked twice.
+
+        A device that was made to forget its pairings (a factory reset of its Bluetooth, "Forget" in its
+        settings) no longer has the key that is kept here, and refuses a link authenticated with it. The key
+        is then of no use: it is forgotten here too, the link is hung up, and the device is called once more,
+        on a new link, and paired with anew. What the far device said is held meanwhile.
         """
         try:
             if not self.identity.address:
                 raise RuntimeError("its address is not known: set it, or let the device call first")
-            link = await device.connect(self.identity.address, transport=PhysicalTransport.BR_EDR, timeout=30)
-            await link.authenticate()
-            await link.encrypt()
+            try:
+                await self._call(device)
+            except Exception:
+                if not await self._forget_key(device):
+                    raise
+                self.logger.info(
+                    "Bluetooth bridge: %r no longer has the key of its pairing: pairing with it anew",
+                    self.identity.name,
+                )
+                await self._call(device)
             self.release()
         except Exception as error:  # noqa: BLE001
             who = self.persona.name if self.persona else "?"
             self.logger.warning("Bluetooth bridge: %r could not reach %r: %r", who, self.identity.name, error)
+            # A link that could not be made secure carries nothing: left up, it would only keep the device from
+            # being called again. Hung up, the far device is hung up on, and the next thing said calls again.
+            if self.link is not None and not self.secure():
+                await self._disconnect(self.link)
         finally:
-            self.reaching = False
+            self.reaching = self.recalling = False
+
+    async def _call(self, device: Device) -> None:
+        link = await device.connect(self.identity.address, transport=PhysicalTransport.BR_EDR, timeout=30)
+        await link.authenticate()
+        await link.encrypt()
+
+    async def _forget_key(self, device: Device) -> bool:
+        """Forget the key kept for the device of this radio, and hang up the link that was refused with it.
+        False when there was no key: the call failed for another reason."""
+        # (a key is kept under the address as the radio gave it, which may say what kind of address it is)
+        kept = [name for name, _ in await self.keys.get_all() if name.upper().startswith(self.identity.address)]
+        if not kept:
+            return False
+        for name in kept:
+            await self.keys.delete(name)
+        self.recalling = True  # (the link that goes is not the end of the conversation: see `left`)
+        if self.link is not None:
+            await self._disconnect(self.link)
+        with anyio.move_on_after(STEP_TIMEOUT):
+            while self.link is not None:
+                await anyio.sleep(0.05)
+        return True
 
     # ---- the radio -------------------------------------------------------------------------------
 
@@ -398,7 +441,7 @@ class BridgeHalf:
             except Exception as error:  # noqa: BLE001 - the radio may be gone already
                 self.logger.debug("Bluetooth bridge: power off: %r", error)
         finally:
-            self.link, self.held, self.reaching = None, [], False
+            self.link, self.held, self.reaching, self.recalling = None, [], False, False
             self.closing = False
 
     async def _be(self, transport: Any, persona: BluetoothIdentity, lost) -> None:

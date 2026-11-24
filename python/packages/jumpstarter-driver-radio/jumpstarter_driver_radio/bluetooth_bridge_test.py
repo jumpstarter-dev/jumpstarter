@@ -194,6 +194,81 @@ async def test_what_one_device_says_above_the_link_the_other_hears():
         assert beside_phone.link is None and beside_head_unit.link is None
 
 
+async def head_unit_uses_a_service_of_the_phone(bridged: Bridged) -> None:
+    """The head unit calls "Phone" in its radio and opens a channel: the half beside the phone calls the
+    phone for it, and what the head unit says is held until that link is secure."""
+    link = await bridged.head_unit_air.device.connect(
+        IN_HEAD_UNITS_RADIO, transport=PhysicalTransport.BR_EDR, timeout=5
+    )
+    with anyio.fail_after(10):
+        channel = await link.create_l2cap_channel(l2cap.ClassicChannelSpec(psm=PSM + 2))
+        answers = Inbox()
+        channel.sink = answers.put
+        channel.send_pdu(b"hello")
+        assert await answers.get() == b"HELLO"
+    await link.disconnect()
+    await until(lambda: not bridged.phone_air.device.connections and not bridged.head_unit_air.device.connections)
+
+
+async def test_a_device_that_forgot_its_pairing_is_paired_with_anew():
+    bridged = Bridged()
+    await bridged.power_on()
+
+    def answer(channel) -> None:
+        channel.sink = lambda data: channel.send_pdu(data.upper())
+
+    bridged.phone_air.device.create_l2cap_server(l2cap.ClassicChannelSpec(psm=PSM + 2), handler=answer)
+    beside_phone, beside_head_unit = bridged.beside_phone, bridged.beside_head_unit
+    async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
+        await until(lambda: beside_phone.device and beside_head_unit.device)
+
+        # The head unit starts: the half beside the phone calls the phone and pairs with it. Both keep a key.
+        await head_unit_uses_a_service_of_the_phone(bridged)
+        phones_keys = bridged.phone_air.device.keystore
+        (first,) = [keys.link_key.value for _, keys in await beside_phone.keys.get_all()]
+        assert [keys.link_key.value for _, keys in await phones_keys.get_all()] == [first]
+
+        # Called again, the phone is authenticated with that key: nobody pairs twice.
+        await head_unit_uses_a_service_of_the_phone(bridged)
+        assert [keys.link_key.value for _, keys in await beside_phone.keys.get_all()] == [first]
+
+        # The phone is made to forget its pairings (a factory reset of its Bluetooth). The half still has
+        # the key, and the phone refuses a link authenticated with it. The half forgets the key too, calls
+        # again and pairs anew; what the head unit said meanwhile is not lost, and the head unit is not hung
+        # up on.
+        await phones_keys.delete_all()
+        await head_unit_uses_a_service_of_the_phone(bridged)
+        (second,) = [keys.link_key.value for _, keys in await beside_phone.keys.get_all()]
+        assert second != first
+        assert [keys.link_key.value for _, keys in await phones_keys.get_all()] == [second]
+        assert beside_phone.status()["dropped"] == 0 and not beside_phone.recalling
+
+
+async def test_a_link_that_cannot_be_made_secure_is_hung_up():
+    bridged = Bridged()
+    await bridged.power_on()
+    beside_phone, beside_head_unit = bridged.beside_phone, bridged.beside_head_unit
+
+    async def refuse(_connection) -> None:
+        raise RuntimeError("the phone's radio refuses")
+
+    async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
+        await until(lambda: beside_phone.device and beside_head_unit.device)
+        beside_phone.device.authenticate = refuse
+        called = []
+        bridged.phone_air.device.on("connection", called.append)
+        link = await bridged.head_unit_air.device.connect(
+            IN_HEAD_UNITS_RADIO, transport=PhysicalTransport.BR_EDR, timeout=5
+        )
+        link.send_l2cap_pdu(0x0040, b"anything")
+        # The half beside the phone calls the phone and cannot authenticate the link. It does not stay
+        # there, linked and holding what was said: the phone is hung up on, and can be called again.
+        await until(lambda: called)
+        await until(lambda: not bridged.phone_air.device.connections)
+        await until(lambda: beside_phone.link is None and not beside_phone.reaching)
+        assert beside_phone.status()["held"] == 0
+
+
 async def test_a_device_that_calls_first_is_where_the_half_calls_it_later():
     # Nobody said what the phone's address is: the half beside it cannot call it, until the phone has called.
     bridged = Bridged(phone=PHONE.model_copy(update={"address": ""}))

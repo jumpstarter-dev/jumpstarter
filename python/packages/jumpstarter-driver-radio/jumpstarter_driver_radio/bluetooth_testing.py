@@ -15,6 +15,8 @@ from bumble.transport.common import AsyncPipeSink, BaseSource
 
 from .common import BluetoothIdentity
 
+AUTHENTICATION_FAILURE = hci.HCI_ErrorCode.AUTHENTICATION_FAILURE_ERROR
+
 
 class Inbox:
     """What arrived, for a test to wait for."""
@@ -39,6 +41,9 @@ class VirtualController(Controller):
         self.link_policies: dict[int, int] = {}
         self.default_link_policy: int | None = None
         self.class_of_device = 0
+        # Whose key this controller is waiting for from its host: None for a link it is authenticating
+        # itself, or the far controller and the key it has to match.
+        self.asking: dict[hci.Address, tuple[VirtualController, bytes] | None] = {}
 
     def on_hci_write_class_of_device_command(self, _command):
         self.class_of_device = _command.class_of_device
@@ -53,6 +58,51 @@ class VirtualController(Controller):
         return hci.HCI_StatusAndConnectionHandleReturnParameters(
             status=hci.HCI_ErrorCode.SUCCESS, connection_handle=command.connection_handle
         )
+
+    # ---- a link is authenticated with the key both hosts kept, as a real link manager does -----------------
+    #
+    # bumble's controller pairs anew every time. A real one first asks its host for the key of an earlier
+    # pairing; with one, it challenges the far controller, which asks *its* host for the key. Only the same
+    # key at both ends authenticates the link: a far host without it refuses ("PIN or key missing").
+
+    def on_hci_authentication_requested_command(self, command):
+        connection = self.find_classic_connection_by_handle(command.connection_handle)
+        if connection is None:
+            return super().on_hci_authentication_requested_command(command)
+        self._send_hci_command_status(hci.HCI_COMMAND_STATUS_PENDING, command.op_code)
+        self.asking[connection.peer_address] = None  # (this side started it)
+        self.send_hci_packet(hci.HCI_Link_Key_Request_Event(bd_addr=connection.peer_address))
+
+    def challenged(self, by: VirtualController, link_key: bytes) -> None:
+        self.asking[by.public_address] = (by, link_key)
+        self.send_hci_packet(hci.HCI_Link_Key_Request_Event(bd_addr=by.public_address))
+
+    def authenticated(self, peer_address: hci.Address, status: int) -> None:
+        if connection := self.classic_connections.get(peer_address):
+            self.send_hci_packet(
+                hci.HCI_Authentication_Complete_Event(status=status, connection_handle=connection.handle)
+            )
+
+    def on_hci_link_key_request_reply_command(self, command):
+        challenge = self.asking.pop(command.bd_addr, None)
+        far = self.link.find_classic_controller(command.bd_addr) if self.link else None
+        if challenge is not None:
+            by, link_key = challenge
+            same = hci.HCI_ErrorCode.SUCCESS if link_key == command.link_key else AUTHENTICATION_FAILURE
+            by.authenticated(self.public_address, same)
+        elif isinstance(far, VirtualController):
+            far.challenged(self, command.link_key)
+        else:
+            return super().on_hci_link_key_request_reply_command(command)
+        return hci.HCI_StatusAndAddressReturnParameters(status=hci.HCI_ErrorCode.SUCCESS, bd_addr=command.bd_addr)
+
+    def on_hci_link_key_request_negative_reply_command(self, command):
+        challenge = self.asking.pop(command.bd_addr, None)
+        if challenge is None:
+            # this side started it and has no key: the two pair anew
+            return super().on_hci_link_key_request_negative_reply_command(command)
+        challenge[0].authenticated(self.public_address, hci.HCI_ErrorCode.PIN_OR_KEY_MISSING_ERROR)
+        return hci.HCI_StatusAndAddressReturnParameters(status=hci.HCI_ErrorCode.SUCCESS, bd_addr=command.bd_addr)
 
     def encrypted(self, peer_address: hci.Address) -> None:
         if connection := self.classic_connections.get(peer_address):
