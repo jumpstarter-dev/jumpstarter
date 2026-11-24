@@ -1,5 +1,8 @@
+import fcntl
 import logging
 import os
+import select
+import struct
 import termios
 import threading
 import time
@@ -8,11 +11,14 @@ from contextlib import ExitStack, asynccontextmanager, contextmanager, nullconte
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from anyio import BrokenResourceError
+import pytest
+from anyio import BrokenResourceError, EndOfStream, Event, sleep_forever
+from anyio.from_thread import start_blocking_portal
 from jumpstarter_driver_power.client import PowerClient
 
 from .console import Console, ConsoleStreamDrop, HotkeyDetector
 from .driver import PySerial
+from jumpstarter.client.core import DriverError
 from jumpstarter.common.utils import serve
 
 EXIT_HOTKEY = b"\x02" * 3
@@ -62,15 +68,54 @@ def _running_console(console, keyboard, stdout=None):
             assert not run.thread.is_alive(), "console worker did not stop during teardown"
 
 
-def _wait_registered(client, run, timeout=5):
+def _wait_registered(client, run, observe=False, timeout=5):
     """Wait until the exporter has registered the console, which may still be waiting for its port."""
+    field = "observer_count" if observe else "write_token_held"
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         assert run.thread.is_alive(), f"console stopped before registering: {run.error!r}"
-        if client.call("console_status")["write_token_held"]:
+        if client.call("console_status")[field]:
             return
         time.sleep(0.01)
     raise AssertionError("console did not register with the exporter")
+
+
+def _wait_detached(client, timeout=5):
+    """Wait until no console is attached to the exporter; return its console status."""
+    deadline = time.monotonic() + timeout
+    while (status := client.call("console_status"))["total_clients"]:
+        if time.monotonic() > deadline:
+            raise AssertionError(f"console did not detach from the exporter: {status}")
+        time.sleep(0.01)
+    return status
+
+
+@contextmanager
+def _pipe_pair():
+    """Open a pipe: an unbuffered reader and writer."""
+    r, w = os.pipe()
+    with os.fdopen(r, "rb", buffering=0) as reader, os.fdopen(w, "wb", buffering=0) as writer:
+        yield SimpleNamespace(reader=reader, writer=writer)
+
+
+def _read_until(stream, marker, timeout=5):
+    """Read stream until marker arrives or timeout passes; return all that was read."""
+    data = b""
+    deadline = time.monotonic() + timeout
+    while marker not in data and time.monotonic() < deadline:
+        if select.select([stream], [], [], 0.05)[0]:
+            data += os.read(stream.fileno(), 1024)
+    return data
+
+
+def _wait_read(stream, timeout=5):
+    """Wait until a pipe's reader has consumed everything written to it; a PTY reports 0 too early."""
+    deadline = time.monotonic() + timeout
+    while struct.unpack("i", fcntl.ioctl(stream, termios.FIONREAD, b"\0" * 4))[0]:
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.005)
+    return True
 
 
 def test_setraw_restores_the_terminal():
@@ -213,52 +258,436 @@ def test_receive_failure_raises_stream_drop():
     assert isinstance(run.error, ConsoleStreamDrop), f"expected ConsoleStreamDrop, got {run.error!r}"
 
 
+class _BlockingPowerControl(PowerClient):
+    """Power client double whose cycle() blocks until the test releases it."""
+
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.cycles = 0
+        self.timed_out = False
+
+    def cycle(self, wait=2):
+        self.cycles += 1
+        self.started.set()
+        if not self.release.wait(timeout=10):
+            self.timed_out = True
+
+
+class _CountingPowerControl(PowerClient):
+    """Power client double that reports each cycle and optionally fails the first."""
+
+    def __init__(self, fail_first=False):
+        self.cycled = threading.Semaphore(0)
+        self.fail_first = fail_first
+
+    def cycle(self, wait=2):
+        self.cycled.release()
+        if self.fail_first:
+            self.fail_first = False
+            raise RuntimeError("PDU unreachable")
+
+
+class _FakeSerial:
+    """Serial client double that connects and completes sends when the test says so."""
+
+    def __init__(self, portal, hold_sends=False):
+        self.portal = portal
+        self.sends = []
+        self.send_started = threading.Event()
+        self._opened = threading.Event()
+        self._connected = portal.call(Event)
+        self._sends_released = portal.call(Event)
+        if not hold_sends:
+            self.release_sends()
+
+    @property
+    def sent(self):
+        return b"".join(self.sends)
+
+    def connect(self):
+        """Release the open gate and wait until stream_async() is ready to yield."""
+        self.portal.call(self._connected.set)
+        assert self._opened.wait(timeout=5), "console did not open its stream"
+
+    def release_sends(self):
+        self.portal.call(self._sends_released.set)
+
+    def wait_sent(self, data, timeout=5):
+        """Wait until data has been sent or timeout passes; return all that was sent."""
+        deadline = time.monotonic() + timeout
+        while data not in self.sent and time.monotonic() < deadline:
+            time.sleep(0.005)
+        return bytes(self.sent)
+
+    @asynccontextmanager
+    async def stream_async(self, method):
+        await self._connected.wait()
+        self._opened.set()
+        yield self
+
+    async def send(self, data):
+        self.send_started.set()
+        await self._sends_released.wait()
+        self.sends.append(data)
+
+    async def receive(self):
+        await sleep_forever()
+
+
+@contextmanager
+def _fake_serial(**kwargs):
+    with start_blocking_portal() as portal:
+        yield _FakeSerial(portal, **kwargs)
+
+
+def test_keys_typed_while_the_held_keys_are_sent_follow_them():
+    with _pipe_pair() as keyboard, _fake_serial(hold_sends=True) as serial:
+        with _running_console(Console(serial), keyboard) as run:
+            keyboard.writer.write(b"ab")
+            assert _wait_read(keyboard.reader), "console did not read input while connecting"
+            serial.connect()
+            assert serial.send_started.wait(timeout=5), "console did not send the keys it held"
+            keyboard.writer.write(b"cd")
+            assert _wait_read(keyboard.reader), "console did not read input while sending held keys"
+            serial.release_sends()
+            sent = serial.wait_sent(b"abcd")
+        assert run.error is None
+    assert sent == b"abcd", f"held keys were lost or reordered: {sent!r}"
+
+
+def test_held_keys_are_sent_in_bounded_messages():
+    with (
+        patch("jumpstarter_driver_pyserial.console.SEND_CHUNK", 4),
+        _pipe_pair() as keyboard,
+        _fake_serial() as serial,
+    ):
+        with _running_console(Console(serial), keyboard) as run:
+            keyboard.writer.write(b"0123456789")
+            assert _wait_read(keyboard.reader), "console did not read input while connecting"
+            serial.connect()
+            keyboard.writer.write(b"after")
+            serial.wait_sent(b"after")
+            sends = list(serial.sends)
+        assert run.error is None
+    assert sends[0] == b"0123", sends
+    assert all(len(data) <= 4 for data in sends), sends
+    assert b"".join(sends) == b"0123456789after", sends
+
+
+def test_keys_typed_during_a_power_cycle_are_not_replayed_after_it():
+    power = _BlockingPowerControl()
+    cycle_ended = threading.Event()
+    with _pipe_pair() as keyboard, _fake_serial() as serial:
+        console = Console(serial, power_control=power)
+        power_cycle = console._power_cycle
+
+        async def observed_power_cycle():
+            await power_cycle()
+            cycle_ended.set()
+
+        with patch.object(console, "_power_cycle", observed_power_cycle), _running_console(console, keyboard) as run:
+            try:
+                keyboard.writer.write(b"before" + POWER_HOTKEY)
+                assert power.started.wait(timeout=5), "power cycle was not triggered"
+                keyboard.writer.write(b"early" + POWER_HOTKEY)
+                assert _wait_read(keyboard.reader), "console did not read input during the cycle"
+                serial.connect()
+                keyboard.writer.write(b"late")
+                assert serial.wait_sent(b"late") == b"late", "connected console did not send keys during the cycle"
+            finally:
+                power.release.set()
+            assert cycle_ended.wait(timeout=5), "power cycle did not end"
+            keyboard.writer.write(b"done")
+            sent = serial.wait_sent(b"done")
+        assert run.error is None
+    assert not power.timed_out, "the power cycle ended without being released"
+    assert power.cycles == 1, f"Ctrl-] x3 during the cycle started another one: {power.cycles} cycles"
+    assert sent == b"latedone", f"expected only keys typed once connected: {sent!r}"
+
+
+def test_ctrl_b_during_a_power_cycle_exits_once_the_cycle_is_done():
+    power = _BlockingPowerControl()
+    with _pipe_pair() as keyboard, _fake_serial() as serial:
+        with _running_console(Console(serial, power_control=power), keyboard) as run:
+            try:
+                keyboard.writer.write(POWER_HOTKEY)
+                assert power.started.wait(timeout=5), "power cycle was not triggered"
+                keyboard.writer.write(EXIT_HOTKEY)
+                assert _wait_read(keyboard.reader), "console did not read Ctrl-B x3 during the cycle"
+                run.thread.join(timeout=0.2)
+                assert run.thread.is_alive(), "console exited while the power cycle was running"
+            finally:
+                power.release.set()
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console did not exit once the cycle was done"
+        assert run.error is None
+    assert not power.timed_out, "the power cycle ended without being released"
+
+
+def test_only_the_byte_completing_a_hotkey_is_kept_from_the_device():
+    power = _FakePowerControl()
+    with _pipe_pair() as keyboard, _fake_serial() as serial:
+        with _running_console(Console(serial, power_control=power), keyboard) as run:
+            serial.connect()
+            keyboard.writer.write(b"a" + POWER_HOTKEY)
+            assert power.cycled.wait(timeout=5), "power cycle was not triggered"
+            keyboard.writer.write(b"b" + EXIT_HOTKEY)
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console did not exit after Ctrl-B x3"
+        assert run.error is None
+    assert bytes(serial.sent) == b"a\x1d\x1db\x02\x02", serial.sent
+
+
+@pytest.mark.parametrize("fail_first", [False, True], ids=["success", "failure"])
+def test_ctrl_bracket_power_cycles_again_once_the_cycle_is_done(fail_first):
+    power = _CountingPowerControl(fail_first)
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        with _running_console(Console(client, power_control=power), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(POWER_HOTKEY)
+            assert power.cycled.acquire(timeout=5), "power cycle was not triggered"
+            # cycle() may have returned before its event-loop task finishes.
+            again = False
+            deadline = time.monotonic() + 5
+            while not again and time.monotonic() < deadline:
+                keyboard.writer.write(POWER_HOTKEY)
+                again = power.cycled.acquire(timeout=0.5)
+            assert again, "Ctrl-] x3 did nothing after the first cycle"
+        assert run.error is None
+
+
+def test_an_observer_drops_its_input_and_stays_up():
+    shown_r, shown_w = os.pipe()
+    with (
+        _pipe_pair() as keyboard,
+        os.fdopen(shown_r, "rb", buffering=0) as output,
+        os.fdopen(shown_w, "w") as shown,
+        serve(PySerial(url="loop://")) as client,
+        client.stream("connect") as writer,
+    ):
+        with _running_console(Console(client, observe=True), keyboard, shown) as run:
+            _wait_registered(client, run, observe=True)
+            seen = b""
+            deadline = time.monotonic() + 5
+            while b"ping" not in seen and time.monotonic() < deadline:
+                writer.send(b"ping")
+                seen += _read_until(output, b"ping", timeout=0.2)
+            assert b"ping" in seen, "observer did not show the device's output"
+            keyboard.writer.write(b"typed")
+            assert _wait_read(keyboard.reader), "observer did not read its input"
+            writer.send(b"pong")
+            seen = _read_until(output, b"pong")
+        assert run.error is None
+    assert b"pong" in seen, "observer stopped showing output after its user typed"
+    assert b"typed" not in seen, "observer sent its input to the device"
+
+
+def test_stdin_eof_ends_the_console_and_frees_the_write_token():
+    with _pipe_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.close()
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console kept running after stdin ended"
+        status = _wait_detached(client)
+        assert not status["write_token_held"], status
+    assert isinstance(run.error, ExceptionGroup), run.error
+    matched, rest = run.error.split(EndOfStream)
+    assert matched is not None and rest is None, run.error
+
+
+def test_stream_closed_by_exporter_ends_console_without_keypress():
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            time.sleep(0.1)
+            client.call("close")
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console kept running after stream closure"
+        assert isinstance(run.error, ConsoleStreamDrop), run.error
+
+
+def test_keys_typed_after_ctrl_b_stay_in_the_terminal():
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(EXIT_HOTKEY + b"next")
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console did not exit after Ctrl-B x3"
+        left = _read_until(keyboard.reader, b"next", timeout=1)
+        assert left == b"next", f"console read past Ctrl-B x3, leaving {left!r}"
+        assert run.error is None
+
+
+class _ImpatientPySerial(PySerial):
+    """PySerial whose exporter gives up waiting for the port after half a second."""
+
+    _fanout_source_ready_timeout = 0.5
+
+
+def test_a_console_whose_port_never_appears_ends_with_a_stream_drop(tmp_path):
+    with (
+        _pty_pair() as keyboard,
+        serve(_ImpatientPySerial(url=str(tmp_path / "ttyMISSING"), check_present=False)) as client,
+    ):
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(b"ahead")
+            run.thread.join(timeout=10)
+            assert not run.thread.is_alive(), "console kept running after the exporter gave up"
+        status = _wait_detached(client)
+        assert not status["write_token_held"], status
+        assert isinstance(run.error, ConsoleStreamDrop), run.error
+
+
+def test_a_refused_connect_raises_its_driver_error():
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client, client.stream("connect"):
+        with _running_console(Console(client), keyboard) as run:
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console did not end when its connect was refused"
+        assert isinstance(run.error, DriverError), run.error
+        assert "Console in use" in str(run.error)
+
+
+def test_leaving_a_console_that_is_still_connecting_frees_the_write_token(tmp_path):
+    port = tmp_path / "ttyLATE"
+    with _pty_pair() as device, _pty_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(EXIT_HOTKEY)
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console ignored Ctrl-B x3 while waiting for the port"
+        assert run.error is None
+        status = _wait_detached(client)
+        assert not status["write_token_held"], status
+
+        port.symlink_to(os.ttyname(device.reader.fileno()))
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(b"next")
+            received = _read_until(device.writer, b"next", timeout=10)
+        assert run.error is None
+    assert received == b"next", f"the next console did not reach the device: {received!r}"
+
+
+def test_keys_typed_while_the_console_connects_reach_the_device(tmp_path):
+    port = tmp_path / "ttyLATE"
+    with _pty_pair() as device, _pty_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
+        with _running_console(Console(client), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(b"ahead")
+            port.symlink_to(os.ttyname(device.reader.fileno()))
+            received = _read_until(device.writer, b"ahead", timeout=10)
+            keyboard.writer.write(b"after")
+            received += _read_until(device.writer, b"after")
+        assert run.error is None
+    assert received == b"aheadafter", f"keys typed while connecting were lost or reordered: {received!r}"
+
+
+def test_a_power_cycle_while_connecting_drops_the_keys_typed_before_it(tmp_path):
+    port = tmp_path / "ttyLATE"
+    power = _FakePowerControl()
+    with _pty_pair() as device, _pty_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
+        with _running_console(Console(client, power_control=power), keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(b"before" + POWER_HOTKEY)
+            assert power.cycled.wait(timeout=5), "power cycle was not triggered"
+            port.symlink_to(os.ttyname(device.reader.fileno()))
+            received = b""
+            deadline = time.monotonic() + 10
+            while not received and time.monotonic() < deadline:
+                keyboard.writer.write(b"!")
+                received += _read_until(device.writer, b"!", timeout=0.2)
+        assert run.error is None
+    assert received, "keys typed after the power cycle did not reach the device"
+    assert received == b"!" * len(received), f"keys typed before the power cycle reached the device: {received!r}"
+
+
+def test_a_console_run_again_sends_what_is_typed_to_its_new_stream(tmp_path):
+    port = tmp_path / "ttyLATE"
+    with _pty_pair() as device, _pipe_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
+        port.symlink_to(os.ttyname(device.reader.fileno()))
+        console = Console(client)
+        with _running_console(console, keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(b"first")
+            received = _read_until(device.writer, b"first")
+        assert run.error is None
+        assert received == b"first", f"the first run did not reach the device: {received!r}"
+        _wait_detached(client)
+
+        port.unlink()
+        with _running_console(console, keyboard) as run:
+            _wait_registered(client, run)
+            keyboard.writer.write(b"second")
+            assert _wait_read(keyboard.reader), "console did not read input while connecting"
+            port.symlink_to(os.ttyname(device.reader.fileno()))
+            received = _read_until(device.writer, b"second", timeout=10)
+        assert run.error is None
+    assert b"second" in received, f"the second run lost what was typed while connecting: {received!r}"
+
+
+def test_a_console_run_again_does_not_send_what_the_previous_run_held():
+    with _pipe_pair() as keyboard, _fake_serial() as serial:
+        console = Console(serial)
+        with _running_console(console, keyboard) as run:
+            keyboard.writer.write(b"stale" + EXIT_HOTKEY)
+            run.thread.join(timeout=5)
+            assert not run.thread.is_alive(), "console did not exit while connecting"
+        assert run.error is None
+    with _pipe_pair() as keyboard, _fake_serial() as serial:
+        console.serial_client = serial
+        with _running_console(console, keyboard) as run:
+            keyboard.writer.write(b"fresh")
+            assert _wait_read(keyboard.reader), "console did not read input while connecting"
+            serial.connect()
+            sent = serial.wait_sent(b"fresh")
+        assert run.error is None
+    assert sent == b"fresh", f"the second run sent what the first one held: {sent!r}"
+
+
 def test_hotkey_detector_three_presses():
-    """Three consecutive presses of a registered key return its action."""
-    exit_action = AsyncMock()
-    detector = HotkeyDetector({b"\x02": exit_action, b"\x1d": AsyncMock()})
+    """Three consecutive presses of a registered key return the key."""
+    detector = HotkeyDetector({b"\x02", b"\x1d"})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") is exit_action
+    assert detector.feed(b"\x02") == b"\x02"
 
 
 def test_hotkey_detector_unrelated_byte_resets():
     """An unrelated byte resets the counter."""
-    exit_action = AsyncMock()
-    detector = HotkeyDetector({b"\x02": exit_action})
+    detector = HotkeyDetector({b"\x02"})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"a") is None
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") is exit_action
+    assert detector.feed(b"\x02") == b"\x02"
 
 
 def test_hotkey_detector_alternating_keys_resets():
     """Alternating between registered keys resets rather than accumulating."""
-    exit_action = AsyncMock()
-    power_action = AsyncMock()
-    detector = HotkeyDetector({b"\x02": exit_action, b"\x1d": power_action})
+    detector = HotkeyDetector({b"\x02", b"\x1d"})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x1d") is None
     assert detector.feed(b"\x1d") is None
-    assert detector.feed(b"\x1d") is power_action
+    assert detector.feed(b"\x1d") == b"\x1d"
 
 
-def test_hotkey_detector_byte_outside_actions():
-    """A byte with no registered action returns None."""
-    detector = HotkeyDetector({b"\x02": AsyncMock()})
+def test_hotkey_detector_byte_outside_keys():
+    """A byte that is not a registered key returns None."""
+    detector = HotkeyDetector({b"\x02"})
     assert detector.feed(b"x") is None
     assert detector.feed(b"y") is None
 
 
 def test_hotkey_detector_counter_resets_after_hit():
     """After a hit, the counter resets so a 4th press does not immediately re-fire."""
-    exit_action = AsyncMock()
-    detector = HotkeyDetector({b"\x02": exit_action})
+    detector = HotkeyDetector({b"\x02"})
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") is exit_action
+    assert detector.feed(b"\x02") == b"\x02"
     assert detector.feed(b"\x02") is None
     assert detector.feed(b"\x02") is None
-    assert detector.feed(b"\x02") is exit_action
+    assert detector.feed(b"\x02") == b"\x02"
