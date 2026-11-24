@@ -8,7 +8,7 @@
 | **Status**        | Discussion                                               |
 | **Type**          | Standards Track                                          |
 | **Created**       | 2026-09-01                                               |
-| **Updated**       | 2026-11-23                                               |
+| **Updated**       | 2026-11-24                                               |
 | **Discussion**    | [PR #1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069), [issue #47](https://github.com/jumpstarter-dev/jumpstarter/issues/47) |
 | **Requires**      | JEP-0014                                                 |
 | **Supersedes**    |                                                          |
@@ -538,6 +538,8 @@ type LeaseTemplateReference struct {
 
 The current CEL rules stay, with these additions:
 
+- A member-form lease must have a minimum of one required member. A lease
+  with only optional members can bind no exporter.
 - The top-level rule "one of selector or exporterRef is required" gets a
   third alternative, `members`. The scalar form and `members` cannot be in
   the same lease.
@@ -583,6 +585,15 @@ type LeaseMemberStatus struct {
     // Exporters with the same value serve the same DUT (DD-7).
     // +kubebuilder:validation:MaxLength=63
     ExclusionGroup string `json:"exclusionGroup,omitempty"`
+```
+
+**`ExporterStatus`** gets one field that only the lease controller writes:
+
+```go
+    // The lease that gets or holds this exporter (DD-7). The controller
+    // sets it before it creates the claims and removes it when the attempt
+    // fails or the lease ends.
+    ClaimRef *ClaimLeaseReference `json:"claimRef,omitempty"`
 ```
 
 **`ExporterClaim`** is a new namespaced resource. Only the controller
@@ -932,9 +943,21 @@ The controller uses claims as follows:
   creates claims. It also starts one when a lease that is not bound owns
   claims. Thus a lease that is not bound keeps no claims from a reconcile
   that stopped.
-- **Get the claims, then write:** After the assignment (DD-4), the
-  controller creates the claims in sorted name order. When all the claims
-  exist, it writes the members in one status update.
+- **Mark the exporters:** After the assignment (DD-4), the controller
+  writes `status.claimRef` on each exporter that it selected, in sorted
+  name order. Each write is a conditional update of an exporter that the
+  controller read from the API server. The attempt fails if that exporter
+  has a `claimRef` of a different active lease. It also fails if the
+  exclusion group of the exporter is not the group of the assignment. From this write until the controller
+  removes the mark, admission rejects a change to the group (DD-7).
+- **Get the claims, then write:** The controller then creates the claims
+  in sorted name order. When all the claims exist, it writes the members
+  in one status update.
+- **Remove the marks:** The controller removes its `claimRef` marks when
+  an attempt fails and when the lease ends. It removes only a mark with
+  the UID of the lease and with its own attempt number or a smaller one.
+  The controller ignores and replaces a mark if its lease ended or does not
+  exist, as it does for an old claim.
 - **Conflict:** If a create operation fails, the controller deletes the
   claims of its attempt. It sets `Pending` with the reason `NotAvailable`
   and puts the lease back in the queue.
@@ -1106,10 +1129,20 @@ later change to `spec.exclusionGroup` does not release a DUT.
 
 A change to the group of an exporter that a lease holds can give one DUT to
 two leases. Thus admission rejects a change to `spec.exclusionGroup` while
-`status.leaseRef` is set. This is a CEL transition rule on `Exporter`. The
-rule does not cover the short time between the claim and `status.leaseRef`.
-It also does not cover the exporter of a `Lost` member. Change the group
-only on exporters that have no claim.
+`status.claimRef` or `status.leaseRef` is set. This is a CEL transition
+rule on `Exporter`.
+
+The controller writes `status.claimRef` before it creates a claim (DD-3).
+The API server puts that write and a group change in a sequence, because
+they change the same object:
+
+- If the group change is first, the controller reads the new group. The
+  attempt fails, and the subsequent reconcile uses the new group.
+- If the mark is first, admission rejects the group change.
+
+The mark stays until the lease ends. Thus the rule also applies in the time
+between the claim and `status.leaseRef`, and to the exporter of a `Lost`
+member.
 
 A group also stays in use during cleanup. The controller removes a
 candidate if an exporter of its group is in cleanup, for example in an
@@ -1375,7 +1408,7 @@ path uses the same code with one synthetic member and writes
 
 ```{mermaid}
 flowchart TD
-    resolve["For each member: get candidates from exporterRef or selector<br/>Remove disabled exporters and exporters without access"]
+    resolve["For each member: get candidates from exporterRef or selector<br/>Remove exporters without access<br/>Remove disabled exporters, but not for exporterRef with allowDisabled"]
     precheck{"Does each required member<br/>have a candidate?"}
     reject["Set the reason for that member<br/>Create no claims"]
     filter["For each member: remove offline, claimed, group-held,<br/>cleanup, and spot-held exporters<br/>Sort with orderApprovedExporters"]
@@ -1401,6 +1434,11 @@ report their current reasons with the role: `ExporterNotFound`,
 `ExporterDisabled`, `AllDisabled`, `NoAccess`, and the `Unsatisfiable`
 result for spot access. `SelectorMismatch` cannot occur, because a member
 has only one selection source.
+
+`allowDisabled` operates as it does for a scalar lease. The controller
+keeps a disabled exporter as a candidate only for a member that has
+`exporterRef` and `allowDisabled: true`. For a member with a `selector`,
+the field has no effect.
 
 - A required member that fails makes the lease `Unsatisfiable`. The lease
   then ends, as a scalar lease does today.
@@ -1511,9 +1549,14 @@ is not a condition type.
   - Action `warn`: the hook is complete.
   - An error without an action: the exporter reports
     `BeforeLeaseHookFailed`. `Ready` stays false with that reason.
-- The client waits for `Ready` before it gives the members to the test. It
-  stops the wait and raises an error with the role and the reason when a
-  member is `Lost` or a hook fails.
+- A client that requests a lease waits for `Ready` before it gives the
+  members to the test. It stops the wait and raises an error with the role
+  and the reason when a member is `Lost` or a hook fails.
+- A client that attaches to a lease that exists does not wait for `Ready`
+  if the lease is `Degraded`. It connects to each `Bound` member. A call to
+  a `Lost` role raises an error with the role and the reason. Thus a user
+  can attach to a degraded lease and collect logs from the other members
+  (DD-8). `jmp shell --lease` shows the lost roles as a warning.
 - Expiry, `status.ended`, the `jumpstarter.dev/lease-ended` label, and a
   release by the client (`spec.release`) do not change.
 
@@ -1533,6 +1576,10 @@ then `Lost` with the reason `Offline`.
 These rules apply to a `Lost` member:
 
 - **Final:** The member does not become `Bound` again in that lease.
+- **Controller start:** After a start, the controller has no current
+  heartbeat data. It does not make a member `Lost` with the reason
+  `Offline` until the offline time limit is complete after its start. Thus
+  a controller restart does not degrade the leases.
 - **`Dial`:** A call for that member returns `FAILED_PRECONDITION`.
 - **Exporter session:** The controller removes `status.leaseRef` from the
   exporter. The exporter then ends its session and runs its `afterLease`
@@ -1558,9 +1605,9 @@ exception: `Exporter.status.leaseRef` also depends on the claim (DD-3).
 | `ExporterReconciler.reconcileStatusLeaseRef` | Sets `Exporter.status.leaseRef` from `status.exporterRef`. | Sets it when a claim for the exporter exists and the lease shows the exporter as a `Bound` member (DD-3). The reconciler also watches claims. |
 | `assignedLease`, for `Status` and `UpdateLeaseHooks` | Accepts the lease only if `status.exporterRef` is the exporter. | Accepts a lease that has the exporter as a `Bound` member. Each member keeps its own hook record. |
 | Release by the exporter (`ReportStatus`, `ReleaseLease`) | The exporter in `status.exporterRef` can set `spec.release`. | The member of that exporter becomes `Lost`. The lease is `Degraded` and keeps the other members (DD-8). |
-| `reconcileSharedWithPolicies` | Applies the policy for `status.exporterRef` to `spec.sharedWith`. Before the bind, it gives the full list. | Lists a client in `status.sharedWith` only if the policy lets it use each bound member. Before the bind, it gives the full list. |
+| `reconcileSharedWithPolicies` | Applies the policy for `status.exporterRef` to `spec.sharedWith`. Before the bind, it gives the full list. | Lists a client in `status.sharedWith` only if the policy lets it use each bound member. Before the bind, the list is empty. The status update that binds the members also writes the list. Thus the lease is not bound with a list that the policy did not examine. |
 | `ClientService.UpdateLease` | Reads `status.exporterRef` to know that the lease started. It checks the policy of that exporter for a transfer and for a new shared client. | Reads `status.beginTime` to know that the lease started. It checks the policy of each bound member. |
-| Owner reference | The lease has a controller owner reference to its exporter. | One owner reference for each bound member, not as controller. A deleted exporter makes its member `Lost`. |
+| Owner reference | The lease has a controller owner reference to its exporter. | No owner reference to an exporter. Kubernetes deletes an object when all its owners are deleted, and a lease must stay when its exporters are deleted. The controller watches the exporters and makes the member of a deleted exporter `Lost`. |
 | `reconcileStatusBeginEndTimes` | Sets `status.beginTime` and `Ready` when `status.exporterRef` is set. | Sets `status.beginTime` when the members bind. Sets `Ready` when the `beforeLease` hooks are complete. |
 | `countPendingLeases` in the exporter-set controller | Counts a pending lease without `status.exporterRef` if `spec.selector` agrees with the labels of the set. | Counts each member of a pending lease, as *Members and `ExporterSet`* describes. |
 | `leaseWantsPoolMember` and `findExporterSetsForLease` in the exporter-set controller | Read `spec.selector` to find the sets of a lease. | Also read the selector of each member. |
@@ -1618,7 +1665,10 @@ candidate, and the lease is `Unsatisfiable`.
 | The exporter of a member goes offline, or an administrator deletes it | The member is `Lost` and the lease is `Degraded`. The other members stay. |
 | The exporter of a member releases the lease | The member is `Lost` with the reason `ExporterReleased`. The lease is `Degraded`. The other members stay. |
 | A `beforeLease` hook of a member fails | *Lease state* gives the result for each failure action. |
-| An administrator changes the exclusion group of an exporter that has `status.leaseRef` | Admission rejects the change (DD-7). |
+| An administrator changes the exclusion group of an exporter that has `status.claimRef` or `status.leaseRef` | Admission rejects the change (DD-7). |
+| An administrator changes the exclusion group between the assignment and the mark | The attempt fails. The subsequent reconcile uses the new group. |
+| A lease has no required member | CEL rejects the lease at admission. |
+| A client attaches to a lease with a `Lost` member | The client connects to the `Bound` members. A call to the `Lost` role raises an error. |
 | A client in `defaults.sharedWith` does not exist | `CreateLease` returns the current error for that client. The administrator must correct the template. |
 | An `ExporterSet` is at `maxReplicas` and has no free exporter | The lease stays `Pending` with `NotAvailable`, as a scalar lease does. |
 | Two members select an `ExporterSet` that has one exporter | The lease stays `Pending` with `NotAvailable`. The set creates a second exporter. |
@@ -1632,8 +1682,9 @@ candidate, and the lease is `Unsatisfiable`.
 - **Shared access:** `spec.sharedWith` applies to the full lease.
   `status.sharedWith` lists a shared client only if the policy lets it use
   each bound member. `Dial` uses that list for each `member_name`. The
-  current code reads only `status.exporterRef`. It must change before a
-  client can share a member-form lease.
+  list is empty before the bind, and the status update that binds the
+  members writes it. Thus a shared client cannot connect to a member
+  before the controller examined the policy.
 - **DUT exclusivity:** A lease that holds an exclusion group gets no access
   to the exporters that it did not bind. Only administrators set groups.
 - **Claims:** Only the controller creates or deletes `ExporterClaim`
@@ -1703,8 +1754,9 @@ metric labels. The lease acquisition metric records the number of members.
     candidates.
 - **Exclusion groups:** One lease can bind many exporters of a group.
   Admission rejects a group change on an exporter that has
-  `status.leaseRef`. An exporter is not a candidate while an exporter of
-  its group is in cleanup.
+  `status.claimRef` or `status.leaseRef`. A group change between the
+  assignment and the mark makes the attempt fail. An exporter is not a
+  candidate while an exporter of its group is in cleanup.
 - **Scalar leases:** The current lease controller tests pass without
   changes. A member-form lease with one member has no `status.exporterRef`.
 - **Priority and duration:** The lease priority is the minimum member
@@ -2009,6 +2061,9 @@ These items are not part of this JEP:
 
 - 2026-09-01: JEP proposed, with port forwards in the same document
   ([#1069](https://github.com/jumpstarter-dev/jumpstarter/pull/1069)).
+- 2026-11-24: Changes from the review. The `status.claimRef` mark stops
+  group changes. A client can attach to a degraded lease. The bind writes
+  the shared-client list. A lease has no owner references to exporters.
 - 2026-11-23: The port forwards moved to JEP-0016. The text follows
   ASD-STE100. The review questions about exporter release, hooks,
   `ExporterSet` members, and template sharing became decisions.
