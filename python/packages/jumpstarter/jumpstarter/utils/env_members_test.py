@@ -9,7 +9,8 @@ from jumpstarter_driver_network.client import NetworkClient
 from jumpstarter_driver_power.client import PowerClient
 from jumpstarter_driver_power.driver import MockPower
 
-from jumpstarter.client.lease import LeaseMembers
+from jumpstarter.client.exceptions import LeaseMemberLostError
+from jumpstarter.client.lease import LeaseMembers, LostMember
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.common.utils import _build_members_env
@@ -35,13 +36,21 @@ class Projection(LeaseMembers, template="projection"):
 
 
 @contextmanager
-def members_shell(monkeypatch, *, phone=True):
+def members_shell(monkeypatch, *, phone=True, headunit_lost=False):
     """The environment of `jmp shell` on a lease with members, over local exporter sessions."""
     with ExitStack() as stack:
-        members = {}
+        members: dict[str, dict | None] = {}
         for role in ("phone", "headunit"):
             if role == "phone" and not phone:
                 members[role] = None
+                continue
+            if role == "headunit" and headunit_lost:
+                members[role] = {
+                    "exporter": "rack3-headunit",
+                    "labels": {"device-type": role},
+                    "socket": None,
+                    "lost": {"reason": "Offline", "message": "no heartbeat for 60s"},
+                }
                 continue
             session = stack.enter_context(Session(root_device=Composite(children={"power": MockPower()})))
             path = stack.enter_context(session.serve_unix())
@@ -138,3 +147,33 @@ def test_members_shell_environment_removes_the_variables_of_one_exporter(monkeyp
     assert environment[JMP_LEASE] == "lease-9m2qd"
     assert json.loads(environment[JMP_LEASE_MEMBERS]) == members
     assert environment[JMP_DRIVERS_ALLOW] == "UNSAFE"
+
+
+def test_env_members_gives_a_raising_object_for_a_lost_role(monkeypatch):
+    with members_shell(monkeypatch, headunit_lost=True), env_members(Projection) as members:
+        assert members.phone is not None
+        members.phone.power.on()
+        assert isinstance(members.headunit, LostMember)
+        with pytest.raises(
+            LeaseMemberLostError,
+            match="^role 'headunit' is lost: Offline: no heartbeat for 60s \\(exporter rack3-headunit\\)$",
+        ) as excinfo:
+            members.headunit.power.on()
+        assert excinfo.value.role == "headunit" and excinfo.value.reason == "Offline"
+        assert members.metadata["headunit"] == ExporterMetadata(
+            name="rack3-headunit", labels={"device-type": "headunit"}, lease="lease-9m2qd"
+        )
+        assert isinstance(members.by_role["headunit"], LostMember)
+
+
+def test_env_member_of_a_lost_role_names_the_role_and_the_reason(monkeypatch):
+    from anyio.from_thread import start_blocking_portal
+
+    from jumpstarter.utils.env import env_member_async
+
+    with members_shell(monkeypatch, headunit_lost=True), start_blocking_portal() as portal, ExitStack() as stack:
+        with pytest.raises(LeaseMemberLostError, match="role 'headunit' is lost: Offline"):  # noqa: SIM117
+            with portal.wrap_async_context_manager(env_member_async("headunit", portal, stack)):
+                pass
+        with portal.wrap_async_context_manager(env_member_async("phone", portal, stack)) as phone:
+            phone.power.on()

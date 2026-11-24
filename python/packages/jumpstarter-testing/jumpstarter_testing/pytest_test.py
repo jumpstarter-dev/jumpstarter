@@ -111,6 +111,52 @@ def test_members_class_attaches_to_the_lease_of_the_shell(pytester: Pytester, mo
         result.assert_outcomes(passed=1)
 
 
+DEGRADED_TEST = """
+    import pytest
+    from jumpstarter_testing import JumpstarterTest
+
+    from jumpstarter.client.exceptions import LeaseMemberLostError
+    from jumpstarter.client.lease import LeaseMembers
+
+
+    class Projection(LeaseMembers, template="projection"):
+        pass
+
+
+    class TestSample(JumpstarterTest):
+        members = Projection
+
+        def test_bound_role_works(self, client: Projection):
+            client.by_role["headunit"].on()
+
+        def test_lost_role_names_the_role_and_the_reason(self, client: Projection):
+            with pytest.raises(LeaseMemberLostError, match="role 'phone' is lost: ExporterReleased"):
+                client.by_role["phone"].on()
+            assert client.metadata["phone"].name == "rack3-phone-4"
+"""
+
+
+def test_members_class_attaches_to_a_degraded_lease_of_the_shell(pytester: Pytester, monkeypatch):
+    pytester.makepyfile(DEGRADED_TEST)
+
+    with Session(root_device=MockPower()) as session, session.serve_unix() as path:
+        session.update_status(ExporterStatus.LEASE_READY)
+        members = {
+            "headunit": {"exporter": "rack3-hu-2", "labels": {}, "socket": str(path)},
+            "phone": {
+                "exporter": "rack3-phone-4",
+                "labels": {},
+                "socket": None,
+                "lost": {"reason": "ExporterReleased", "message": ""},
+            },
+        }
+        monkeypatch.delenv(JUMPSTARTER_HOST, raising=False)
+        monkeypatch.setenv(JMP_LEASE_MEMBERS, json.dumps(members))
+        monkeypatch.setenv(JMP_DRIVERS_ALLOW, "UNSAFE")
+        result = pytester.runpytest()
+        result.assert_outcomes(passed=2)
+
+
 def test_members_class_requests_its_template_outside_a_shell(pytester: Pytester, monkeypatch):
     leased_with = {}
 

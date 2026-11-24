@@ -6,8 +6,8 @@ import pytest
 from jumpstarter_driver_composite.client import CompositeClient
 from jumpstarter_driver_power.client import PowerClient
 
+from jumpstarter.client._members_testing import members_lease_pb, template_pb
 from jumpstarter.client.grpc import LeaseList, LeaseTemplateList
-from jumpstarter.client.grpc_members_test import members_lease_pb, template_pb
 from jumpstarter.client.lease import Lease, LeaseMembers, MembersLease
 from jumpstarter.config.client import ClientConfigV1Alpha1, ClientConfigV1Alpha1Drivers
 from jumpstarter.config.common import ObjectMeta
@@ -88,6 +88,100 @@ def test_jmp_lease_attaches_as_for_a_scalar_lease(config, created, monkeypatch):
     monkeypatch.setenv(JMP_LEASE, "from-env")
     with config.lease(Projection) as lease:
         assert lease.name == "from-env" and not lease.release
+
+
+def _degraded_lease():
+    from jumpstarter_protocol import client_pb2, kubernetes_pb2
+
+    from jumpstarter.client.grpc import Lease as LeaseModel
+
+    return LeaseModel.from_protobuf(
+        members_lease_pb(
+            statuses=[
+                client_pb2.LeaseMemberStatus(
+                    name="phone",
+                    state=client_pb2.LEASE_MEMBER_STATE_LOST,
+                    exporter="namespaces/default/exporters/rack3-phone-4",
+                    reason="ExporterReleased",
+                ),
+                client_pb2.LeaseMemberStatus(
+                    name="headunit",
+                    state=client_pb2.LEASE_MEMBER_STATE_BOUND,
+                    exporter="namespaces/default/exporters/rack3-hu-2",
+                ),
+            ],
+            conditions=[
+                kubernetes_pb2.Condition(type="Ready", status="False", reason="MemberLost"),
+                kubernetes_pb2.Condition(type="Degraded", status="True", reason="MemberLost"),
+            ],
+        )
+    ).model_copy(update={"client": "testclient"})
+
+
+class PhoneAndHeadunit(LeaseMembers):
+    phone: Headunit | None
+    headunit: Headunit
+
+
+@pytest.mark.parametrize(
+    "attach",
+    [
+        lambda c: c.lease(PhoneAndHeadunit, lease_name="lease-9m2qd"),
+        lambda c: c.lease(template="ivi", lease_name="lease-9m2qd"),
+        lambda c: c.lease(PhoneAndHeadunit),  # JMP_LEASE names the lease
+    ],
+    ids=["class", "template", "JMP_LEASE"],
+)
+def test_attach_to_a_degraded_lease_gives_bound_roles_and_a_raising_lost_role(config, monkeypatch, attach):
+    from jumpstarter_driver_composite.driver import Composite
+    from jumpstarter_driver_power.driver import MockPower
+
+    from jumpstarter.client.exceptions import LeaseMemberLostError
+    from jumpstarter.client.lease import LostMember
+    from jumpstarter.common import ExporterStatus
+    from jumpstarter.exporter import Session
+
+    monkeypatch.setenv(JMP_LEASE, "lease-9m2qd")
+    with Session(root_device=Composite(children={"power": MockPower()})) as session, session.serve_unix() as socket:
+        session.update_status(ExporterStatus.LEASE_READY)
+
+        @asynccontextmanager
+        async def serve_unix_async(self):
+            # the controller tunnel is replaced; the choice of the roles is the one of the lease
+            yield {role: str(socket) if self.member_exporter(role) else None for role in self.roles}
+
+        with (
+            patch.object(ClientConfigV1Alpha1, "channel", AsyncMock(return_value=Mock())),
+            patch.object(MembersLease, "get", AsyncMock(return_value=_degraded_lease())) as get,
+            patch.object(MembersLease, "_fetch_member_labels", AsyncMock()),
+            patch.object(MembersLease, "serve_unix_async", serve_unix_async),
+            patch("jumpstarter.client.lease.ClientService") as service,
+            attach(config) as lease,
+        ):
+            assert lease.attached and not lease.release
+            assert get.await_count == 2  # the lease is not Ready, and the attach did not wait for it
+            with lease.connect() as members:
+                members.by_role["headunit"].power.on()
+                assert isinstance(members.by_role["phone"], LostMember)
+                with pytest.raises(
+                    LeaseMemberLostError, match="member 'phone' lost its exporter rack3-phone-4 \\(ExporterReleased\\)"
+                ):
+                    members.by_role["phone"].power.on()
+                assert members.metadata["phone"].name == "rack3-phone-4"
+        # an attached lease is not released
+        service.return_value.DeleteLease.assert_not_called()
+
+
+def test_lease_name_alone_on_a_degraded_lease_with_members_names_the_roles(config):
+    from jumpstarter.client.exceptions import LeaseError
+
+    with (
+        patch.object(ClientConfigV1Alpha1, "channel", AsyncMock(return_value=Mock())),
+        patch.object(Lease, "get", AsyncMock(return_value=_degraded_lease())),
+        pytest.raises(LeaseError, match="has members \\(phone, headunit\\), not one exporter"),
+        config.lease(lease_name="lease-9m2qd"),
+    ):
+        pass
 
 
 @pytest.mark.parametrize(

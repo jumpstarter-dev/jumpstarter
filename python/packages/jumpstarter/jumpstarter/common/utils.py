@@ -307,7 +307,9 @@ def launch_members_shell(
 
     Args:
         members: Each role with its `exporter`, `labels` and `socket`, or None
-            for a role without an exporter. It becomes JMP_LEASE_MEMBERS.
+            for a role without an exporter. A role that lost its exporter has
+            `"socket": None` and `lost` with the `reason` and the `message`.
+            It becomes JMP_LEASE_MEMBERS.
         context: The context of the shell prompt (the lease name)
         allow: List of allowed drivers
         unsafe: Whether to allow drivers outside of the allow list

@@ -370,3 +370,31 @@ class TestAsyncDriverClientWaitForLeaseReadyMonitored:
                 await client.wait_for_lease_ready_monitored(timeout=2.0)
 
         stub.GetStatus.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("prefix", "expected"),
+    [("phone", "[phone] adb started"), (None, "adb started")],
+    ids=["role-prefix", "no-prefix"],
+)
+async def test_log_stream_prefix_says_where_a_line_comes_from(caplog, prefix, expected) -> None:
+    import logging
+    from types import SimpleNamespace
+
+    from jumpstarter_protocol import jumpstarter_pb2
+
+    delivered = anyio.Event()
+
+    async def responses():
+        yield jumpstarter_pb2.LogStreamResponse(message="adb started", severity="INFO")
+        delivered.set()
+        await anyio.sleep_forever()
+
+    client = SimpleNamespace(stub=MagicMock(LogStream=lambda _: responses()), logger=logging.getLogger("test"))
+    kwargs = {} if prefix is None else {"prefix": prefix}
+    with caplog.at_level(logging.INFO, logger="exporter:system"):
+        async with AsyncDriverClient.log_stream_async(client, show_all_logs=True, **kwargs):  # ty: ignore[invalid-argument-type]
+            with anyio.fail_after(5):
+                await delivered.wait()
+    records = [r for r in caplog.records if r.name == "exporter:system"]
+    assert [r.getMessage() for r in records] == [expected]

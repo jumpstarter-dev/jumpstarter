@@ -20,12 +20,13 @@ from jumpstarter_cli.shell import (
     _members_shell,
     _members_shell_with_signal_handling,
     _monitor_lost_members,
+    _run_members_shell_session,
     shell,
 )
 
+from jumpstarter.client._members_testing import members_lease_pb, template_pb
 from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.client.grpc import Lease, LeaseTemplate
-from jumpstarter.client.grpc_members_test import members_lease_pb, template_pb
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import (
     JMP_EXPORTER,
@@ -36,12 +37,13 @@ from jumpstarter.config.env import (
 )
 
 
-def lost_status():
+def lost_status(message=None):
     return client_pb2.LeaseMemberStatus(
         name="headunit",
         state=client_pb2.LEASE_MEMBER_STATE_LOST,
         exporter="namespaces/default/exporters/rack3-headunit",
         reason="Offline",
+        message=message,
     )
 
 
@@ -84,13 +86,21 @@ class FakeLease:
         self.released = False
 
     def member_exporter(self, role):
+        if role in self.lost:
+            return None
         return {"phone": "rack3-phone-4", "headunit": "rack3-hu-2"}.get(role)
+
+    def lost_member(self, role):
+        if role not in self.lost:
+            return None
+        lease = Lease.from_protobuf(members_lease_pb(statuses=[lost_status("no heartbeat for 60s")]))
+        return lease.lost_members()[0]
 
     @asynccontextmanager
     async def serve_unix_async(self):
         yield {
             "phone": "/tmp/jumpstarter-x1/phone.sock",
-            "headunit": "/tmp/jumpstarter-x1/headunit.sock",
+            "headunit": None if "headunit" in self.lost else "/tmp/jumpstarter-x1/headunit.sock",
             "tablet": None,
         }
 
@@ -331,6 +341,117 @@ class TestMembersSession:
         assert out.count("member 'headunit' lost its exporter") == 1
         assert "The other members stay usable" in out
         assert "headunit" in lease.lost
+
+
+class DegradedLease(FakeLease):
+    """A lease that the shell attached to after its headunit was lost."""
+
+    release = False
+
+    def __init__(self):
+        super().__init__()
+        self.lost = {"headunit": "member 'headunit' lost its exporter rack3-headunit (Offline)"}
+        self.member_labels["headunit"] = {"device-type": "headunit"}
+
+    async def get(self):
+        return Lease.from_protobuf(members_lease_pb(statuses=[lost_status("no heartbeat for 60s")]))
+
+
+class TestAttachDegraded:
+    def test_lost_role_has_no_socket_and_the_reason(self):
+        lease = DegradedLease()
+        assert _members_environment(lease, {"phone": "/x/phone.sock", "headunit": None, "tablet": None}) == {
+            "phone": {"exporter": "rack3-phone-4", "labels": {"device-type": "phone"}, "socket": "/x/phone.sock"},
+            "headunit": {
+                "exporter": "rack3-headunit",
+                "labels": {"device-type": "headunit"},
+                "socket": None,
+                "lost": {"reason": "Offline", "message": "no heartbeat for 60s"},
+            },
+            "tablet": None,
+        }
+
+    def test_shell_on_a_degraded_lease_starts_with_the_lost_role_as_a_warning(self, capsys):
+        config = FakeConfig(lease=DegradedLease())
+        with patch("jumpstarter_cli.shell.launch_members_shell", return_value=0) as launch:
+            exit_code = anyio.run(
+                _members_shell_with_signal_handling, config, None, "lease-9m2qd", None, False, (), None
+            )
+        assert exit_code == 0
+        assert config.requested["lease_name"] == "lease-9m2qd"
+        members = launch.call_args.args[0]
+        assert members["phone"]["socket"] == "/tmp/jumpstarter-x1/phone.sock"
+        assert members["headunit"]["socket"] is None and members["headunit"]["lost"]["reason"] == "Offline"
+        captured = capsys.readouterr()
+        assert "  phone: rack3-phone-4" in captured.err
+        assert "  headunit: lost (Offline), was rack3-headunit: no heartbeat for 60s" in captured.err
+        assert "  tablet: (no exporter)" in captured.err
+
+    def test_child_environment_describes_the_lost_role(self):
+        config = FakeConfig(lease=DegradedLease())
+        seen = {}
+
+        def run_process(cmd, env, lease=None):
+            seen.update(env=env)
+            return 0
+
+        with patch("jumpstarter.common.utils._run_process", run_process):
+            anyio.run(_members_shell_with_signal_handling, config, None, "lease-9m2qd", None, False, ("true",), None)
+        assert json.loads(seen["env"][JMP_LEASE_MEMBERS])["headunit"] == {
+            "exporter": "rack3-headunit",
+            "labels": {"device-type": "headunit"},
+            "socket": None,
+            "lost": {"reason": "Offline", "message": "no heartbeat for 60s"},
+        }
+
+    def test_role_that_was_lost_before_the_attach_is_not_reported_again(self, capsys):
+        lease = DegradedLease()
+
+        async def main():
+            scope = anyio.CancelScope()
+            with patch("jumpstarter_cli.shell._SHARED_ACCESS_POLL_SECONDS", 0.01), scope:
+                with anyio.move_on_after(0.1):
+                    await _monitor_lost_members(lease, scope)
+
+        anyio.run(main)
+        assert "lost its exporter" not in capsys.readouterr().out
+
+
+class TestExporterLogs:
+    def _run(self, lease):
+        streams = []
+
+        def fake_client(path):
+            client = Mock()
+
+            @asynccontextmanager
+            async def log_stream_async(show_all_logs=True, prefix=None):
+                streams.append((path, show_all_logs, prefix))
+                yield
+
+            client.log_stream_async = log_stream_async
+            return client
+
+        @asynccontextmanager
+        async def client_from_path(path, portal, stack, **kwargs):
+            yield fake_client(path)
+
+        config = FakeConfig(lease=lease)
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", client_from_path),
+            patch("jumpstarter_cli.shell.launch_members_shell", return_value=0),
+        ):
+            assert anyio.run(_run_members_shell_session, lease, True, config, ("true",)) == 0
+        return streams
+
+    def test_each_member_streams_its_logs_with_the_role_as_the_prefix(self):
+        assert self._run(FakeLease()) == [
+            ("/tmp/jumpstarter-x1/phone.sock", True, "phone"),
+            ("/tmp/jumpstarter-x1/headunit.sock", True, "headunit"),
+        ]
+
+    def test_lost_role_has_no_log_stream(self):
+        assert self._run(DegradedLease()) == [("/tmp/jumpstarter-x1/phone.sock", True, "phone")]
 
 
 def test_lease_picker_describes_a_lease_with_members():

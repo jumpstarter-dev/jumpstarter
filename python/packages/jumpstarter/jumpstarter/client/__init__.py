@@ -14,7 +14,7 @@ from .introspect import (
     describe_drivers,
     describe_drivers_async,
 )
-from .lease import DirectLease, Lease, LeaseMembers, MembersLease, member
+from .lease import DirectLease, Lease, LeaseMembers, LostMember, MembersLease, member
 
 __all__ = [
     "DirectLease",
@@ -24,6 +24,7 @@ __all__ = [
     "FlasherClientInterface",
     "Lease",
     "LeaseMembers",
+    "LostMember",
     "MembersLease",
     "StreamingFlasherClient",
     "StreamingFlasherClientInterface",

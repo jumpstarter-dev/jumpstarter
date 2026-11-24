@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 import anyio
 import click
+import pytest
 from click.testing import CliRunner
 
 from jumpstarter_cli.j import RolesGroup, _in_members_shell, _members_cli, roles_cli
@@ -21,6 +22,15 @@ MEMBERS = {
     "headunit": {"exporter": "rack3-hu-2", "labels": {}, "socket": "/x/headunit.sock"},
     "tablet": None,
 }
+
+
+LOST_HEADUNIT = {
+    "exporter": "rack3-hu-2",
+    "labels": {},
+    "socket": None,
+    "lost": {"reason": "Offline", "message": "no heartbeat for 60s"},
+}
+DEGRADED = {**MEMBERS, "headunit": LOST_HEADUNIT}
 
 
 def role_command(role):
@@ -118,10 +128,13 @@ class EchoDriver(Driver):
 
 
 @contextmanager
-def members_shell(monkeypatch):
+def members_shell(monkeypatch, *, lost=()):
     with ExitStack() as stack:
         members: dict[str, dict | None] = {}
         for role in ("phone", "headunit"):
+            if role in lost:
+                members[role] = dict(LOST_HEADUNIT, exporter=f"rack3-{role}")
+                continue
             session = stack.enter_context(Session(root_device=EchoDriver(name=role)))
             path = stack.enter_context(session.serve_unix())
             session.update_status(ExporterStatus.LEASE_READY)
@@ -144,3 +157,41 @@ def test_j_role_driver_runs_against_the_exporter_of_the_role(monkeypatch, capsys
             monkeypatch.setattr(sys, "argv", ["j", role, "whoami"])
             anyio.run(_members_cli)
             assert capsys.readouterr().out == f"driver of {role}\n"
+
+
+def test_lost_role_says_the_role_and_the_reason_without_a_connection():
+    connect = Mock(side_effect=role_command)
+    result = CliRunner().invoke(roles_cli(DEGRADED, connect), ["headunit", "whoami"])
+    assert result.exit_code != 0
+    assert "role 'headunit' is lost: Offline: no heartbeat for 60s (exporter rack3-hu-2)" in result.output
+    connect.assert_not_called()
+    # the other roles stay usable
+    result = CliRunner().invoke(roles_cli(DEGRADED, connect), ["phone", "whoami"])
+    assert result.exit_code == 0 and result.output == "driver of phone\n"
+
+
+def test_lost_role_is_listed_as_lost_and_not_completed():
+    from click.shell_completion import ShellComplete
+
+    connect = Mock()
+    group = roles_cli(DEGRADED, connect)
+    result = CliRunner().invoke(group, [])
+    assert "headunit  (lost: Offline) exporter rack3-hu-2" in result.output
+    complete = ShellComplete(group, {}, "j", "_J_COMPLETE")
+    assert [c.value for c in complete.get_completions([], "")] == ["phone"]
+    complete.get_completions(["headunit"], "")  # completion after the lost role does not connect or fail
+    connect.assert_not_called()
+
+
+def test_j_in_a_shell_on_a_degraded_lease(monkeypatch, capsys):
+    from jumpstarter_cli_common.exceptions import ClickExceptionRed
+
+    with members_shell(monkeypatch, lost=("headunit",)):
+        monkeypatch.setattr(sys, "argv", ["j", "phone", "whoami"])
+        anyio.run(_members_cli)
+        assert capsys.readouterr().out == "driver of phone\n"
+
+        monkeypatch.setattr(sys, "argv", ["j", "headunit", "whoami"])
+        with pytest.raises(BaseExceptionGroup) as excinfo:
+            anyio.run(_members_cli)
+        assert excinfo.group_contains(ClickExceptionRed, match="role 'headunit' is lost: Offline")

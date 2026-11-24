@@ -10,4 +10,12 @@ class ControllerTooOldError(LeaseError):
 
 
 class LeaseMemberLostError(LeaseError):
-    """Raised by a call to a role whose member lost its exporter."""
+    """Raised by a call to a role whose member lost its exporter.
+
+    `role` is the role, and `reason` is the reason that the controller gave, when they are known.
+    """
+
+    def __init__(self, message: str, *, role: str | None = None, reason: str | None = None):
+        super().__init__(message)
+        self.role = role
+        self.reason = reason

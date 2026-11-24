@@ -20,7 +20,7 @@ from rich import traceback
 
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.env import JMP_LEASE, JMP_LEASE_MEMBERS, JUMPSTARTER_HOST
-from jumpstarter.utils.env import env_async, env_member_async, lease_members_from_env
+from jumpstarter.utils.env import env_async, env_member_async, lease_members_from_env, member_lost_error
 
 
 class RolesGroup(click.Group):
@@ -47,6 +47,10 @@ class RolesGroup(click.Group):
             raise ClickExceptionRed(
                 f"Error: the role '{cmd_name}' has no exporter in this lease: it is optional and was left out"
             )
+        if (lost := member_lost_error(cmd_name, self.members[cmd_name])) is not None:
+            if ctx.resilient_parsing:
+                return None
+            raise ClickExceptionRed(f"Error: {lost.message}. The other roles of the lease stay usable")
         return self._connect(cmd_name).cli()
 
     def shell_complete(self, ctx, incomplete):
@@ -54,17 +58,23 @@ class RolesGroup(click.Group):
         return [
             CompletionItem(role, help=f"exporter {entry.get('exporter', '')}")
             for role, entry in self.members.items()
-            if entry is not None and role.startswith(incomplete)
+            if entry is not None and entry.get("lost") is None and role.startswith(incomplete)
         ]
 
     def format_commands(self, ctx, formatter):
-        rows = [
-            (role, f"exporter {entry.get('exporter', '')}" if entry is not None else "(no exporter)")
-            for role, entry in self.members.items()
-        ]
+        rows = [(role, _describe_role(entry)) for role, entry in self.members.items()]
         if rows:
             with formatter.section("Roles"):
                 formatter.write_dl(rows)
+
+
+def _describe_role(entry: dict | None) -> str:
+    if entry is None:
+        return "(no exporter)"
+    lost = entry.get("lost")
+    if lost is not None:
+        return f"(lost: {lost.get('reason') or 'Lost'}) exporter {entry.get('exporter') or ''}".rstrip()
+    return f"exporter {entry.get('exporter', '')}"
 
 
 def roles_cli(members: dict[str, dict | None], connect) -> RolesGroup:

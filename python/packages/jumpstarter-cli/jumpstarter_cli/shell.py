@@ -782,9 +782,10 @@ async def _shell_with_signal_handling(  # noqa: C901
 async def _monitor_lost_members(lease, cancel_scope) -> None:
     """Tell the user when a member of the lease loses its exporter.
 
-    The lease keeps its other members (DD-8), so the session goes on.
+    The lease keeps its other members (DD-8), so the session goes on. A role
+    that was lost before the attach is in the list of roles at the start.
     """
-    reported: set[str] = set()
+    reported: set[str] = set(lease.lost)
     while not cancel_scope.cancel_called:
         try:
             fresh = await lease.get()
@@ -809,11 +810,25 @@ async def _monitor_lost_members(lease, cancel_scope) -> None:
 
 
 def _members_environment(lease, paths: dict[str, str | None]) -> dict[str, dict | None]:
-    """What JMP_LEASE_MEMBERS says: the exporter, its labels and the local socket of each role."""
+    """What JMP_LEASE_MEMBERS says: the exporter, its labels and the local socket of each role.
+
+    A role that lost its exporter has no socket, and `lost` with the reason:
+    `j ROLE` and `env_members()` then name the role and the reason.
+    """
     members: dict[str, dict | None] = {}
     for role, path in paths.items():
         if path is None:
-            members[role] = None
+            lost = lease.lost_member(role)
+            members[role] = (
+                {
+                    "exporter": lost.exporter,
+                    "labels": dict(lease.member_labels.get(role, {})),
+                    "socket": None,
+                    "lost": {"reason": lost.reason or "Lost", "message": lost.message or ""},
+                }
+                if lost is not None
+                else None
+            )
             continue
         members[role] = {
             "exporter": lease.member_exporter(role),
@@ -827,28 +842,45 @@ async def _run_members_shell_session(lease, exporter_logs, config, command) -> i
     """Serve each member of the lease on its own socket and run the shell.
 
     The lease is Ready, so the beforeLease hook of each member is complete
-    (DD-16) and there is no hook to wait for here. The exporters run their
-    afterLease hooks when the lease ends; this session does not wait for them.
+    (DD-16) and there is no hook to wait for here. A degraded lease that the
+    shell attached to is not Ready: its bound roles are served as they are.
+    The exporters run their afterLease hooks when the lease ends; this
+    session does not wait for them.
     """
     async with lease.serve_unix_async() as paths, lease.monitor_async():
         with ExitStack() as stack:
             async with AsyncExitStack() as logs:
                 if exporter_logs:
-                    for path in paths.values():
+                    for role, path in paths.items():
                         if path is None:
                             continue
                         client = await logs.enter_async_context(
                             client_from_path(path, lease.portal, stack, allow=lease.allow, unsafe=lease.unsafe)
                         )
-                        await logs.enter_async_context(client.log_stream_async(show_all_logs=True))
+                        # The role says which exporter a line comes from.
+                        await logs.enter_async_context(client.log_stream_async(show_all_logs=True, prefix=role))
                 return await _launch_members_shell(lease, config, command, paths)
+
+
+def _member_line(role: str, entry: dict | None) -> str:
+    if entry is None:
+        return f"  {role}: (no exporter)"
+    lost = entry.get("lost")
+    if lost is None:
+        return f"  {role}: {entry['exporter']}"
+    text = f"  {role}: lost ({lost['reason']})"
+    if entry.get("exporter"):
+        text += f", was {entry['exporter']}"
+    if lost.get("message"):
+        text += f": {lost['message']}"
+    return click.style(text, fg="yellow")
 
 
 async def _launch_members_shell(lease, config, command, paths) -> int:
     members = _members_environment(lease, paths)
     if not command:
         for role, entry in members.items():
-            click.echo(f"  {role}: {entry['exporter'] if entry else '(no exporter)'}", err=True)
+            click.echo(_member_line(role, entry), err=True)
     return await anyio.to_thread.run_sync(
         lambda: launch_members_shell(
             members,

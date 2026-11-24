@@ -9,7 +9,8 @@ from anyio.from_thread import start_blocking_portal
 from pydantic import ValidationError
 
 from jumpstarter.client import client_from_path
-from jumpstarter.client.lease import LeaseMembers
+from jumpstarter.client.exceptions import LeaseMemberLostError
+from jumpstarter.client.lease import LeaseMembers, LostMember
 from jumpstarter.common.exceptions import EnvironmentVariableNotSetError
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.config.env import (
@@ -168,7 +169,8 @@ def lease_members_from_env() -> dict[str, dict | None]:
     """The members of the lease of the current shell, as `jmp shell` describes them in JMP_LEASE_MEMBERS.
 
     Each role maps to its `exporter`, `labels` and `socket`, or to None for a
-    role without an exporter.
+    role without an exporter. A role that lost its exporter has no socket
+    (`"socket": null`) and a `lost` object with the `reason` and the `message`.
     """
     raw = os.environ.get(JMP_LEASE_MEMBERS)
     if not raw:
@@ -184,14 +186,36 @@ def lease_members_from_env() -> dict[str, dict | None]:
     return members
 
 
+def member_lost_error(role: str, entry: dict | None) -> LeaseMemberLostError | None:
+    """The error of a role that JMP_LEASE_MEMBERS describes as lost, or None for any other role."""
+    if entry is None:
+        return None
+    lost = entry.get("lost")
+    if lost is None:
+        return None
+    reason = (lost.get("reason") if isinstance(lost, dict) else None) or "Lost"
+    message = lost.get("message") if isinstance(lost, dict) else None
+    text = f"role '{role}' is lost: {reason}"
+    if message:
+        text += f": {message}"
+    if entry.get("exporter"):
+        text += f" (exporter {entry['exporter']})"
+    return LeaseMemberLostError(text, role=role, reason=reason)
+
+
 @asynccontextmanager
 async def env_member_async(role: str, portal, stack):
-    """Provide the client of one role of the lease of the current shell."""
+    """Provide the client of one role of the lease of the current shell.
+
+    :raises LeaseMemberLostError: the role lost its exporter
+    """
     members = lease_members_from_env()
     if role not in members:
         raise KeyError(role)
     entry = members[role]
-    if entry is None:
+    if (error := member_lost_error(role, entry)) is not None:
+        raise error
+    if entry is None or not entry.get("socket"):
         raise LookupError(f"the role '{role}' has no exporter in this lease")
     drivers = _resolve_drivers_config()
     async with client_from_path(entry["socket"], portal, stack, allow=drivers.allow, unsafe=drivers.unsafe) as client:
@@ -207,6 +231,9 @@ async def env_members_async(portal, stack, members: type[LeaseMembers] = LeaseMe
     """Provide the members of the lease of the current shell.
 
     Async version of env_members()
+
+    A role that lost its exporter is a `LostMember`: every use of it raises
+    `LeaseMemberLostError`. The other roles are connected.
     """
     entries = lease_members_from_env()
     lease = os.environ.get(JMP_LEASE) or None
@@ -221,17 +248,20 @@ async def env_members_async(portal, stack, members: type[LeaseMembers] = LeaseMe
                 clients[role] = None
                 metadata[role] = None
                 continue
+            metadata[role] = ExporterMetadata(
+                name=entry.get("exporter") or "", labels=dict(entry.get("labels") or {}), lease=lease
+            )
+            if (error := member_lost_error(role, entry)) is not None:
+                clients[role] = LostMember(role, error.message, error.reason)
+                continue
             clients[role] = await clients_stack.enter_async_context(
                 client_from_path(entry["socket"], portal, stack, allow=drivers.allow, unsafe=drivers.unsafe)
-            )
-            metadata[role] = ExporterMetadata(
-                name=entry.get("exporter", ""), labels=dict(entry.get("labels") or {}), lease=lease
             )
         try:
             yield members(clients, metadata)
         finally:
             for client in clients.values():
-                if client is not None and hasattr(client, "close"):
+                if client is not None and not isinstance(client, LostMember) and hasattr(client, "close"):
                     client.close()
 
 
@@ -266,6 +296,9 @@ def env_members(members=LeaseMembers):
     This is the function for a `jmp shell` on a lease with members, where
     env() and env_with_metadata() do not apply. Pass a `LeaseMembers` subclass
     to get an instance of that class.
+
+    A role that lost its exporter is a `LostMember`: every use of it raises
+    `LeaseMemberLostError` with the role and the reason.
 
     Example::
 

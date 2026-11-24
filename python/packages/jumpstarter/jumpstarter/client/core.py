@@ -481,7 +481,14 @@ class AsyncDriverClient(Metadata):
                 yield metadata.resource.model_dump(mode="json")
 
     @asynccontextmanager
-    async def log_stream_async(self, show_all_logs: bool = True):  # noqa: C901
+    async def log_stream_async(self, show_all_logs: bool = True, prefix: str | None = None):  # noqa: C901
+        """Stream the logs of the exporter to the `exporter:*` loggers.
+
+        prefix says where a line comes from when more than one exporter
+        streams its logs, as in a shell on a lease with members: each line
+        then starts with `[prefix] `.
+        """
+
         async def log_stream():  # noqa: C901
             reconnect_delay = 0.1  # Start with 100ms delay
             max_reconnect_delay = 2.0  # Max 2 seconds between reconnects
@@ -531,7 +538,8 @@ class AsyncDriverClient(Metadata):
 
                             # Log through logger for RichHandler formatting
                             source_logger = logging.getLogger(logger_name)
-                            source_logger.log(log_level, response.message)
+                            message = response.message if prefix is None else f"[{prefix}] {response.message}"
+                            source_logger.log(log_level, message)
 
                     # Stream ended normally (server closed it)
                     self.logger.debug("Log stream ended normally, attempting reconnect...")

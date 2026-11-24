@@ -16,12 +16,12 @@ from jumpstarter_driver_power.client import PowerClient
 from jumpstarter_driver_power.driver import MockPower
 from jumpstarter_protocol import client_pb2, jumpstarter_pb2, kubernetes_pb2
 
+from jumpstarter.client._members_testing import members_lease_pb, template_pb
 from jumpstarter.client.exceptions import LeaseError, LeaseMemberLostError
 from jumpstarter.client.grpc import Lease as LeaseModel
 from jumpstarter.client.grpc import LeaseMember as MemberModel
 from jumpstarter.client.grpc import LeaseTemplate
-from jumpstarter.client.grpc_members_test import members_lease_pb, template_pb
-from jumpstarter.client.lease import Lease, LeaseMembers, MembersLease, _MemberStub, member
+from jumpstarter.client.lease import Lease, LeaseMembers, LostMember, MembersLease, _MemberStub, member
 from jumpstarter.client.lease_test import MockAioRpcError
 from jumpstarter.common import ExporterStatus
 from jumpstarter.common.utils import serve
@@ -237,6 +237,15 @@ def make_lease(portal=None, **kwargs) -> Any:
     return lease
 
 
+DEGRADED = [condition("Ready", "False", "MemberLost"), condition("Degraded", "True", "MemberLost")]
+
+
+def bound_status(name="phone", exporter="rack3-phone-4"):
+    return client_pb2.LeaseMemberStatus(
+        name=name, state=client_pb2.LEASE_MEMBER_STATE_BOUND, exporter=f"namespaces/default/exporters/{exporter}"
+    )
+
+
 def lost_status(name="headunit", reason="Offline"):
     return client_pb2.LeaseMemberStatus(
         name=name,
@@ -347,6 +356,18 @@ class TestRequest:
             await scalar._acquire()
 
 
+    async def test_scalar_lease_object_rejects_a_degraded_lease_with_members(self):
+        # not Ready and never will be: the hint, and not an error about the state of the lease
+        scalar = object.__new__(Lease)
+        scalar.name = "lease-9m2qd"
+        scalar.acquisition_timeout = 30
+        scalar._get_with_retry = AsyncMock(
+            return_value=lease_model(statuses=[bound_status(), lost_status()], conditions=DEGRADED)
+        )
+        with pytest.raises(LeaseError, match="has members \\(phone, headunit\\), not one exporter.*env_members"):
+            await scalar._acquire()
+
+
 @pytest.mark.anyio
 class TestAcquire:
     async def _acquire(self, *polls, **kwargs):
@@ -439,6 +460,127 @@ class TestAcquire:
         assert lease.member_exporter("phone") is None
         assert lease.member_metadata()["phone"] is None
         lease.svc.GetExporter.assert_awaited_once_with(name="rack3-hu-2")
+
+
+@pytest.mark.anyio
+class TestAttachDegraded:
+    """An attach takes a degraded lease as it is; a request does not (*Lease state*)."""
+
+    async def _attach(self, *polls, **kwargs):
+        lease = make_lease(name="lease-9m2qd", release=False, **kwargs)
+        lease.get = AsyncMock(side_effect=list(polls))
+        with patch("jumpstarter.client.lease.sleep", AsyncMock()):
+            await lease.request_async()
+        return lease
+
+    async def test_attach_does_not_wait_for_ready(self, caplog):
+        degraded = lease_model(statuses=[bound_status(), lost_status()], conditions=DEGRADED)
+        with caplog.at_level("WARNING", logger="jumpstarter.client.lease"):
+            # one read to verify the lease, one poll: no wait
+            lease = await self._attach(degraded, degraded)
+        assert lease.attached
+        assert lease.get.await_count == 2
+        assert lease.member_exporter("phone") == "rack3-phone-4"
+        assert lease.member_exporter("headunit") is None
+        lost = lease.lost_member("headunit")
+        assert lost is not None and lost.reason == "Offline" and lease.lost_member("phone") is None
+        assert lease.lost == {
+            "headunit": "member 'headunit' lost its exporter rack3-headunit (Offline): no heartbeat for 60s"
+        }
+        # the metadata of the lost role still gives its exporter, with its labels
+        assert lease.member_metadata()["headunit"] == ExporterMetadata(
+            name="rack3-headunit", labels={"device-type": "x"}, lease="lease-9m2qd"
+        )
+        assert "Lease lease-9m2qd is degraded: member 'headunit' lost its exporter" in caplog.text
+        with pytest.raises(LeaseMemberLostError) as excinfo:
+            lease.raise_if_lost("headunit")
+        assert excinfo.value.role == "headunit" and excinfo.value.reason == "Offline"
+
+    async def test_lost_member_without_the_condition_is_degraded(self):
+        # an older controller, or a status that is written in two steps
+        degraded = lease_model(statuses=[bound_status(), lost_status()], conditions=[condition("Ready", "False")])
+        lease = await self._attach(degraded, degraded)
+        assert set(lease.lost) == {"headunit"}
+
+    async def test_attach_to_a_lease_that_comes_up_waits_for_ready(self):
+        pending = lease_model(statuses=[], conditions=[condition("Pending", "True", "NotAvailable", "no exporter")])
+        hooks = lease_model(conditions=[condition("Ready", "False", "BeforeLeaseHook", "waiting for: headunit")])
+        lease = await self._attach(pending, pending, hooks, lease_model(conditions=READY))
+        assert lease.get.await_count == 4
+        assert lease.lost == {} and lease.member_exporter("headunit") == "rack3-hu-2"
+
+    async def test_lease_that_degrades_during_the_wait_is_attached(self):
+        hooks = lease_model(conditions=[condition("Ready", "False", "BeforeLeaseHook", "waiting for: headunit")])
+        degraded = lease_model(statuses=[bound_status(), lost_status()], conditions=DEGRADED)
+        lease = await self._attach(hooks, hooks, degraded)
+        assert set(lease.lost) == {"headunit"}
+
+    async def test_attach_to_a_hook_failure_still_raises(self):
+        failed = lease_model(
+            conditions=[condition("Ready", "False", "BeforeLeaseHookFailed", "hook failed for: phone")]
+        )
+        with pytest.raises(LeaseError, match="beforeLease hook failed"):
+            await self._attach(failed, failed)
+
+    async def test_degraded_lease_that_ended_is_not_attached(self):
+        ended = members_lease_pb(statuses=[bound_status(), lost_status()], conditions=DEGRADED)
+        ended.effective_end_time.GetCurrentTime()
+        lease = make_lease(name="lease-9m2qd", release=False)
+        # the first read finds it alive; it ends before the poll
+        lease.get = AsyncMock(
+            side_effect=[lease_model(conditions=READY), LeaseModel.from_protobuf(ended)]
+        )
+        with pytest.raises(LeaseError, match="lease lease-9m2qd has already ended"):
+            await lease.request_async()
+
+    async def test_request_still_raises_on_a_lost_member_and_releases_its_lease(self):
+        lease = make_lease(template="ivi")
+        lease.svc.GetLeaseTemplate = AsyncMock(return_value=LeaseTemplate.from_protobuf(template_pb()))
+        lease.svc.CreateLease = AsyncMock(return_value=lease_model(name="ivi-4fj2k"))
+        lease.svc.DeleteLease = AsyncMock()
+        lease.get = AsyncMock(
+            return_value=lease_model(name="ivi-4fj2k", statuses=[bound_status(), lost_status()], conditions=DEGRADED)
+        )
+        with pytest.raises(LeaseError, match="lease ivi-4fj2k: member 'headunit' lost its exporter") as excinfo:
+            async with lease:
+                raise AssertionError("a request does not take a degraded lease")
+        assert not isinstance(excinfo.value, LeaseMemberLostError)
+        assert not lease.attached
+        lease.svc.DeleteLease.assert_awaited_once()
+        assert lease.svc.DeleteLease.call_args.kwargs["name"] == "ivi-4fj2k"
+
+    async def test_attach_serves_the_bound_roles_only(self):
+        degraded = lease_model(statuses=[bound_status(), lost_status()], conditions=DEGRADED)
+        lease = await self._attach(degraded, degraded)
+        lease.controller = Mock(Dial=AsyncMock(return_value=Mock()))
+        async with lease.serve_unix_async() as paths:
+            assert paths["phone"] and paths["headunit"] is None
+        assert [call.args[0].member_name for call in lease.controller.Dial.call_args_list] == ["phone"]
+
+    async def test_role_that_is_lost_between_the_attach_and_the_dial(self):
+        ready = lease_model(conditions=READY)
+        degraded = lease_model(statuses=[bound_status(), lost_status()], conditions=DEGRADED)
+        # the attach reads a Ready lease; the Dial of headunit is refused and the next read says Lost
+        lease = await self._attach(ready, ready, degraded)
+
+        async def dial(request, timeout=None):
+            if request.member_name == "headunit":
+                raise MockAioRpcError(grpc.StatusCode.FAILED_PRECONDITION, "member headunit is not ready: Lost")
+            return Mock()
+
+        lease.controller = Mock(Dial=dial)
+        async with lease.serve_unix_async() as paths:
+            assert paths["phone"] and paths["headunit"] is None
+        assert lease.lost_member("headunit") is not None
+
+    async def test_requesting_client_does_not_serve_past_a_lost_role(self):
+        lease = make_lease(name="lease-9m2qd")  # as after a request: not attached
+        lease._record(lease_model(conditions=READY))
+        lease.lost["headunit"] = "member 'headunit' lost its exporter rack3-hu-2 (Offline)"
+        lease.controller = Mock(Dial=AsyncMock(return_value=Mock()))
+        with pytest.raises(LeaseMemberLostError, match="member 'headunit' lost its exporter"):
+            async with lease.serve_unix_async():
+                pass
 
 
 @pytest.mark.anyio
@@ -535,7 +677,7 @@ class TestConnect:
     """connect() against real exporter sessions; only the controller tunnel is replaced."""
 
     @contextmanager
-    def _lease(self, members_class, *, phone_bound=True, headunit_children=None):
+    def _lease(self, members_class, *, phone_bound=True, headunit_children=None, headunit_lost=False):
         with ExitStack() as stack, start_blocking_portal() as portal:
             sockets = {}
             for role, children in (("phone", {"power": MockPower()}), ("headunit", headunit_children)):
@@ -555,6 +697,9 @@ class TestConnect:
                         exporter="namespaces/default/exporters/rack3-hu-2",
                     ),
                 ]
+            if headunit_lost:
+                statuses = [bound_status(), lost_status()]
+                lease.attached = True
             lease._record(lease_model(statuses=statuses))
             lease.member_labels = {"headunit": {"device-type": "headunit"}}
 
@@ -610,6 +755,47 @@ class TestConnect:
                 projection.headunit.power.on()
             # the other members stay usable
             projection.phone.power.on()
+
+
+    def test_attached_degraded_lease_gives_bound_roles_and_a_raising_lost_role(self):
+        # the exporter behind headunit has no `power`: a lost role is not compared with its member class
+        with self._lease(Projection, headunit_lost=True, headunit_children={"relay": MockPower()}) as lease:  # noqa: SIM117
+            with lease.connect() as projection:
+                assert type(projection) is Projection
+                projection.phone.power.on()
+                assert isinstance(projection.headunit, LostMember)
+                assert projection.by_role["headunit"] is projection.headunit
+                for use in (
+                    lambda: projection.headunit.power,
+                    lambda: projection.headunit.power.on(),
+                    lambda: projection.headunit.children,
+                    lambda: projection.headunit(),
+                    lambda: projection.headunit["power"],
+                ):
+                    with pytest.raises(
+                        LeaseMemberLostError,
+                        match="lease lease-9m2qd: member 'headunit' lost its exporter rack3-headunit \\(Offline\\)",
+                    ) as excinfo:
+                        use()
+                    assert excinfo.value.role == "headunit" and excinfo.value.reason == "Offline"
+                assert projection.metadata["headunit"] == ExporterMetadata(
+                    name="rack3-headunit", labels={"device-type": "headunit"}, lease="lease-9m2qd"
+                )
+                assert "LostMember 'headunit'" in repr(projection.headunit)
+                # the other members stay usable
+                projection.phone.power.off()
+
+    def test_attached_degraded_lease_with_plain_lease_members(self):
+        with self._lease(LeaseMembers, headunit_lost=True) as lease, lease.connect() as generic:
+            generic.by_role["phone"].power.on()
+            with pytest.raises(LeaseMemberLostError, match="member 'headunit' lost its exporter"):
+                generic.by_role["headunit"].power.on()
+
+    def test_lost_member_answers_introspection_as_usual(self):
+        lost = LostMember("headunit", "lease l: member 'headunit' lost its exporter", "Offline")
+        assert not hasattr(lost, "__wrapped__")
+        with pytest.raises(LeaseMemberLostError):
+            hasattr(lost, "close")
 
 
 @pytest.mark.anyio

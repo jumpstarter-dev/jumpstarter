@@ -7,6 +7,7 @@ import click
 import yaml
 
 from jumpstarter.client.base import DriverClient
+from jumpstarter.client.lease import LostMember
 from jumpstarter.config.env import JMP_LEASE, JMP_LEASE_MEMBERS
 from jumpstarter.utils.env import env_members
 
@@ -68,6 +69,10 @@ def export_mobly_testbed(lease_name: str) -> str:
     with env_members() as members:
         for role, client in members.by_role.items():
             if client is None:
+                continue
+            if isinstance(client, LostMember):
+                # A degraded lease keeps its other members: the testbed has the devices that are left.
+                click.echo(f"Warning: the member '{role}' lost its exporter; the testbed does not have it", err=True)
                 continue
             paths = find_adb_devices(client)
             if not paths:

@@ -301,9 +301,11 @@ class Lease(ContextManagerMixin, AsyncContextManagerMixin):
                     while True:
                         logger.debug("Polling Lease %s", self.name)
                         result = await self._get_with_retry()
+                        # A lease with members never becomes one exporter. Say so now:
+                        # a degraded one is not Ready, and would give a misleading state error.
+                        _reject_member_form(self.name, result)
                         # lease ready
                         if condition_true(result.conditions, "Ready"):
-                            _reject_member_form(self.name, result)
                             logger.debug("Lease %s acquired", self.name)
                             spinner.update_status(f"Lease {self.name} acquired successfully!", force=True)
                             self.exporter_name = result.exporter
@@ -773,6 +775,41 @@ def _check_drivers(owner: str, role: str, path: str, client: DriverClient, drive
         _check_drivers(owner, role, driver, child, spec.drivers)
 
 
+class LostMember:
+    """In the place of the client of a role whose member lost its exporter.
+
+    A client that attaches to a degraded lease gets this object for each
+    `Lost` role, and the clients of the other roles. Every use of it raises
+    `LeaseMemberLostError` with the role and the reason. Use
+    `isinstance(client, LostMember)` to test for it.
+    """
+
+    __slots__ = ("_description", "_reason", "_role")
+
+    def __init__(self, role: str, description: str, reason: str | None = None):
+        self._role = role
+        self._description = description
+        self._reason = reason
+
+    def _error(self) -> LeaseMemberLostError:
+        return LeaseMemberLostError(self._description, role=self._role, reason=self._reason)
+
+    def __getattr__(self, name: str) -> Any:
+        # Special names are what copy, pickle and inspect look for: they get the usual answer.
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        raise self._error()
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        raise self._error()
+
+    def __getitem__(self, key: Any) -> Any:
+        raise self._error()
+
+    def __repr__(self) -> str:
+        return f"<LostMember {self._role!r}: {self._description}>"
+
+
 class LeaseMembers:
     """The members of a lease: one driver client tree for each role.
 
@@ -801,8 +838,10 @@ class LeaseMembers:
     __lease_roles__: ClassVar[dict[str, _RoleSpec]] = {}
 
     #: Each role of the lease and its client. None for a role without an exporter.
-    by_role: Mapping[str, DriverClient | None]
+    #: A `LostMember` for a role that lost its exporter: every use of it raises.
+    by_role: "Mapping[str, DriverClient | LostMember | None]"
     #: Each role of the lease and its exporter. None for a role without an exporter.
+    #: A role that lost its exporter keeps the metadata of that exporter.
     metadata: "Mapping[str, ExporterMetadata | None]"
 
     def __init_subclass__(cls, template: str | None = None, **kwargs: Any) -> None:
@@ -815,11 +854,12 @@ class LeaseMembers:
 
     def __init__(
         self,
-        clients: Mapping[str, DriverClient | None],
+        clients: "Mapping[str, DriverClient | LostMember | None]",
         metadata: "Mapping[str, ExporterMetadata | None]",
     ) -> None:
         for role, client in clients.items():
-            if client is not None:
+            # A lost role has no exporter to compare with its member class.
+            if client is not None and not isinstance(client, LostMember):
                 self.check_client(role, client)
         self.by_role = types.MappingProxyType(dict(clients))
         self.metadata = types.MappingProxyType(dict(metadata))
@@ -926,6 +966,8 @@ class MembersLease[M: LeaseMembers](Lease):
     member_statuses: dict[str, LeaseMemberStatus] = field(default_factory=dict, init=False)
     member_labels: dict[str, dict[str, str]] = field(default_factory=dict, init=False)
     lost: dict[str, str] = field(default_factory=dict, init=False)  # Role to the reason, once it is known
+    # Whether this object attached to a lease that existed. Such a client takes a degraded lease as it is.
+    attached: bool = field(default=False, init=False)
 
     @property
     def roles(self) -> list[str]:
@@ -935,6 +977,11 @@ class MembersLease[M: LeaseMembers](Lease):
         """The exporter of a role, or None when the role has none."""
         status = self.member_statuses.get(role)
         return status.exporter if status is not None and status.bound else None
+
+    def lost_member(self, role: str) -> LeaseMemberStatus | None:
+        """The status of a role that lost its exporter, or None for any other role."""
+        status = self.member_statuses.get(role)
+        return status if status is not None and status.lost else None
 
     async def _create(self):
         template = self.template if self.template is not None else self.members_class.__lease_template__
@@ -984,9 +1031,16 @@ class MembersLease[M: LeaseMembers](Lease):
     async def request_async(self):
         """Request the lease, or attach to it when it has a name.
 
+        A request waits for Ready, and a lost member or a failed hook ends
+        it. An attach does not wait for Ready when the lease is degraded:
+        `connect()` then gives the bound roles, and a `LostMember` for each
+        lost role.
+
         :raises TypeError: the members class does not agree with the template
-        :raises LeaseError: the lease cannot be satisfied, a member is lost, or a beforeLease hook failed
+        :raises LeaseError: the lease cannot be satisfied, or, for a request, a member is lost or a
+            beforeLease hook failed
         """
+        self.attached = bool(self.name)
         if self.name:
             logger.debug("using existing lease via env or flag %s", self.name)
             existing_lease = await self.get()
@@ -1004,13 +1058,25 @@ class MembersLease[M: LeaseMembers](Lease):
         self.owner = lease.client
         self.lease_members = list(lease.members)
         self.member_statuses = {status.name: status for status in lease.member_statuses}
+        self._note_lost(lease)
+
+    def _note_lost(self, lease) -> None:
         for status in lease.lost_members():
             self.lost[status.name] = status.describe_loss()
+            self.member_statuses[status.name] = status
 
-    def _raise_for_failure(self, result) -> None:
-        """Stop the wait for a state that cannot become Ready (DD-16)."""
+    @staticmethod
+    def _degraded(result) -> bool:
+        return condition_true(result.conditions, "Degraded") or bool(result.lost_members())
+
+    def _raise_for_failure(self, result, *, degraded_attach: bool = False) -> None:
+        """Stop the wait for a state that cannot become Ready (DD-16).
+
+        degraded_attach is an attach to a degraded lease: it is used as it
+        is, so only a lease that holds no exporters stops it.
+        """
         lost = result.lost_members()
-        if lost:
+        if lost and not degraded_attach:
             raise LeaseError(f"lease {self.name}: {'; '.join(status.describe_loss() for status in lost)}")
         if condition_true(result.conditions, "Unsatisfiable"):
             message = condition_message(result.conditions, "Unsatisfiable")
@@ -1018,11 +1084,13 @@ class MembersLease[M: LeaseMembers](Lease):
         if condition_true(result.conditions, "Invalid"):
             message = condition_message(result.conditions, "Invalid")
             raise LeaseError(f"the lease is invalid: {message}")
+        if result.effective_end_time:
+            raise LeaseError(f"lease {self.name} has already ended")
+        if degraded_attach:
+            return
         if condition_present_and_equal(result.conditions, "Ready", "False", "BeforeLeaseHookFailed"):
             message = condition_message(result.conditions, "Ready") or "a beforeLease hook failed"
             raise LeaseError(f"lease {self.name}: beforeLease hook failed (BeforeLeaseHookFailed): {message}")
-        if result.effective_end_time:
-            raise LeaseError(f"lease {self.name} has already ended")
         if (
             condition_false(result.conditions, "Ready")
             and not condition_true(result.conditions, "Pending")
@@ -1032,14 +1100,27 @@ class MembersLease[M: LeaseMembers](Lease):
             raise LeaseError(f"lease {self.name}: {message}")
 
     async def _acquire(self):
-        """Wait until the lease is Ready: each required member is bound and each beforeLease hook is complete."""
+        """Wait until the lease is Ready: each required member is bound and each beforeLease hook is complete.
+
+        An attach does not wait for a degraded lease, which cannot become Ready (*Lease state*).
+        """
         try:
             with fail_after(self.acquisition_timeout):
                 with LeaseAcquisitionSpinner(self.name) as spinner:
                     while True:
                         logger.debug("Polling Lease %s", self.name)
                         result = await self._get_with_retry()
-                        self._raise_for_failure(result)
+                        degraded = self.attached and self._degraded(result)
+                        self._raise_for_failure(result, degraded_attach=degraded)
+                        if degraded:
+                            self._record(result)
+                            reasons = "; ".join(self.lost.values()) or condition_message(result.conditions, "Degraded")
+                            spinner.update_status(f"Lease {self.name} is degraded", force=True)
+                            logger.warning(
+                                "Lease %s is degraded: %s. The other members stay usable.", self.name, reasons
+                            )
+                            await self._fetch_member_labels()
+                            break
                         if condition_true(result.conditions, "Ready"):
                             logger.debug("Lease %s acquired", self.name)
                             spinner.update_status(f"Lease {self.name} acquired successfully!", force=True)
@@ -1066,7 +1147,8 @@ class MembersLease[M: LeaseMembers](Lease):
 
     async def _fetch_member_labels(self):
         for role, status in self.member_statuses.items():
-            if not status.bound or status.exporter is None:
+            # The exporter of a lost role still has its labels, for the metadata of that role.
+            if not (status.bound or status.lost) or not status.exporter:
                 continue
             try:
                 exporter = await self.svc.GetExporter(name=status.exporter)
@@ -1077,9 +1159,18 @@ class MembersLease[M: LeaseMembers](Lease):
 
     def raise_if_lost(self, role: str) -> None:
         """Raise when the role is known to have lost its exporter."""
-        reason = self.lost.get(role)
-        if reason is not None:
-            raise LeaseMemberLostError(f"lease {self.name}: {reason}")
+        error = self._lost_error(role)
+        if error is not None:
+            raise error
+
+    def _lost_error(self, role: str) -> LeaseMemberLostError | None:
+        description = self.lost.get(role)
+        if description is None:
+            return None
+        status = self.lost_member(role)
+        return LeaseMemberLostError(
+            f"lease {self.name}: {description}", role=role, reason=status.reason if status is not None else None
+        )
 
     async def refresh_lost(self, role: str) -> None:
         """Read the lease again, and raise when the role lost its exporter."""
@@ -1088,8 +1179,7 @@ class MembersLease[M: LeaseMembers](Lease):
         except Exception:
             logger.debug("Could not check the members of lease %s", self.name, exc_info=True)
             return
-        for status in lease.lost_members():
-            self.lost[status.name] = status.describe_loss()
+        self._note_lost(lease)
         self.raise_if_lost(role)
 
     async def _on_dial_failed_precondition(self, member_name: str | None) -> None:
@@ -1109,33 +1199,45 @@ class MembersLease[M: LeaseMembers](Lease):
         """Serve one local Unix socket for each role that has an exporter.
 
         Yields a mapping from each role to its socket path. The value is None
-        for a role without an exporter.
+        for a role without an exporter. After an attach, that includes a
+        role that lost its exporter; `lost_member()` tells the two apart.
         """
         async with AsyncExitStack() as stack:
             directory = stack.enter_context(TemporaryDirectory(dir=xdg_runtime_dir(), prefix="jumpstarter-"))
             paths: dict[str, str | None] = {}
             for index, role in enumerate(self.roles):
                 exporter = self.member_exporter(role)
-                if exporter is None:
+                if exporter is None or (self.attached and role in self.lost):
                     paths[role] = None
                     continue
                 self.raise_if_lost(role)
-                path = await stack.enter_async_context(
-                    self._serve_tunnel(role, exporter, self._socket_path(directory, index, role))
-                )
+                try:
+                    path = await stack.enter_async_context(
+                        self._serve_tunnel(role, exporter, self._socket_path(directory, index, role))
+                    )
+                except LeaseMemberLostError:
+                    # The role was lost after the attach read the lease: the other roles stay usable.
+                    if not self.attached:
+                        raise
+                    paths[role] = None
+                    continue
                 paths[role] = str(path)
             yield paths
 
     def member_metadata(self) -> "dict[str, ExporterMetadata | None]":
-        """The exporter of each role. None for a role without an exporter."""
+        """The exporter of each role. None for a role without an exporter.
+
+        A role that lost its exporter keeps the metadata of that exporter.
+        """
         from jumpstarter.utils.env import ExporterMetadata
 
         metadata: dict[str, ExporterMetadata | None] = {}
         for role in self.roles:
-            exporter = self.member_exporter(role)
+            status = self.member_statuses.get(role)
+            exporter = status.exporter if status is not None and (status.bound or status.lost) else None
             metadata[role] = (
                 ExporterMetadata(name=exporter, labels=dict(self.member_labels.get(role, {})), lease=self.name)
-                if exporter is not None
+                if exporter
                 else None
             )
         return metadata
@@ -1144,10 +1246,11 @@ class MembersLease[M: LeaseMembers](Lease):
     async def connect_async(self, stack):
         self.members_class.check_members(self.lease_members, f"the lease '{self.name}'")
         async with self.serve_unix_async() as paths, AsyncExitStack() as clients_stack:
-            clients: dict[str, DriverClient | None] = {}
+            clients: dict[str, DriverClient | LostMember | None] = {}
             for role, path in paths.items():
                 if path is None:
-                    clients[role] = None
+                    error = self._lost_error(role)
+                    clients[role] = LostMember(role, error.message, error.reason) if error is not None else None
                     continue
                 client = await clients_stack.enter_async_context(
                     client_from_path(path, self.portal, stack, allow=self.allow, unsafe=self.unsafe)

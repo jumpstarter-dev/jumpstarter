@@ -17,9 +17,9 @@ from jumpstarter_cli.members import MemberRequest, parse_member_request
 from jumpstarter_cli.mobly import ADB_DEVICE_CLIENT, build_testbed, export_mobly_testbed, find_adb_devices
 from jumpstarter_cli.update import update_lease
 
+from jumpstarter.client._members_testing import members_lease_pb, template_pb
 from jumpstarter.client.exceptions import ControllerTooOldError
 from jumpstarter.client.grpc import Lease, LeaseConstraint, LeaseMember, LeaseTemplate, LeaseTemplateList
-from jumpstarter.client.grpc_members_test import members_lease_pb, template_pb
 from jumpstarter.config.env import JMP_LEASE, JMP_LEASE_MEMBERS
 
 
@@ -423,6 +423,20 @@ class TestMobly:
         headunit_port = devices[1]["serial"].split(":")[1]
         assert f"j phone adb connect -P {phone_port} &" in captured.err
         assert f"j headunit dut adb connect -P {headunit_port} &" in captured.err
+
+    def test_lost_member_is_left_out_with_a_warning(self, monkeypatch, capsys):
+        from jumpstarter.client.lease import LostMember
+
+        text = self._export(
+            monkeypatch,
+            {
+                "phone": fake_client(adb=fake_client(ADB_DEVICE_CLIENT)),
+                "headunit": LostMember("headunit", "role 'headunit' is lost: Offline", "Offline"),
+            },
+        )
+        [testbed] = yaml.safe_load(text)["TestBeds"]
+        assert [d["label"] for d in testbed["Controllers"]["AndroidDevice"]] == ["phone"]
+        assert "Warning: the member 'headunit' lost its exporter" in capsys.readouterr().err
 
     def test_no_member_with_adb(self, monkeypatch):
         with pytest.raises(click.ClickException, match="no member of lease lease-9m2qd has an ADB device driver"):
