@@ -493,8 +493,17 @@ func (r *JumpstarterReconciler) reconcileObservability(ctx context.Context, js *
 	if !serviceMonitorEnabled(js) {
 		// Prune any monitors left by a previous configuration without probing
 		// for the optional CRD. A missing CRD has no monitors to prune.
-		if err := r.reconcileServiceMonitors(ctx, js); err != nil {
-			errs = append(errs, fmt.Errorf("service monitors: %w", err))
+		if monitorErr := r.reconcileServiceMonitors(ctx, js); monitorErr != nil {
+			errs = append(errs, fmt.Errorf("service monitors: %w", monitorErr))
+			// The prune failed, so owned monitors may still be scraped: report
+			// the failure instead of a clean Disabled.
+			return serviceMonitorResult{
+				reason: serviceMonitorReasonFailed,
+				message: fmt.Sprintf(
+					"failed to remove ServiceMonitors while autodiscovery is disabled: %v",
+					monitorErr,
+				),
+			}, errors.Join(errs...)
 		}
 		if metricsErr != nil {
 			return serviceMonitorResult{

@@ -162,6 +162,38 @@ func TestReconcileObservabilityReportsMetricsServiceFailure(t *testing.T) {
 	}
 }
 
+// A failed ServiceMonitor prune while autodiscovery is disabled must not be
+// reported as a clean Disabled condition: owned monitors may still be scraped.
+func TestReconcileObservabilityReportsServiceMonitorCleanupFailureWhenDisabled(t *testing.T) {
+	s := newObservabilityScheme(t)
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.ServiceMonitor = new(false)
+
+	owned := &unstructured.Unstructured{}
+	owned.SetGroupVersionKind(serviceMonitorGVK)
+	owned.SetName(metricsServiceName(js, "controller"))
+	owned.SetNamespace(js.Namespace)
+	owned.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(js, operatorv1alpha1.GroupVersion.WithKind("Jumpstarter")),
+	})
+
+	base := fake.NewClientBuilder().WithScheme(s).WithObjects(owned).Build()
+	r := &JumpstarterReconciler{Client: &deleteConflictClient{Client: base}, Scheme: s}
+
+	result, err := r.reconcileObservability(context.Background(), js)
+	if err == nil {
+		t.Fatal("reconcileObservability should report the ServiceMonitor cleanup failure for retry")
+	}
+	ready, reason, message := result.condition()
+	if ready || reason != serviceMonitorReasonFailed {
+		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
+	}
+	if !strings.Contains(message, "ServiceMonitors") || !strings.Contains(message, "disabled") {
+		t.Fatalf("message %q must name the cleanup failure and the disabled context", message)
+	}
+}
+
 // A foreign metrics Service must not stop cleanup of the owned one.
 func TestReconcileMetricsServicesContinuesCleanupAfterForeignService(t *testing.T) {
 	s := newObservabilityScheme(t)
