@@ -185,7 +185,7 @@ func TestReconcileObservabilityReportsServiceMonitorCleanupFailureWhenDisabled(t
 	if err == nil {
 		t.Fatal("reconcileObservability should report the ServiceMonitor cleanup failure for retry")
 	}
-	ready, reason, message := result.condition()
+	ready, reason, message := result.serviceMonitor.condition()
 	if ready || reason != serviceMonitorReasonFailed {
 		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
 	}

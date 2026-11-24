@@ -17,6 +17,7 @@ limitations under the License.
 package jumpstarter
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,8 +25,11 @@ import (
 	"testing"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 )
 
@@ -213,5 +217,40 @@ func TestPrometheusRulesValidate(t *testing.T) {
 	out, err := exec.Command(promtool, "check", "rules", path).CombinedOutput()
 	if err != nil {
 		t.Fatalf("promtool check rules failed: %v\n%s", err, out)
+	}
+}
+
+// A failed prune while the rules are disabled must not be reported as a clean
+// Disabled condition: owned rules may still be evaluated.
+func TestReconcilePrometheusRulesReportsPruneFailureWhenDisabled(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add operator scheme: %v", err)
+	}
+
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.PrometheusRules = new(false)
+
+	owned := &unstructured.Unstructured{}
+	owned.SetGroupVersionKind(prometheusRuleGVK)
+	owned.SetName("jumpstarter-starter-alerts")
+	owned.SetNamespace(js.Namespace)
+	owned.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(js, operatorv1alpha1.GroupVersion.WithKind("Jumpstarter")),
+	})
+
+	base := fake.NewClientBuilder().WithScheme(s).WithObjects(owned).Build()
+	r := &JumpstarterReconciler{Client: &deleteConflictClient{Client: base}, Scheme: s}
+
+	result, err := r.reconcilePrometheusRules(context.Background(), js)
+	if err == nil {
+		t.Fatal("reconcilePrometheusRules should report the prune failure for retry")
+	}
+	if result.reason != serviceMonitorReasonFailed {
+		t.Fatalf("reason = %q, want %s", result.reason, serviceMonitorReasonFailed)
+	}
+	if !strings.Contains(result.message, "PrometheusRules") || !strings.Contains(result.message, "disabled") {
+		t.Fatalf("message %q must name the cleanup failure and the disabled context", result.message)
 	}
 }

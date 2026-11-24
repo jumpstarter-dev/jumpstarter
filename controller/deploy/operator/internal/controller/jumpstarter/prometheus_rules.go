@@ -202,7 +202,15 @@ func (r *JumpstarterReconciler) reconcilePrometheusRules(ctx context.Context, js
 			message: "starter PrometheusRules are disabled by spec.telemetry.metrics.prometheusRules",
 		}
 		if err := r.prunePrometheusRules(ctx, js, nil); err != nil {
-			return result, fmt.Errorf("prometheus rules: %w", err)
+			// The prune failed, so owned rules may still be evaluated: report the
+			// failure instead of a clean Disabled.
+			return integrationResult{
+				reason: serviceMonitorReasonFailed,
+				message: fmt.Sprintf(
+					"failed to remove starter PrometheusRules while they are disabled: %v",
+					err,
+				),
+			}, fmt.Errorf("prometheus rules: %w", err)
 		}
 		return result, nil
 	}

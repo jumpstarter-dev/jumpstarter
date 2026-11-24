@@ -283,6 +283,41 @@ func TestReconcilePersesDashboardsDisabled(t *testing.T) {
 	}
 }
 
+// A failed prune while dashboards are disabled must not be reported as a clean
+// Disabled condition: owned dashboards may still be served.
+func TestReconcilePersesDashboardsReportsPruneFailureWhenDisabled(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add operator scheme: %v", err)
+	}
+
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.Dashboards = new(false)
+
+	owned := &unstructured.Unstructured{}
+	owned.SetGroupVersionKind(persesDashboardGVK)
+	owned.SetName("jumpstarter-overview")
+	owned.SetNamespace(js.Namespace)
+	owned.SetOwnerReferences([]metav1.OwnerReference{
+		*metav1.NewControllerRef(js, operatorv1alpha1.GroupVersion.WithKind("Jumpstarter")),
+	})
+
+	base := fake.NewClientBuilder().WithScheme(s).WithObjects(owned).Build()
+	r := &JumpstarterReconciler{Client: &deleteConflictClient{Client: base}, Scheme: s}
+
+	result, err := r.reconcilePersesDashboards(context.Background(), js)
+	if err == nil {
+		t.Fatal("reconcilePersesDashboards should report the prune failure for retry")
+	}
+	if result.reason != serviceMonitorReasonFailed {
+		t.Fatalf("reason = %q, want %s", result.reason, serviceMonitorReasonFailed)
+	}
+	if !strings.Contains(result.message, "dashboards") || !strings.Contains(result.message, "disabled") {
+		t.Fatalf("message %q must name the cleanup failure and the disabled context", result.message)
+	}
+}
+
 func TestDashboardCRDUnavailableMessage(t *testing.T) {
 	tests := []struct {
 		name   string

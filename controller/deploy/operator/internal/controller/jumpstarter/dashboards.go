@@ -381,7 +381,15 @@ func (r *JumpstarterReconciler) reconcilePersesDashboards(ctx context.Context, j
 			message: "Perses dashboards are disabled by spec.telemetry.metrics.dashboards",
 		}
 		if err := r.prunePersesDashboards(ctx, js, nil); err != nil {
-			return result, fmt.Errorf("perses dashboards: %w", err)
+			// The prune failed, so owned dashboards may still be served: report
+			// the failure instead of a clean Disabled.
+			return integrationResult{
+				reason: serviceMonitorReasonFailed,
+				message: fmt.Sprintf(
+					"failed to remove Perses dashboards while they are disabled: %v",
+					err,
+				),
+			}, fmt.Errorf("perses dashboards: %w", err)
 		}
 		return result, nil
 	}
