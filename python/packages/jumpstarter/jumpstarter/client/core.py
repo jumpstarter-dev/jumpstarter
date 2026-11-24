@@ -449,6 +449,11 @@ class AsyncDriverClient(Metadata):
             if error := _console_in_use_error(exc.code(), exc.details()):
                 raise error from None
             raise
+        except BaseException:
+            # Unlike a cancelled read, a cancelled wait for the initial metadata
+            # leaves the grpc.aio call, and the exporter's side of it, running.
+            context.cancel()
+            raise
         # An exporter that aborts before sending headers (e.g. console in use)
         # resolves initial_metadata() empty rather than raising; the status only
         # surfaces on the first read, which RouterStream turns into a generic
