@@ -27,6 +27,16 @@ export:
       log_level: DEBUG
 ```
 
+The driver-specific keys of each `config:` block come from the driver class.
+`jmp driver schema` lists them for every driver installed in the local Python
+environment, and `-o json` or `-o yaml` returns them as JSON Schema, together
+with the driver's client class, for editor completion and validation of
+exporter configurations:
+
+```console
+$ jmp driver schema TcpNetwork -o yaml
+```
+
 ## Types of Drivers
 
 Jumpstarter includes several types of drivers organized by their primary
