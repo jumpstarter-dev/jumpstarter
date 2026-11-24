@@ -491,6 +491,10 @@ class BridgeHalf:
         self.opened_by = "device" if self._device_asked else "bridge"
         self.fresh = self._told_complete = self._explained = False
         self._call_failures, self._call_after = 0, 0.0
+        if self.far_pairing in ("failed", "unavailable"):
+            # That was said of an earlier try (a half says its call failed after it has said the link is gone).
+            # What the far half says of this one comes after it has heard of this link.
+            self.far_pairing = None
         self._to(LINKED, f"the {self.opened_by} opened a link")
         if not self.identity.address:
             # The device called before anyone said where it is: now it is known, and the far half is told.
@@ -504,9 +508,12 @@ class BridgeHalf:
             self._start(self._ask_name, connection)
         connection.on("connection_encryption_change", self._encryption_changed)
         connection.on("connection_authentication", lambda: self._made_secure("the link is authenticated"))
-        connection.on("pairing", lambda _keys: self._made_secure("the device paired with the bridge"))
+        # A pairing is made when its key is: an Android that pairs from its settings does only that, and hangs
+        # up (it comes back for what it wants of the other device). It does not wait to encrypt the link.
+        connection.on("link_key", lambda: self._made_secure("a key was made with the device"))
+        connection.on("classic_pairing", lambda: self._made_secure("the device paired with the bridge"))
         connection.on("connection_authentication_failure", self._not_made_secure)
-        connection.on("pairing_failure", self._not_made_secure)
+        connection.on("classic_pairing_failure", self._not_made_secure)
         connection.on("disconnection", self.left)
         self.release()
 

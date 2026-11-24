@@ -229,6 +229,13 @@ class Air:
     def in_reach(self) -> None:
         self.device_controller.deaf = False
 
+    async def bond(self, address: str | None = None) -> None:
+        """What an Android does when a person picks the other device in its settings: it calls, pairs, and
+        hangs up. It does not encrypt the link: it comes back later for what it wants of the other device."""
+        link = await self.device.connect(address or self.bridge_address, transport=PhysicalTransport.BR_EDR, timeout=5)
+        await link.authenticate()
+        await link.disconnect()
+
     async def pair(self, address: str | None = None):
         """What a person does in the device's settings: pick the other device, which calls it, pairs and
         encrypts the link. Gives the link."""

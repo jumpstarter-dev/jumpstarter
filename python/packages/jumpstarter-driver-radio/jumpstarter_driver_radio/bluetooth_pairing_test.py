@@ -141,10 +141,17 @@ async def test_when_the_other_person_refuses_nothing_is_paired_on_either_side():
         assert "did not pair" in beside_phone.status()["last_error"]
         assert beside_head_unit.status()["call_backoff"] == 0  # (it answered: it may be called again at once)
 
-        # Nothing is left in the way of trying again.
-        head_unit.dialog.answer = True
+        # Nothing is left in the way of trying again: not the refusal either, which the far half said last
+        # of all (after it had said its link was gone), and which is not an answer to the next try.
+        beside_phone.far_pairing = "failed"  # (as on rootcanal, where it is said after the hang-up)
+        phone.dialog.answer = head_unit.dialog.answer = None
         async with anyio.create_task_group() as tasks:
-            attempt = await Attempt(tasks, phone).finished()
+            attempt = Attempt(tasks, phone)
+            await until(lambda: phone.dialog.shown == 2 and head_unit.dialog.shown == 2)
+            head_unit.dialog.press(True)  # (this time the called device's person is the first to agree)
+            await until(lambda: beside_phone.far_pairing == "complete")
+            phone.dialog.press(True)
+            await attempt.finished()
         assert attempt.error is None
         await until(lambda: beside_phone.paired() and beside_head_unit.paired())
 
@@ -316,3 +323,31 @@ async def test_a_device_that_takes_the_lead_of_a_link_it_was_called_on_has_not_o
             await attempt.finished()
         assert attempt.error is None
         await until(lambda: beside_phone.paired() and beside_head_unit.paired())
+
+
+@pytest.mark.parametrize("starts", ["phone", "head unit"])
+async def test_a_device_that_pairs_and_hangs_up_as_an_android_does_is_paired_all_the_same(starts):
+    bridged, phone, head_unit, beside_phone, beside_head_unit = await bridged_and_on_air()
+    first, other = (phone, head_unit) if starts == "phone" else (head_unit, phone)
+    phone.dialog.answer = head_unit.dialog.answer = None
+    async with running(beside_phone, beside_head_unit), joined(beside_phone, beside_head_unit):
+        await until(lambda: beside_phone.device and beside_head_unit.device)
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(first.bond)
+            await until(lambda: phone.dialog.shown == 1 and head_unit.dialog.shown == 1)
+            other.dialog.press(True)
+            await anyio.sleep(0.2)
+            first.dialog.press(True)
+        # It paired and hung up without ever encrypting the link. Both pairings stand: each device and its
+        # half keep the same key, and the other device is hung up on, as the conversation is over.
+        await hung_up(phone, head_unit)
+        await until(lambda: len(kept(beside_phone)) == 1 and len(kept(beside_head_unit)) == 1)
+        assert phone.keys() == kept(beside_phone) and head_unit.keys() == kept(beside_head_unit)
+        assert beside_phone.status()["bonded"] and beside_head_unit.status()["bonded"]
+        assert beside_phone.status()["last_error"] == "" and beside_head_unit.status()["last_error"] == ""
+
+        # It comes back for what it wants: nobody is asked again.
+        link = await phone.pair()
+        await until(lambda: beside_phone.paired() and beside_head_unit.paired())
+        await bridged.phone_uses_the_service(link)
+        assert (phone.dialog.shown, head_unit.dialog.shown) == (1, 1)
