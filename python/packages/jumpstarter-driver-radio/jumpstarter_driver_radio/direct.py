@@ -37,6 +37,8 @@ _HEADERS = {
     0x04: (2, 1, 1),  # event: code, length
     0x05: (4, 2, 2),  # ISO data: handle, length (14 bits)
 }
+# Read BD_ADDR: what a path is asked first, to know that a controller is at its far end.
+_READ_ADDRESS = bytes.fromhex("01091000")
 _GONE = (anyio.EndOfStream, anyio.BrokenResourceError, anyio.ClosedResourceError, OSError)
 
 
@@ -147,7 +149,9 @@ class RemoteController(RadioInterface, Driver):
     and Cuttlefish stops the whole device with it. So this driver listens where the connector dials
     (``guest``), keeps that connection for as long as the device runs, and is itself the client of the forward
     (``listen``, where the exporter listens for it). Between the two it passes whole H4 packets only: a path
-    that is cut in the middle of a packet leaves neither side out of step.
+    that is cut in the middle of a packet leaves neither side out of step. A connection to the forward is a
+    path once the controller at its far end has answered (it is asked its address); what the device says
+    before that is said to nobody.
 
     A path that comes back is a new controller, which knows nothing of what the device's Bluetooth stack had
     set up in the old one. With ``adb`` set, the device's Bluetooth is then switched off and on, which is
@@ -160,11 +164,8 @@ class RemoteController(RadioInterface, Driver):
     guest: str = "127.0.0.1:7301"
     # Where the exporter listens for this driver's connections to the far controller (the port's `listen`).
     listen: str = "127.0.0.1:7311"
-    # Seconds before a path that is not there, or went away, is looked for again ...
+    # Seconds before a path that is not there, or went away, is looked for again.
     retry: float = 1.0
-    # ... and seconds a path has to last before it counts as one. (The exporter takes a connection before it
-    # knows whether the far end can be reached.)
-    settle: float = 2.0
     # The device as the ADB server of this exporter knows it (`127.0.0.1:6520`), to switch its Bluetooth off
     # and on when the controller is a new one. None: nothing is done, and a test has to.
     adb: str | None = None
@@ -184,7 +185,7 @@ class RemoteController(RadioInterface, Driver):
     # nobody (`_dropped`).
     _carried: int = field(init=False, default=0, repr=False)
     _dropped: int = field(init=False, default=0, repr=False)
-    _unsettled: int = field(init=False, default=0, repr=False)
+    _controller: str = field(init=False, default="", repr=False)
     _heard: int = field(init=False, default=0, repr=False)
     _sent: int = field(init=False, default=0, repr=False)
     _paths: int = field(init=False, default=0, repr=False)
@@ -221,7 +222,7 @@ class RemoteController(RadioInterface, Driver):
                 # One device, one connector: a second connection is the device made anew.
                 await self._device.aclose()
             self._device = stream
-            self._carried = self._dropped = self._unsettled = 0
+            self._carried = self._dropped = 0
             self.logger.info("Bluetooth: the device's connector is here")
             buffer = bytearray()
             try:
@@ -234,13 +235,9 @@ class RemoteController(RadioInterface, Driver):
                         continue
                     try:
                         await far.send(packet)
+                        self._carried += 1
                     except _GONE:
                         self._dropped += 1
-                        continue
-                    if self._joined:
-                        self._carried += 1
-                    else:
-                        self._unsettled += 1  # (carried if the path lasts, said to nobody if it does not)
             except _GONE:
                 pass
             except NotH4 as error:
@@ -259,53 +256,58 @@ class RemoteController(RadioInterface, Driver):
             while True:
                 try:
                     async with await anyio.connect_tcp(host, port) as far, anyio.create_task_group() as path:
-                        self._far = far
-                        path.start_soon(self._path_lasted)
                         try:
-                            await self._from_far(far)
+                            await self._path(far, path)
+                        except _GONE as error:
+                            self._error = str(error) or type(error).__name__
+                        except NotH4 as error:
+                            self._error = str(error)
+                            self.logger.warning("Bluetooth: the far controller: %s", error)
                         finally:
                             self._far = None
-                            self._dropped, self._unsettled = self._dropped + self._unsettled, 0
                             if self._joined:
                                 self._joined = False
                                 self.logger.info("Bluetooth: the path to the far controller went away")
                             path.cancel_scope.cancel()
-                except _GONE as error:
+                except _GONE as error:  # (no connection, or one that could not be closed)
                     self._error = str(error) or type(error).__name__
                 await anyio.sleep(self.retry)
 
-    async def _from_far(self, far: ByteStream) -> None:
+    async def _path(self, far: ByteStream, tasks: TaskGroup) -> None:
+        """One connection to the forward. The exporter takes it before it knows whether the far end can be
+        reached, so the controller is asked its address first: a path is one when it has answered. Until
+        then the device is not on it."""
         buffer = bytearray()
-        try:
-            while True:
-                packet = await read_packet(far, buffer)
-                device = self._device
-                if device is None:
-                    continue
-                try:
-                    await device.send(packet)
-                    self._sent += 1
-                except _GONE:
-                    pass
-        except _GONE:
-            pass
-        except NotH4 as error:
-            self._error = str(error)
-            self.logger.warning("Bluetooth: the far controller: %s", error)
-
-    async def _path_lasted(self) -> None:
+        await far.send(_READ_ADDRESS)
+        while True:
+            packet = await read_packet(far, buffer)
+            if packet[:2] == b"\x04\x0e" and packet[4:6] == _READ_ADDRESS[1:3]:
+                break
+        self._controller = ":".join(f"{byte:02X}" for byte in reversed(packet[7:13]))
         # What the stack had said before this path is what tells whether it has to start again.
         carried, dropped = self._carried, self._dropped
-        await anyio.sleep(self.settle)
+        self._far = far
         self._joined = True
-        self._carried, self._unsettled = self._carried + self._unsettled, 0
         self._paths += 1
         self._error = ""
         self.logger.info("Bluetooth: the path to the far controller is open")
-        if self.adb is None or not (carried or dropped):
-            return  # (a device that has said nothing yet finds its controller by itself)
+        if self.adb is not None and (carried or dropped):
+            tasks.start_soon(self._new_controller, carried > 0)
+        # (a device that has said nothing yet finds its controller by itself)
+        while True:
+            packet = await read_packet(far, buffer)
+            device = self._device
+            if device is None:
+                continue
+            try:
+                await device.send(packet)
+                self._sent += 1
+            except _GONE:
+                pass
+
+    async def _new_controller(self, was_set_up: bool) -> None:
         try:
-            await self._restart_bluetooth(was_set_up=carried > 0)
+            await self._restart_bluetooth(was_set_up=was_set_up)
             self._restarts += 1
         except Exception as error:  # noqa: BLE001 - the device is off or booting: its stack starts by itself
             self.logger.info("Bluetooth: the device's Bluetooth was not restarted: %s", error)
@@ -363,15 +365,17 @@ class RemoteController(RadioInterface, Driver):
     @export
     async def status(self) -> dict:
         """``attached``: the device's connector is here (the device is powered on). ``peer``: the path to the
-        far controller is open. ``paths``: how many there have been; ``restarts``: how often the device's
-        Bluetooth was switched off and on for a new one. ``heard`` counts the packets the device said,
-        ``carried`` those of them a controller was given, ``dropped`` those said to nobody, ``sent`` what the
-        device was told. ``last_error``: why there is no path."""
+        far controller is open, and ``controller`` is the address it has there. ``paths``: how many there
+        have been; ``restarts``: how often the device's Bluetooth was switched off and on for a new one.
+        ``heard`` counts the packets the device said, ``carried`` those of them a controller was given,
+        ``dropped`` those said to nobody, ``sent`` what the device was told. ``last_error``: why there is no
+        path."""
         return {
             "running": self._dialing is not None,
             "listening": self._listening,
             "attached": self._device is not None,
             "peer": self._joined,
+            "controller": self._controller if self._joined else "",
             "paths": self._paths,
             "restarts": self._restarts,
             "heard": self._heard,

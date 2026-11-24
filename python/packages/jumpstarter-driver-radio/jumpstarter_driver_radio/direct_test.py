@@ -11,6 +11,8 @@ from .driver import port_reports
 
 RESET = bytes.fromhex("01030c00")  # HCI Reset
 RESET_DONE = bytes.fromhex("040e0401030c00")  # Command Complete (Reset)
+READ_ADDRESS = bytes.fromhex("01091000")
+ADDRESS = bytes.fromhex("040e0a010910000117de104cda")  # Command Complete: DA:4C:10:DE:17:01
 ACL = bytes.fromhex("02012005000100040041")  # handle 0x2001, 5 bytes
 
 
@@ -113,13 +115,17 @@ class Forward:
     async def _connected(self, stream) -> None:
         async with stream:
             if not self.reachable:
-                return  # (taken, then dropped: the far end is not there)
+                await anyio.sleep(0.05)  # (taken, held, then dropped: the far end is not there)
+                return
             self.connections += 1
             self.streams.append(stream)
             buffer = bytearray()
             try:
                 while True:
                     packet = await read_packet(stream, buffer)
+                    if packet == READ_ADDRESS:
+                        await stream.send(ADDRESS)
+                        continue
                     self.heard.append(packet)
                     if packet == RESET:
                         await stream.send(RESET_DONE[:3])  # (in two pieces: the driver passes whole packets)
@@ -145,7 +151,7 @@ async def test_a_device_keeps_its_connector_while_the_path_comes_and_goes():
     forward = Forward(free_port())
     restarts: list[bool] = []
     radio = RemoteController(
-        guest=f"127.0.0.1:{free_port()}", listen=f"127.0.0.1:{forward.port}", retry=0.02, settle=0.05, adb="device"
+        guest=f"127.0.0.1:{free_port()}", listen=f"127.0.0.1:{forward.port}", retry=0.02, adb="device"
     )
 
     async def restart(*, was_set_up: bool) -> None:
@@ -160,6 +166,7 @@ async def test_a_device_keeps_its_connector_while_the_path_comes_and_goes():
             await until(lambda: radio._joined)
             status = await radio.status()
             assert status["running"] and status["listening"] and status["peer"] and not status["attached"]
+            assert status["controller"] == "DA:4C:10:DE:17:01"
             assert restarts == []
 
             async with await anyio.connect_tcp(guest_host, int(guest_port)) as connector:
@@ -204,7 +211,7 @@ async def test_a_device_that_only_ever_talked_to_nobody_is_switched_on_not_off_a
     forward.reachable = False
     commands: list[tuple[str, ...]] = []
     radio = RemoteController(
-        guest=f"127.0.0.1:{free_port()}", listen=f"127.0.0.1:{forward.port}", retry=0.02, settle=0.05, adb="device"
+        guest=f"127.0.0.1:{free_port()}", listen=f"127.0.0.1:{forward.port}", retry=0.02, adb="device"
     )
 
     async def adb(*arguments: str) -> str:
