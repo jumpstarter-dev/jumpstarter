@@ -24,6 +24,8 @@ import (
 	"net"
 	"os"
 
+	"github.com/gin-gonic/gin"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
@@ -128,7 +130,13 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "controller"))
-	// gin release mode is set by the login service when it starts its engine.
+	// Set the Gin mode once, before any manager Runnable builds an engine.
+	// gin.SetMode writes a package-level variable that gin.New reads, and the
+	// login, dashboard and OIDC services start concurrently: setting it from a
+	// service would race with the others and could leave an engine in debug
+	// mode, whose route lines are written to stdout and break the JSONL
+	// contract.
+	gin.SetMode(gin.ReleaseMode)
 	klog.SetLogger(ctrl.Log.WithName("klog"))
 
 	// Print version information
