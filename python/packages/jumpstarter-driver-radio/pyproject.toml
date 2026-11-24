@@ -7,15 +7,19 @@ license = "Apache-2.0"
 authors = [{ name = "Kirk Brauer" }]
 requires-python = ">=3.11"
 dependencies = [
+    "anyio>=4.10.0",
+    "bumble>=0.0.233",
     "click>=8.0.0",
     "jumpstarter",
     "jumpstarter-driver-composite",
-    "jumpstarter-driver-network",
     "pydantic>=2.8.2",
 ]
 
 [project.entry-points."jumpstarter.drivers"]
+ControllerBluetooth = "jumpstarter_driver_radio.bluetooth:ControllerBluetooth"
+GatewayWifi = "jumpstarter_driver_radio.gateway:GatewayWifi"
 MockRadio = "jumpstarter_driver_radio.driver:MockRadio"
+RootcanalBluetooth = "jumpstarter_driver_radio.bluetooth:RootcanalBluetooth"
 WmediumdWifi = "jumpstarter_driver_radio.wmediumd:WmediumdWifi"
 
 [tool.hatch.version]

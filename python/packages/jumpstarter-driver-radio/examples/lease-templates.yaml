@@ -1,0 +1,81 @@
+# Lease templates that join radios with forwards (JEP-0016). The members are found by their labels; the ports
+# are those the radio drivers declare (see the exporter configurations beside this file).
+#
+#   jmp create lease --template phone-headunit
+#
+# A forward's endpoints may be in any order: the controller takes each port's direction from its exporter.
+---
+# Virtual to virtual: a Cuttlefish phone and a Cuttlefish head unit on one air, Wi-Fi and Bluetooth.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: phone-headunit
+  namespace: jumpstarter-lab
+spec:
+  description: "A virtual phone and a virtual head unit whose Wi-Fi and Bluetooth are joined"
+  members:
+    - name: phone
+      selector: { matchLabels: { type: phone } }
+    - name: headunit
+      selector: { matchLabels: { type: head-unit } }
+  forwards:
+    # Two `connects` ports make a path: each end runs its bridge beside its own medium.
+    - name: wifi
+      endpoints:
+        - { member: phone, port: hwsim }
+        - { member: headunit, port: hwsim }
+    # The two halves of the Bluetooth bridge: each is a device in its own radio, under the other's name.
+    - name: bluetooth
+      endpoints:
+        - { member: phone, port: bluetooth }
+        - { member: headunit, port: bluetooth }
+  defaults:
+    duration: 45m
+---
+# Virtual to virtual, Bluetooth only.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: phone-headunit-bluetooth
+  namespace: jumpstarter-lab
+spec:
+  description: "A virtual phone and a virtual head unit whose Bluetooth is joined"
+  members:
+    - name: phone
+      selector: { matchLabels: { type: phone } }
+    - name: headunit
+      selector: { matchLabels: { type: head-unit } }
+  forwards:
+    - name: bluetooth
+      endpoints:
+        - { member: phone, port: bluetooth }
+        - { member: headunit, port: bluetooth }
+  defaults:
+    duration: 45m
+---
+# Physical to virtual: a tablet on a bench, with an edge gateway beside it, and a Cuttlefish head unit.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: tablet-headunit
+  namespace: jumpstarter-lab
+spec:
+  description: "A physical tablet and a virtual head unit: real Bluetooth, and one service over real Wi-Fi"
+  members:
+    - name: tablet
+      selector: { matchLabels: { type: tablet } }
+    - name: headunit
+      selector: { matchLabels: { type: head-unit } }
+  forwards:
+    # A real controller beside the tablet and the head unit's virtual radio: the same bridge, the same path.
+    - name: bluetooth
+      endpoints:
+        - { member: tablet, port: bluetooth }   # connects (ControllerBluetooth)
+        - { member: headunit, port: bluetooth } # connects (RootcanalBluetooth)
+    # What the tablet connects to on the test Wi-Fi is a service inside the head unit.
+    - name: web
+      endpoints:
+        - { member: headunit, port: web }        # provides (TcpNetwork)
+        - { member: tablet, port: wifi-service } # requires (GatewayWifi)
+  defaults:
+    duration: 45m

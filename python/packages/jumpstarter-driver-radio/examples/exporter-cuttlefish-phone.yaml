@@ -1,0 +1,36 @@
+# A virtual Android phone (Cuttlefish) with its two radios as ports.
+#
+# The radio drivers declare their ports themselves (`hwsim` and `bluetooth`): no `ports` key is needed.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: cuttlefish-phone
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  cuttlefish:
+    type: jumpstarter_driver_cuttlefish.driver.Cuttlefish
+    config:
+      env_config:
+        instances:
+          - vm: { cpus: 4, memory_mb: 4096 }
+  android:
+    type: jumpstarter_driver_adb.driver.AdbDevice
+    config:
+      address: 127.0.0.1:6520
+      transport: tcp
+  # Wi-Fi: a frame bridge beside the device's simulated medium. Port `hwsim` (connects, ieee80211-frames).
+  wifi:
+    type: jumpstarter_driver_radio.wmediumd.WmediumdWifi
+    config:
+      port: 7310
+  # Bluetooth: one half of a bridge, on the virtual radio's HCI port. Port `bluetooth` (connects,
+  # bt-l2cap-bridge). A test says the device's real name and address with `set_identity` once it has asked
+  # the device; what is here is what the other device sees until then.
+  bluetooth:
+    type: jumpstarter_driver_radio.bluetooth.RootcanalBluetooth
+    config:
+      name: Cuttlefish phone
+      class_of_device: 0x5A020C # a smartphone
+      port: 7300 # --hci_port: 7300 + instance_num - 1

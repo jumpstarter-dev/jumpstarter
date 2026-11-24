@@ -42,6 +42,7 @@ class FakeMedium:
         self.thread.start()
 
     def _exactly(self, size: int) -> bytes:
+        assert self.client is not None
         data = b""
         while len(data) < size:
             chunk = self.client.recv(size - len(data))
@@ -92,6 +93,7 @@ class FakeMedium:
         )
         message = struct.pack("<IHHII", 16 + len(body), 0x23, 1, 1, 0) + body
         self.acknowledged.clear()
+        assert self.client is not None
         self.client.sendall(struct.pack("<II", MSG_NETLINK, len(message)) + message)
         return self.acknowledged.wait(timeout)
 
@@ -106,8 +108,25 @@ class FakeMedium:
 
 
 @pytest.fixture
-def medium():
+def media():
+    """As many media as a test asks for: one for each device."""
+    made: list[FakeMedium] = []
     with tempfile.TemporaryDirectory(prefix="wm") as directory:  # (short: a unix socket path has a length limit)
-        fake = FakeMedium(os.path.join(directory, "api"))
-        yield fake
-        fake.close()
+
+        def make() -> FakeMedium:
+            made.append(FakeMedium(os.path.join(directory, f"api{len(made)}")))
+            return made[-1]
+
+        yield make
+        for fake in made:
+            fake.close()
+
+
+@pytest.fixture
+def medium(media):
+    return media()
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

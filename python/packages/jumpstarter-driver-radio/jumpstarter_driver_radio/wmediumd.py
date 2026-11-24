@@ -3,35 +3,77 @@ import os
 import subprocess
 import sys
 import threading
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from jumpstarter_driver_network.driver import TcpNetwork
+import anyio
+from anyio.abc import ObjectStream, SocketStream
 
-from .common import RadioPort
-from .driver import RadioInterface
-from jumpstarter.driver import Driver, export
+from .driver import RadioInterface, only_port, port_reports
+from jumpstarter.driver import Driver, Port, PortDirection, export
 
 AGENT = Path(__file__).with_name("wmediumd_agent.py")
+
+
+PROTOCOL = "ieee80211-frames"
 
 
 class FrameBridgeError(Exception):
     pass
 
 
+class _FramePort(ObjectStream[bytes]):
+    """The bridge's frame port, for one forwarded connection.
+
+    It connects when the exporter first reads or writes it, which is when the far end has joined the path, and
+    it waits for a bridge that is not up yet. So the bridge has a peer only while there is one, and a path
+    that opens before the bridge is started (or across a power cycle of the device) is not opened and closed
+    over and over while it waits.
+    """
+
+    def __init__(self, address: tuple[str, int], retry: float) -> None:
+        self.address, self.retry = address, retry
+        self.stream: SocketStream | None = None
+        self.opening = anyio.Lock()
+
+    async def _open(self) -> SocketStream:
+        async with self.opening:
+            while self.stream is None:
+                try:
+                    self.stream = await anyio.connect_tcp(*self.address)
+                except OSError:
+                    await anyio.sleep(self.retry)
+            return self.stream
+
+    async def send(self, item: bytes) -> None:
+        await (await self._open()).send(item)
+
+    async def receive(self) -> bytes:
+        return await (await self._open()).receive()
+
+    async def send_eof(self) -> None:
+        if self.stream is not None:
+            await self.stream.send_eof()
+
+    async def aclose(self) -> None:
+        if self.stream is not None:
+            await self.stream.aclose()
+
+
 @dataclass(kw_only=True)
 class WmediumdWifi(RadioInterface, Driver):
     """The Wi-Fi of a device whose medium is wmediumd (Cuttlefish, or any ``mac80211_hwsim`` setup that uses it).
 
-    The driver runs a small bridge beside the medium and offers its frame port, ``hwsim``, as the child
-    ``frames``: a TCP stream of length-prefixed 802.11 frames. Joining the ``hwsim`` ports of two devices puts
-    their Wi-Fi on one air.
+    The driver runs a small bridge beside the medium and declares its frame port, ``hwsim``: a ``connects``
+    port that carries a stream of length-prefixed 802.11 frames. A forward between the ``hwsim`` ports of two
+    devices is a path, and puts their Wi-Fi on one air.
     """
 
     # The medium's API socket, a glob. It is looked for until it is there, so the bridge may be started before
     # the device is powered on, and finds the medium again after a power cycle.
     api_socket: str = "/tmp/cf_env_*/env-*/wmediumd_api_server"
-    # Where the frame port listens. Loopback: it is reached through the lease, or by a forward.
+    # Where the bridge's frame port listens. Loopback: the exporter connects to it for the forward.
     host: str = "127.0.0.1"
     port: int = 7310
     # A station of the medium's configuration that no device uses: the bridge sends as it. Cuttlefish
@@ -44,15 +86,26 @@ class WmediumdWifi(RadioInterface, Driver):
     # jumpstarter-exec over this launcher socket (as the provisioners set it up). Empty: run it here.
     launcher_socket: str = field(default_factory=lambda: os.environ.get("JUMPSTARTER_LAUNCHER_SOCKET", ""))
     python: str = "python3"
+    # Seconds between looks for a bridge that is not up, while a path waits for it.
+    retry: float = 1.0
 
     _process: subprocess.Popen | None = field(init=False, default=None, repr=False)
     _state: dict = field(init=False, default_factory=dict, repr=False)
     _reader: threading.Thread | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self):
-        if hasattr(super(), "__post_init__"):
-            super().__post_init__()
-        self.children["frames"] = TcpNetwork(host=self.host, port=self.port)
+        if not self.ports:
+            self.ports = [Port(name="hwsim", direction=PortDirection.CONNECTS, protocol=PROTOCOL)]
+        super().__post_init__()
+        only_port(self, bridged=True)
+
+    def port_address(self, port: Port) -> tuple[str, int] | None:
+        return port.connect_address or (self.host, self.port)
+
+    @asynccontextmanager
+    async def connect_port(self, port: Port):
+        async with _FramePort(self.port_address(port), self.retry) as frames:  # ty: ignore[invalid-argument-type]
+            yield frames
 
     def _argv(self) -> list[str]:
         options = [
@@ -118,8 +171,8 @@ class WmediumdWifi(RadioInterface, Driver):
         return {"running": True, **self._state}
 
     @export
-    def ports(self) -> list[RadioPort]:
-        return [RadioPort(name="hwsim", direction="connects", protocol="ieee80211-frames", child="frames")]
+    def declared_ports(self) -> list[dict]:
+        return port_reports(self)
 
     def close(self):
         self.stop()

@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from . import wmediumd_agent
 from .wmediumd import AGENT
 from .wmediumd_agent import (
     ATTR_ADDR_TRANSMITTER,
@@ -42,6 +43,7 @@ def bridge(medium):
         stdout=subprocess.PIPE, text=True,
     )  # fmt: skip
     try:
+        assert process.stdout is not None
         port = json.loads(process.stdout.readline())["port"]
         assert medium.registered.wait(5) and medium.hears_all.wait(5)
         yield port
@@ -155,3 +157,20 @@ def test_a_new_connection_replaces_the_old_one(medium, bridge):
 def test_a_record_that_is_not_a_frame_closes_the_connection(medium, peer):
     peer.sendall(struct.pack(">I", 1 << 30))
     assert peer.recv(1) == b""
+
+
+def test_a_frame_that_waited_too_long_for_a_peer_is_not_sent_to_it(medium, monkeypatch):
+    bridge = wmediumd_agent.Bridge(medium.path, ("127.0.0.1", 0), HERE, [])
+    try:
+        bridge.peer = socket.socket()  # (a peer that is there, and is not reading)
+        clock = [1000.0]
+        monkeypatch.setattr(wmediumd_agent.time, "monotonic", lambda: clock[0])
+        bridge.heard(2437, frame(BROADCAST, HERE, b"old"))
+        clock[0] += wmediumd_agent.MAX_AGE + 1
+        bridge.heard(2437, frame(BROADCAST, HERE, b"new"))
+        assert bridge.next_record()
+        assert bytes(bridge.outgoing) == frame_record(2437, frame(BROADCAST, HERE, b"new"))
+        assert bridge.stats["dropped"] == 1 and bridge.backlog == 0
+    finally:
+        bridge.peer.close()
+        bridge.listener.close()

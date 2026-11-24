@@ -3304,10 +3304,11 @@ dev = [
 name = "jumpstarter-driver-radio"
 source = { editable = "packages/jumpstarter-driver-radio" }
 dependencies = [
+    { name = "anyio" },
+    { name = "bumble" },
     { name = "click" },
     { name = "jumpstarter" },
     { name = "jumpstarter-driver-composite" },
-    { name = "jumpstarter-driver-network" },
     { name = "pydantic" },
 ]
 
@@ -3319,10 +3320,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "bumble", specifier = ">=0.0.233" },
     { name = "click", specifier = ">=8.0.0" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
-    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "pydantic", specifier = ">=2.8.2" },
 ]
 

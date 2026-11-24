@@ -1,22 +1,29 @@
-from typing import Literal
-
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
-class RadioPort(BaseModel):
-    """A connection point of a radio, in the terms of JEP-0015's ports.
+class BluetoothIdentity(BaseModel):
+    """What a device is on the air: the three things another device sees of it before they pair."""
 
-    ``provides``: something listens here and a far end may dial it. ``requires``: this side dials, and a far
-    end has to be delivered to it. ``connects``: neither side leads, and two such ports form one path.
-    """
+    model_config = ConfigDict(frozen=True)
 
     name: str
-    direction: Literal["provides", "requires", "connects"]
-    # What crosses the port, for whoever joins two of them: only ports that speak the same may be joined.
-    protocol: str
-    # stream: a byte stream (TCP). datagram and frame are named by JEP-0015 and not carried by its forwards yet.
-    transport: Literal["stream", "datagram", "frame"] = "stream"
-    # socket: reachable as a socket on the exporter. wired and wireless are physical, and cannot be forwarded.
-    attachment: Literal["socket", "wired", "wireless"] = "socket"
-    # The child driver through which the port is reached over a lease, until forwards join ports themselves.
-    child: str | None = None
+    # The device's own Bluetooth address, as ``AA:BB:CC:DD:EE:FF``. Empty when it is not known: the bridge
+    # then cannot call the device, and learns the address when the device calls.
+    address: str = ""
+    # The 24-bit class of device: what kind of thing it says it is (a phone, a car's audio).
+    class_of_device: int = 0x001F00
+
+    @field_validator("address")
+    @classmethod
+    def _valid_address(cls, address: str) -> str:
+        address = address.strip().upper()
+        if address and (len(address) != 17 or len(bytes.fromhex(address.replace(":", ""))) != 6):
+            raise ValueError(f"'{address}' is not a Bluetooth address (AA:BB:CC:DD:EE:FF)")
+        return address
+
+    @field_validator("class_of_device")
+    @classmethod
+    def _valid_class(cls, value: int) -> int:
+        if not 0 <= value < 1 << 24:
+            raise ValueError("a class of device has 24 bits")
+        return value

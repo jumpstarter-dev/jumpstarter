@@ -16,6 +16,7 @@ Standard library only: it is run with the Python of whatever container the mediu
 from __future__ import annotations
 
 import argparse
+import collections
 import glob
 import hashlib
 import json
@@ -35,6 +36,7 @@ ATTR_TX_INFO, ATTR_COOKIE, ATTR_FREQ = 7, 8, 19
 
 MAX_RECORD = 1 << 16
 MAX_BACKLOG = 4 << 20  # what a slow peer may leave unsent before frames are dropped, as a radio drops them
+MAX_AGE = 2.0  # seconds a frame may wait for a peer that does not read: after that it is no longer on the air
 
 
 def mac(text: str) -> bytes:
@@ -167,7 +169,9 @@ class Bridge:
         self.medium: Medium | None = None
         self.peer: socket.socket | None = None
         self.incoming = bytearray()
-        self.outgoing = bytearray()
+        self.outgoing = bytearray()  # the record being written to the peer
+        self.waiting = collections.deque()  # the records after it: (the time it was heard, the record)
+        self.backlog = 0
         self.remote: set[bytes] = set()  # the addresses of the stations on the far side
         self.recent: list[bytes] = []  # the last frames heard: the medium gives a copy for each listener
         self.stats = {"heard": 0, "sent": 0, "dropped": 0}
@@ -224,10 +228,12 @@ class Bridge:
         self.stats["heard"] += 1
         if self.peer is None:
             return
-        if len(self.outgoing) > MAX_BACKLOG:
+        if self.backlog > MAX_BACKLOG:
             self.stats["dropped"] += 1
             return
-        self.outgoing += frame_record(freq, frame)
+        record = frame_record(freq, frame)
+        self.waiting.append((time.monotonic(), record))
+        self.backlog += len(record)
 
     # ---- the far side ----------------------------------------------------------------------------
 
@@ -246,6 +252,8 @@ class Bridge:
             self.report("peer-lost")
         self.incoming.clear()
         self.outgoing.clear()
+        self.waiting.clear()
+        self.backlog = 0
 
     def read_peer(self) -> None:
         assert self.peer is not None
@@ -277,8 +285,22 @@ class Bridge:
         self.medium.transmit(freq, frame)
         self.stats["sent"] += 1
 
+    def next_record(self) -> bool:
+        """Take the next records to write. One that waited too long is dropped whole: a peer that was not
+        reading (a path that was not open yet) does not get old air when it starts to."""
+        while len(self.outgoing) < MAX_RECORD and self.waiting:
+            heard, record = self.waiting.popleft()
+            self.backlog -= len(record)
+            if time.monotonic() - heard > MAX_AGE:
+                self.stats["dropped"] += 1
+                continue
+            self.outgoing += record
+        return bool(self.outgoing)
+
     def write_peer(self) -> None:
         assert self.peer is not None
+        if not self.next_record():
+            return
         try:
             sent = self.peer.send(self.outgoing)
         except BlockingIOError:
@@ -294,7 +316,7 @@ class Bridge:
         if self.medium is None:
             self.find_medium()
         readable = [self.listener] + [s for s in (self.medium, self.peer) if s is not None]
-        writable = [self.peer] if self.peer is not None and self.outgoing else []
+        writable = [self.peer] if self.peer is not None and (self.outgoing or self.waiting) else []
         ready, ready_to_write, _ = select.select(readable, writable, [], timeout)
         if self.medium is not None and self.medium in ready:
             try:
