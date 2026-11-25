@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -57,6 +58,7 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "router"))
 	logger := ctrl.Log.WithName("router")
+	klog.SetLogger(logger.WithName("klog"))
 	ctx := logr.NewContext(context.Background(), logger)
 
 	// Print version information

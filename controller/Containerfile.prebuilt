@@ -3,13 +3,21 @@
 # BIN selects which binary becomes the default entrypoint.
 # COPY ${BIN} /entrypoint works because COPY supports ARG expansion,
 # while ENTRYPOINT does not (and ubi-micro has no shell for shell-form).
+#
+# The intermediate files stage is the only place that normalizes executable
+# bits for host-compiled binaries, independent of the caller's umask. Direct
+# image builds and the Makefile targets both rely on it.
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.9-1795198179@sha256:08d4c70f1baf6537a0728656cf7942d561e74a35916509d205b6519861266352 AS certs
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi-minimal:9.9-1795198179@sha256:08d4c70f1baf6537a0728656cf7942d561e74a35916509d205b6519861266352 AS files
+ARG BIN
+COPY . /stage/
+RUN test -n "${BIN}" && chmod 0755 /stage/* "/stage/${BIN}"
 FROM registry.access.redhat.com/ubi9/ubi-micro:9.9-1794478307@sha256:dbd325b96bcd432dd42816d31412bdf1dc0fb973b79ed310344bc23c76c068db
 ARG BIN
 WORKDIR /
 COPY --from=certs /etc/pki/tls/certs/ca-bundle.crt /etc/pki/tls/certs/ca-bundle.crt
-COPY . .
+COPY --from=files /stage/ /
 # ENTRYPOINT can't expand ARG; fixed path lets one file serve all three images
-COPY ${BIN} /entrypoint
+COPY --from=files /stage/${BIN} /entrypoint
 USER 65532:65532
 ENTRYPOINT ["/entrypoint"]

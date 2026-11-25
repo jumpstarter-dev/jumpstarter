@@ -65,6 +65,7 @@ func init() {
 
 	// Register cert-manager API for certificate management
 	utilruntime.Must(certmanagerv1.AddToScheme(scheme))
+
 	// +kubebuilder:scaffold:scheme
 }
 

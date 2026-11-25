@@ -2460,6 +2460,23 @@ spec:
                             60s
                           rule: duration(self) > duration('0s') && duration(self)
                             <= duration('60s')
+                      serviceMonitor:
+                        default: true
+                        description: |-
+                          ServiceMonitor controls creation of Prometheus ServiceMonitor resources and
+                          the metrics Services they select. Requires the monitoring.coreos.com/v1
+                          ServiceMonitor CRD; when the CRD is absent the metrics Services are still
+                          created and ServiceMonitors are skipped.
+                        type: boolean
+                      serviceMonitorLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Additional labels to add to generated ServiceMonitors. Use this to match
+                          the Prometheus Operator's serviceMonitorSelector (for example,
+                          release: kube-prometheus-stack).
+                        maxProperties: 16
+                        type: object
                     type: object
                   replicas:
                     default: 1

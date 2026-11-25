@@ -83,13 +83,17 @@ demo-play:
 # ---- Documentation targets ----
 
 .PHONY: docs docs-singlehtml docs-all docs-serve docs-serve-all docs-linkcheck \
-	docs-test docs-test-grpc docs-check-grpc docs-generate-crds docs-generate-grpc clean-docs
+	docs-test docs-test-grpc docs-check-grpc docs-check-observability \
+	docs-generate-crds docs-generate-grpc clean-docs
 
 docs-generate-crds:
 	$(UV_DOCS) python3 ../docs/source/reference/generate-crd-docs.py
 
 docs-generate-grpc:
 	$(UV_DOCS) python3 ../docs/source/reference/generate_grpc_docs.py
+
+docs-check-observability:
+	@./docs/hack/check-observability-docs.sh
 
 docs: docs-generate-crds docs-generate-grpc
 	$(UV_DOCS) $(MAKE) -C ../docs html SPHINXOPTS="-W --keep-going -n"

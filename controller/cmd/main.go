@@ -24,6 +24,8 @@ import (
 	"net"
 	"os"
 
+	"github.com/gin-gonic/gin"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
@@ -35,6 +37,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -127,6 +130,14 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)).WithValues("component", "controller"))
+	// Set the Gin mode once, before any manager Runnable builds an engine.
+	// gin.SetMode writes a package-level variable that gin.New reads, and the
+	// login, dashboard and OIDC services start concurrently: setting it from a
+	// service would race with the others and could leave an engine in debug
+	// mode, whose route lines are written to stdout and break the JSONL
+	// contract.
+	gin.SetMode(gin.ReleaseMode)
+	klog.SetLogger(ctrl.Log.WithName("klog"))
 
 	// Print version information
 	setupLog.Info("Jumpstarter Controller starting",
