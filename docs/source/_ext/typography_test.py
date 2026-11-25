@@ -1,5 +1,13 @@
+from docutils import nodes
 from docutils.core import publish_doctree
-from typography import allowed_for, disallowed_characters, findings
+from typography import (
+    allowed_for,
+    dash_findings,
+    disallowed_characters,
+    findings,
+    prose_dashes,
+    use_ascii_field_separators,
+)
 
 
 def test_plain_ascii_passes():
@@ -31,3 +39,27 @@ def test_a_document_can_allow_extra_characters():
     per_document = {"index": "\U0001f9ea"}
     assert allowed_for("index", "\u26a1", per_document) == "\u26a1\U0001f9ea"
     assert allowed_for("glossary", "\u26a1", per_document) == "\u26a1"
+
+
+def test_a_double_hyphen_between_words_is_a_dash():
+    assert prose_dashes("the off method--the same action") == [14]
+
+
+def test_a_spaced_double_hyphen_is_a_dash():
+    assert prose_dashes("command enums -- e.g. on/off") == [14]
+
+
+def test_cli_flags_are_not_dashes():
+    assert prose_dashes("only effective with --name/-n, see (--help)") == []
+
+
+def test_dashes_are_reported_in_prose_only():
+    doctree = publish_doctree("Calls the method--the same.\n\n``a--b``\n\n::\n\n    j shell -- ls\n")
+    assert [node.astext() for node in dash_findings(doctree)] == ["Calls the method--the same."]
+
+
+def test_sphinx_field_separators_become_a_spaced_hyphen():
+    paragraph = nodes.paragraph("", "", nodes.strong(text="host"), nodes.Text(" -- "), nodes.Text("Hostname"))
+    use_ascii_field_separators(paragraph)
+    assert paragraph.astext() == "host - Hostname"
+    assert list(dash_findings(paragraph)) == []
