@@ -1,17 +1,17 @@
 # Files
 
-This page describes configuration files used in Jumpstarter, including their
+This page describes config files used in Jumpstarter, including their
 format, location, related environment variables, and management commands.
 
 Jumpstarter follows a specific hierarchy when loading configurations. See
 [Loading Order](loading-order.md) for details on how configurations from
 different sources are prioritized.
 
-Jumpstarter saves the user, client, and {term}`exporter` configuration files
+Jumpstarter saves the user, client, and {term}`exporter` config files
 atomically and with mode `600`, since client and {term}`exporter` configs hold
 tokens.
 
-## User Configuration
+## User Config
 
 **File**: `config.yaml`  
 **Location**: `/home/<user>/.config/jumpstarter/config.yaml`  
@@ -28,11 +28,11 @@ config:
 
 **CLI Commands**: The current client selection can be changed using: `jmp config client use <alias>`
 
-## Client Configuration
+## Client Config
 
-**File**: All valid client configuration files with a `.yaml` extension.  
+**File**: All valid client config files with a `.yaml` extension.  
 **Location**: `/home/<user>/.config/jumpstarter/clients/*.yaml`  
-**Description**: Stores client configurations including endpoints, access
+**Description**: Stores client configs including endpoints, access
 tokens, and driver settings.
 
 **Format**:
@@ -79,7 +79,7 @@ only supply values that the loaded client config file leaves out. When neither
 `JMP_NAMESPACE` are set, the CLI builds the client config from these variables
 instead of loading the current client. See [Loading Order](loading-order.md).
 
-**Shell Session Variables** (automatically set by `jmp shell`):
+**Exporter Shell Variables** (automatically set by `jmp shell`):
 
 - `JMP_LEASE` - Active lease name (enables reconnection via `JMP_LEASE=<name> jmp shell`)
 - `JMP_EXPORTER` - Name of the connected exporter
@@ -107,13 +107,13 @@ the previous behavior should explicitly pass
 `ClientConfigV1Alpha1.CLIENT_CONFIGS_PATH / f"{config.alias}.yaml"` as the
 destination.
 
-## Exporter Configuration
+## Exporter Config
 
-**File**: All valid {term}`exporter` configuration files with a `.yaml` extension  
+**File**: All valid {term}`exporter` config files with a `.yaml` extension  
 **Location**: `~/.config/jumpstarter/exporters/*.yaml` (per-user) or `/etc/jumpstarter/exporters/*.yaml` (system-wide)
 
 **Description**: Defines {term}`exporter` settings including connection details and
-driver configurations.
+driver configs.
 
 Exporter configs created via the CLI default to the per-user location. Both the per-user and
 system locations are searched when loading, with the per-user path taking precedence. The user
@@ -203,7 +203,7 @@ proxy environment variables are set:
 
 - `http_proxy` - Proxy for `http://` URLs
 - `https_proxy` - Proxy for `https://` URLs and for {term}`gRPC` connections
-- `no_proxy` - Comma-separated host names, domain suffixes and addresses to reach directly
+- `no_proxy` - Comma-separated hostnames, domain suffixes and addresses to reach directly
 
 This covers the {term}`gRPC` connection to the {term}`controller`, `jmp login`,
 and the HTTP requests made by Jumpstarter and its drivers, such as an exporter

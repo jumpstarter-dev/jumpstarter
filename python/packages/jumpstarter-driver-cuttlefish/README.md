@@ -90,7 +90,7 @@ bt_peer `transport` in the exporter config to match.
 
 For local development, when running the exporter on your workstation
 instead of as a pod, tunnel ports from the VM. This works because
-`--network=host` places netsim and rootcanal on the VM's loopback -
+`--network=host` places netsim and RootCanal on the VM's loopback -
 the tunnel's `localhost` target reaches them directly.
 
 ```bash
@@ -102,7 +102,7 @@ ssh -L 2080:localhost:2080 \
 ```
 
 In production, the exporter runs as a pod and the `host` config
-points to the cuttlefish VM's address directly - no tunnel needed.
+points to the Cuttlefish VM's address directly - no tunnel needed.
 
 ### Resetting stale state
 
@@ -129,7 +129,7 @@ j power off --destroy          # deletes the CVD
 
 ## Configuration
 
-Example exporter configuration:
+Example exporter config:
 
 ```yaml
 export:
@@ -189,8 +189,8 @@ This is a **composite driver** with three core children and two optional display
 - **turn** — TCP endpoint for the TURN relay, when provisioned
 
 The exporter config also typically includes sibling drivers:
-- **netsim** (`jumpstarter-driver-netsim`) — virtual radio control (BLE, WiFi, UWB) via netsim REST API
-- **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + rootcanal HCI
+- **netsim** (`jumpstarter-driver-netsim`) — virtual radio control (BLE, Wi-Fi, UWB) via netsim REST API
+- **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + RootCanal HCI
 
 Use `ref:` entries in the exporter config to expose children at the top level.
 

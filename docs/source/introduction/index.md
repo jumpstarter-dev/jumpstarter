@@ -135,7 +135,7 @@ flowchart TB
 ```
 
 This mode is ideal for individual developers working directly with accessible
-hardware or virtual devices. When you pass an exporter configuration to
+hardware or virtual devices. When you pass an exporter config to
 `jmp shell` with `--exporter` or `--exporter-config`, Jumpstarter runs that
 {term}`exporter` inside the `jmp` process and connects to it through a local
 socket, requiring no Kubernetes or other infrastructure. Developers can work
@@ -151,7 +151,7 @@ $ pytest test_device.py
 The example above shows typical {term}`local mode` usage: first connecting to an
 {term}`exporter` (which manages the {term}`device` interfaces) using the `jmp shell` command,
 and then running tests against the device with `pytest`. The `--exporter` flag
-specifies which exporter configuration to use, allowing you to easily switch
+specifies which exporter config to use, allowing you to easily switch
 between different hardware or virtual {term}`device` setups.
 
 ### Direct Mode
@@ -288,7 +288,7 @@ $ jmp shell --selector vendor=acme,model=widget-v2 -- pytest test_device.py
 ```
 
 The example above demonstrates the {term}`distributed mode` workflow: first selecting
-the client configuration that holds the connection information for the central
+the client config that holds the connection information for the central
 {term}`controller`, then running the tests through `jmp shell`, which requests a
 {term}`lease` on an {term}`exporter` that matches the {term}`label selector`, runs
 `pytest` against the acquired {term}`DUT`, and releases the {term}`lease` when the

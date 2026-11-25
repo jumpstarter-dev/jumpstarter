@@ -45,7 +45,7 @@ export:
 ```
 
 `examples/stm32f407-rust-blink` in this package holds a prebuilt Rust blink
-firmware for this board, its source, and an exporter configuration to run it.
+firmware for this board, its source, and an exporter config to run it.
 
 #### NXP S32K388 (opensomeip Zephyr)
 
@@ -97,7 +97,7 @@ with serve(
 ### Monitor Commands
 
 Send arbitrary Renode monitor commands via the client. This requires
-`allow_raw_monitor: true` in the exporter configuration; otherwise the call
+`allow_raw_monitor: true` in the exporter config; otherwise the call
 fails:
 
 ```python

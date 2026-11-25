@@ -9,7 +9,7 @@ metadata:
   namespace: jumpstarter
 spec:
   exporterSets:
-    # Container image for the exporter-set controller binary.
+    # Container image for the ExporterSet controller binary.
     # All provisioners share the same binary; --provisioner selects
     # the backend at startup.
     image: quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest

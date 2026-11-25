@@ -9,7 +9,7 @@ A modular web service for configuring Jumpstarter deployment settings on MicroSh
 - MicroShift kubeconfig download
 - System monitoring and status
 - Pod and route management
-- BootC operations support
+- bootc operations support
 
 ## Project Structure
 
@@ -59,10 +59,10 @@ API route handlers:
 - `/api/change-password` - Password and SSH key management
 - `/api/configure-jumpstarter` - Jumpstarter CR configuration
 - `/api/system-stats` - System statistics
-- `/api/bootc-status` - BootC status information
-- `/api/bootc-upgrade-check` - Check for BootC upgrades
-- `/api/bootc-upgrade` - Apply BootC upgrade
-- `/api/bootc-switch` - Switch BootC image
+- `/api/bootc-status` - bootc status information
+- `/api/bootc-upgrade-check` - Check for bootc upgrades
+- `/api/bootc-upgrade` - Apply bootc upgrade
+- `/api/bootc-switch` - Switch bootc image
 - `/api/dmesg` - Kernel log
 - `/api/operator-status` - Jumpstarter operator status
 - `/api/pods` - Pod listing
@@ -133,7 +133,7 @@ systemctl enable --now config-svc.service
 ### System Commands
 The application requires the following system commands:
 - `oc` - OpenShift CLI
-- `bootc` - BootC CLI
+- `bootc` - bootc CLI
 - `pvscan` - LVM commands
 - `df`, `free`, `top`, `uptime` - System monitoring
 - Standard Linux utilities

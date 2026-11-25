@@ -4,7 +4,7 @@ This guide walks you through the process of creating an {term}`exporter` using t
 {term}`controller` {term}`service`, configuring drivers, and running the exporter.
 
 ```{warning}
-The jumpstarter-controller endpoints are secured by TLS. However, unless the operator
+The controller endpoints are secured by TLS. However, unless the operator
 manages certificates with cert-manager (`spec.certManager.enabled`) or you provide your
 own certificate secrets, the controller and router generate self-signed certificates
 on every restart. This means the client will not be able to verify the server
@@ -31,7 +31,7 @@ cluster with admin access. For installation instructions, refer to the
 
 ## Instructions
 
-### Create an Exporter Configuration
+### Create an Exporter Config
 
 Create an exporter in the cluster. The `jmp admin` CLI manages Jumpstarter
 resources through the Kubernetes API, using your kubeconfig.
@@ -44,7 +44,7 @@ $ jmp admin create exporter example-distributed --label foo=bar --save --insecur
 ```
 
 After creating the exporter, find the new exporter config file at
-`${HOME}/.config/jumpstarter/exporters/example-distributed.yaml`. Edit the configuration
+`${HOME}/.config/jumpstarter/exporters/example-distributed.yaml`. Edit the config
 using your default text editor with:
 
 ```console
@@ -52,7 +52,7 @@ $ jmp config exporter edit example-distributed
 ```
 
 Add the `storage` and `power` drivers under the `export` field in the
-configuration file. Your configuration should look like this:
+config file. Your config should look like this:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1

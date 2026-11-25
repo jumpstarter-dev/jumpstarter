@@ -7,7 +7,7 @@ HTTP/MJPEG camera sources.
 `HttpVideo` covers cameras that are reachable from the exporter over the
 network rather than attached to it as a local V4L2 device — for example a
 camera connected to the DUT itself, such as ESP32 camera firmware serving
-an MJPEG stream over WiFi, or a generic IP camera.
+an MJPEG stream over Wi-Fi, or a generic IP camera.
 
 ## Installation
 
@@ -71,7 +71,7 @@ devices.
 A source with richer state can return a model that **extends** `VideoState`,
 so generic consumers keep reading the common fields while source-specific
 detail stays available. `UStreamerState` does exactly that: it fills
-`online`/`width`/`height`/`fps` from ustreamer's own status document, which
+`online`/`width`/`height`/`fps` from uStreamer's own status document, which
 remains reachable through its `result` field.
 
 ## API Reference

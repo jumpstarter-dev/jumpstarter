@@ -53,7 +53,7 @@ example above, `dutlink` is a composite driver that provides child drivers like
 
 ## Running tests
 
-### Inside a shell session
+### Inside an exporter shell
 
 Start an {term}`exporter shell` first, then run `pytest` inside it:
 
@@ -69,7 +69,7 @@ active {term}`exporter`. The `selector` class variable is ignored.
 ### With automatic lease acquisition
 
 Run `pytest` directly without a shell {term}`session`. `JumpstarterTest` loads the client
-configuration named `default` and acquires a {term}`lease` matching your `selector`:
+config named `default` and acquires a {term}`lease` matching your `selector`:
 
 ```console
 $ pytest test_my_device.py
@@ -77,7 +77,7 @@ $ pytest test_my_device.py
 
 This requires a client config with the alias `default`, normally
 `~/.config/jumpstarter/clients/default.yaml` (see
-[Setup Distributed Mode](../setup/distributed-mode.md)). The client selected
+[Distributed Mode](../setup/distributed-mode.md)). The client selected
 with `jmp config client use` does not change which config `JumpstarterTest`
 loads.
 

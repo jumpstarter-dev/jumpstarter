@@ -35,7 +35,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 | `can_fd`                      | bool   | false   | Use CAN FD                           |
 | `blocking_send`               | bool   | false   | Use blocking send                    |
 
-### Example exporter configuration
+### Example exporter config
 
 ```yaml
 export:

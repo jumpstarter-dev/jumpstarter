@@ -8,7 +8,7 @@ session, letting a teammate watch a serial console, or handing a CI-held lease
 to a human for inspection.
 
 This guide covers {term}`distributed mode`; sharing is coordinated by the
-controller and therefore does not apply to {term}`local mode` or direct-mode
+controller and therefore does not apply to {term}`local mode` or {term}`direct mode`
 connections.
 
 ## Owners vs. shared clients
@@ -45,7 +45,7 @@ counts once.
 ## Managing sharing on an existing lease
 
 Use the `jmp share` command group to change sharing after the lease exists. All
-three subcommands take the lease ID as the first argument.
+three subcommands take the lease name as the first argument.
 
 ```{code-block} console
 $ jmp share add my-lease client-alice client-bob
@@ -140,7 +140,7 @@ $ jmp delete lease my-lease
 ## Serial consoles for shared sessions
 
 Serial consoles are a common reason to share a lease: one person drives the
-console while others watch. The pyserial driver supports a read-only **observe**
+console while others watch. The PySerial driver supports a read-only **observe**
 mode and an exclusive write token so multiple shared clients can attach to the
 same console safely. See the "Serial console sharing and observe mode" section of
 the {doc}`pyserial driver reference </reference/package-apis/drivers/pyserial>`

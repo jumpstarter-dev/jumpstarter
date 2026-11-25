@@ -5,7 +5,7 @@ Jumpstarter supports lifecycle hooks that execute shell scripts automatically be
 A `beforeLease` hook runs after a lease is assigned but
 before drivers are available to the client, and an `afterLease` hook runs after
 the {term}`session` ends but before the lease is released. Hooks are optional and
-configured in the [Exporter](exporters.md) YAML configuration file (exporter config).
+configured in the [exporter config](exporters.md#exporter-config).
 
 Hooks execute on the exporter {term}`host` using a configurable interpreter (defaulting
 to `/bin/sh`) and can use the {term}`j` CLI to interact with drivers locally on the
@@ -155,7 +155,7 @@ prompts or interactive UI:
 | --------------------- | ---------------- | --------------------------------------------------- |
 | `TERM`                | `dumb`           | Disables colors, cursor movement, and terminal UI   |
 | `DEBIAN_FRONTEND`     | `noninteractive` | Prevents `apt`/`dpkg` prompts on Debian-based hosts |
-| `GIT_TERMINAL_PROMPT` | `0`              | Prevents git from prompting for credentials         |
+| `GIT_TERMINAL_PROMPT` | `0`              | Prevents Git from prompting for credentials         |
 
 Additionally, `PS1` is removed from the environment so the shell does not
 emit a prompt.

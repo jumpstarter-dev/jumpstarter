@@ -28,7 +28,7 @@ export:
       # console_name: "Primary Compute Non-Secure"
 ```
 
-The exporter reads the Corellium server's host name and API token from the
+The exporter reads the Corellium server's hostname and API token from the
 `CORELLIUM_API_HOST` and `CORELLIUM_API_TOKEN` environment variables.
 
 ### ExporterConfig Example

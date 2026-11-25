@@ -53,7 +53,7 @@ instead of waiting for one. `events` prints what the peer has recorded
 `--since` a Unix timestamp to see only newer events.
 
 The `transport` config accepts any bumble transport string:
-- `tcp-client:host:port` - rootcanal / netsim
+- `tcp-client:host:port` - RootCanal / netsim
 - `usb:0` — USB HCI dongle
 - `serial:/dev/ttyUSB0` - serial UART
 

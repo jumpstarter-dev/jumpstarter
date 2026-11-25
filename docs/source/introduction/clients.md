@@ -6,7 +6,7 @@ either as a library or as a [CLI tool](../reference/man-pages/index.md).
 
 ## Types of Clients
 
-Jumpstarter supports two types of client configurations: *local* and *remote*.
+Jumpstarter supports two types of clients: *local* and *remote*.
 
 ### Local Clients
 
@@ -41,4 +41,4 @@ example with `jmp shell --lease`. The client holding a {term}`lease` can share
 it with other clients with `jmp share`, see
 [Lease Sharing](../getting-started/guides/examples/lease-sharing.md). `jmp get`
 lists {term}`exporter`s and {term}`lease`s, and `jmp describe` shows the details of
-a single {term}`exporter`, {term}`lease` or client configuration.
+a single {term}`exporter`, {term}`lease` or client config.

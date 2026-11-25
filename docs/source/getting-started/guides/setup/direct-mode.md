@@ -14,7 +14,7 @@ connect at a time. For shared, multi-user environments use
 
 ## Instructions
 
-### Create an Exporter Configuration
+### Create an Exporter Config
 
 Unlike {term}`distributed mode`, you don't need `endpoint` or `token` fields - there
 is no {term}`controller` to register with.

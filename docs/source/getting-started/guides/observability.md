@@ -69,7 +69,7 @@ enable telemetry.
 
 ## Enable the telemetry service
 
-Enable telemetry in the `Jumpstarter` custom resource:
+Enable telemetry in the `Jumpstarter` Custom Resource:
 
 ```yaml
 spec:
@@ -360,7 +360,7 @@ $ kubectl logs -n jumpstarter-lab -l app=jumpstarter-telemetry
 
 ### Loki
 
-Point the telemetry service at Loki in the `Jumpstarter` custom resource:
+Point the telemetry service at Loki in the `Jumpstarter` Custom Resource:
 
 ```yaml
 spec:

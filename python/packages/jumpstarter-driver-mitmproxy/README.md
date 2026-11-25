@@ -45,7 +45,7 @@ importing mitmproxy, so mitmproxy is **not** pulled in as a Python dependency.
 
 ## Configuration
 
-### Exporter Configuration
+### Exporter Config
 
 ```yaml
 # /etc/jumpstarter/exporters/my-bench.yaml

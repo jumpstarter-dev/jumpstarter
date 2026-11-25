@@ -27,7 +27,7 @@ PATH="$HOME/.cargo/bin:$PATH" make firmware
 
 ## Workflow
 
-1. **Start a Jumpstarter shell** wired to this exporter (from this directory):
+1. **Start an exporter shell** wired to this exporter (from this directory):
 
    ```bash
    jmp shell --exporter-config exporter-stm32f4.yaml

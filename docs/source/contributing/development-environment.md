@@ -15,7 +15,7 @@ written in Go, while the core and drivers are written in Python. The
 The Jumpstarter core and drivers live in the
 [jumpstarter](https://github.com/jumpstarter-dev/jumpstarter) repository.
 
-We use [uv](https://docs.astral.sh/uv/) as our python package and project
+We use [uv](https://docs.astral.sh/uv/) as our Python package and project
 manager, and `make` as our build interface.
 
 To install the basic set of dependencies, run the following commands:
@@ -70,7 +70,7 @@ $ cd controller
 $ make build
 ```
 
-At this point you can deploy the controller in a kubernetes cluster in docker
+At this point you can deploy the controller in a Kubernetes cluster in Docker
 (`kind`) with:
 
 ```console

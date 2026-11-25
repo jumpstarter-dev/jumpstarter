@@ -31,7 +31,7 @@ The driver-specific keys of each `config:` block come from the driver class.
 `jmp driver schema` lists them for every driver installed in the local Python
 environment, and `-o json` or `-o yaml` returns them as JSON Schema, together
 with the driver's client class, for editor completion and validation of
-exporter configurations:
+exporter configs:
 
 ```console
 $ jmp driver schema TcpNetwork -o yaml
@@ -130,7 +130,7 @@ Drivers for virtual and emulated targets:
 - {doc}`Renode <renode>` (`jumpstarter-driver-renode`) - Renode embedded systems emulation
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
 - {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
-- {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, WiFi, UWB)
+- {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, Wi-Fi, UWB)
 
 ### Test and Measurement
 
@@ -146,7 +146,7 @@ General-purpose utility drivers:
 - {doc}`Composite <composite>` (`jumpstarter-driver-composite`) - Groups child drivers into one device; the root driver of every exporter
 - {doc}`Shell <shell>` (`jumpstarter-driver-shell`) - Shell command execution
 - {doc}`SSH Mount <ssh-mount>` (`jumpstarter-driver-ssh-mount`) - SSHFS remote filesystem mounting
-- {doc}`TMT <tmt>` (`jumpstarter-driver-tmt`) - Test Management Tool wrapper
+- {doc}`tmt <tmt>` (`jumpstarter-driver-tmt`) - Test Management Tool wrapper
 
 ```{toctree}
 :hidden:

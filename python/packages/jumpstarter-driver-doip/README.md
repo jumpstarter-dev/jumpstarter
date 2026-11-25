@@ -25,7 +25,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 | `auto_reconnect_tcp`   | bool   | false    | Auto-reconnect on TCP connection close     |
 | `activation_type`      | int    | 0        | Routing activation type (null to disable)  |
 
-### Example exporter configuration
+### Example exporter config
 
 ```yaml
 export:

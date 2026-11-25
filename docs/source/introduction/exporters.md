@@ -11,12 +11,12 @@ Typically, the {term}`host` will be a low-cost test system such as a single boar
 computer with sufficient interfaces to connect to your hardware. It is also
 possible to use a local high-power server (or CI runner) as the {term}`host` device.
 
-A {term}`host` can run multiple Exporter instances simultaneously if it needs to
+A {term}`host` can run multiple exporter instances simultaneously if it needs to
 interact with several different devices at the same time.
 
-## Exporter Configuration
+## Exporter Config
 
-Exporters use a YAML configuration file (exporter config) to define which Drivers must be loaded
+Exporters use a YAML config file (exporter config) to define which drivers must be loaded
 and the configuration required.
 
 Here is an example exporter config file which would typically be saved at
@@ -73,7 +73,7 @@ The default year-long token is renewed with 31 days remaining. Shorter tokens ar
 renewed with 20% of their lifetime remaining, with a minimum lead of 60 seconds
 and a cap of half their lifetime. The controller warns when renewal has been
 missed: in the final 10% of the lifetime, capped at 30 days. External OIDC
-credentials must be renewed through their identity provider; the controller
+credentials must be renewed through their OIDC provider; the controller
 does not exchange them for internal exporter tokens.
 
 After rotation, the exporter updates its in-memory credential and replaces only
@@ -94,7 +94,7 @@ credential in the controller Secret can mint a replacement, and only when at
 most half its issued lifetime remains. The immediately previous credential can
 recover that same replacement until it expires, without minting another token
 or rewriting the Secret. Older credentials are denied rotation, and lineage
-denials emit a `RotationDenied` warning event on the Exporter.
+denials emit a `RotationDenied` warning event on the Exporter resource.
 
 Recovery returns a bearer credential: someone who obtains the current token
 can use it and later renew it under the same rules. To revoke a compromised
@@ -103,7 +103,7 @@ UID changes, then replace the exporter config with the new credential.
 
 ## Running an Exporter
 
-To run an Exporter on a {term}`host` system, you must have Python {{requires_python}}
+To run an exporter on a {term}`host` system, you must have Python {{requires_python}}
 installed and the driver packages specified in the config installed in your
 current Python environment.
 

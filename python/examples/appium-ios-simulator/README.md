@@ -60,7 +60,7 @@ jmp shell --exporter-config exporter.yaml -- pytest jumpstarter_example_appium_i
 ```
 
 Outside a `jmp shell`, `JumpstarterTest` leases an exporter labeled
-`example=appium-ios-simulator` with the client configuration named `default`
+`example=appium-ios-simulator` with the client config named `default`
 instead.
 
 ## What the Tests Demonstrate

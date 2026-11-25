@@ -197,7 +197,7 @@ on the ingress controller.
 
 Configure through `spec.authentication.jwt` in the `Jumpstarter` CR. The
 {term}`operator` applies this to {term}`controller` runtime settings but does
-not install your identity provider. See
+not install your OIDC provider. See
 [Authentication](../../configuration/authentication.md) for examples.
 
 ### Telemetry endpoints
@@ -329,7 +329,7 @@ Use the {term}`operator` installer and manage your `Jumpstarter` CR
 declaratively in GitOps flows.
 
 `jmp admin apply -f <file>` sends manifests of Jumpstarter resources, such as
-clients, exporters, and exporter sets, to the cluster with a server-side apply,
+clients, exporters, and ExporterSets, to the cluster with a server-side apply,
 so applying the same file again updates them in place.
 
 ### Operator Behavior

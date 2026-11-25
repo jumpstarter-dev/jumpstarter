@@ -42,7 +42,7 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-zephyr
 This installs the Zephyr driver and its `j zephyr` client commands (`flash` and
 `twister`).
 
-## Exporter configuration
+## Exporter config
 
 The flash command runs with its working directory set to the directory holding
 the uploaded firmware, so it can reference files by bare name (`zephyr.hex`) or
@@ -152,7 +152,7 @@ the reason.
 
 From Python, `ZephyrClient` is a
 `jumpstarter.client.flasher.StreamingFlasherClient`: `flash_stream(path)` sends a
-tar of the artifacts (a local path, or an http(s) URL the exporter downloads
+tar of the artifacts (a local path, or an HTTP(S) URL the exporter downloads
 itself) and yields `FlashStatus` updates; each output line of the flash command
 is in the `stdout` field of a `step` update. `flash(path)` returns the final
 update.

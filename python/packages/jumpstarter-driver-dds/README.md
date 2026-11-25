@@ -31,7 +31,7 @@ pip3 install cyclonedds
 | `default_history_depth`| int    | 10           | Default history depth for topics         |
 | `use_mock`             | bool   | false        | Use an in-memory backend instead of CycloneDDS (for testing) |
 
-### Example exporter configuration
+### Example exporter config
 
 ```yaml
 export:

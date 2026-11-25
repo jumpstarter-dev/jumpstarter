@@ -1,25 +1,25 @@
-# Jumpstarter SOC testing with pytest example
+# Jumpstarter SoC testing with pytest example
 
-This example aims to demonstrate Jumpstarter in a simple SOC testing scenario
+This example aims to demonstrate Jumpstarter in a simple SoC testing scenario
 using pytest.
 
 The following drivers will be utilized:
-- DUTLink: for power, storage and console control of the target
-- UStreamer: with an hdmi capture card plus a webcam for video snapshots
+- DUT Link: for power, storage and console control of the target
+- uStreamer: with an HDMI capture card plus a webcam for video snapshots
 
 This example requires the following hardware:
 - 1x Raspberry Pi 4
-- 1x dutlink  (DUTLink could be replaced by a composite set of power, storage
+- 1x DUT Link  (DUT Link could be replaced by a composite set of power, storage
   mux and serial port interface)
 - 1x HDMI Capture card
 - 1x Webcam
 
 # Running the example (distributed env)
 
-1) Setup an environment with the required hardware, and customize the
+1) Set up an environment with the required hardware, and customize the
    exporter.yaml
-2) Setup the exporter to be run from a container (see [Exporter Installation](https://jumpstarter.dev/main/getting-started/installation/index.html))
-3) Label the exporter in k8s with the `board=rpi4` label
+2) Set up the exporter to be run from a container (see [Exporter Installation](https://jumpstarter.dev/main/getting-started/installation/index.html))
+3) Label the exporter in Kubernetes with the `board=rpi4` label
 4) Prepare the images by running `make` in the `image` directory
 5) Run the tests in this directory by running:
 ```shell

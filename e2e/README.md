@@ -1,6 +1,6 @@
 # E2E Test Suite Summary
 
-This document summarizes the Go/Ginkgo e2e test suite in `e2e/test/`, organized by
+This document summarizes the Go/Ginkgo E2E test suite in `e2e/test/`, organized by
 lane (Ginkgo `Label`, which is how CI and the Makefile select subsets via
 `--label-filter` / `GINKGO_LABEL_FILTER`).
 
@@ -12,7 +12,7 @@ it; it can't generate the prerequisite/steps/pass-check text.
 
 ## Global prerequisites (`make e2e-run`, non-compat suite)
 
-Built by `make e2e-setup` (`e2e/setup-e2e.sh`): kind cluster, dex OIDC provider +
+Built by `make e2e-setup` (`e2e/setup-e2e.sh`): kind cluster, Dex OIDC provider +
 TLS CA, controller/operator deployed via `make -C controller deploy` with
 telemetry enabled (`OPERATOR_ENABLE_TELEMETRY=true`, which requires the locally
 built telemetry image), telemetry reachable from the host as
@@ -33,7 +33,7 @@ No `.svc` host alias is needed for telemetry.
 
 ## Lane: `core` (`e2e_test.go`)
 
-Prereq (all): dex + controller/operator running, namespace `jumpstarter-lab` created.
+Prereq (all): Dex + controller/operator running, namespace `jumpstarter-lab` created.
 
 | Test Name | Prerequisite | Steps | Pass Check |
 |---|---|---|---|
@@ -203,7 +203,7 @@ Podman's store from the container tool that built them, detects the
 Kind-reachable host IP (the host's primary address; `IP=` overrides), creates
 the SSH Secret, and renders `.e2e/exporterset-qemu-ssh-kind.yaml` from
 `manifests/exporterset-qemu-ssh-kind.yaml`. The cluster must enable
-`qemu-ssh.jumpstarter.dev`; the e2e deploy template
+`qemu-ssh.jumpstarter.dev`; the E2E deploy template
 `controller/hack/deploy_with_operator.sh` (used by `make e2e-setup`) does.
 OIDC client `test-client-exporterset-qemu-ssh`. AfterAll deletes CRs and runs
 `setup-qemu-ssh-e2e.sh --cleanup` for host-side quadlets/containers and the
@@ -233,7 +233,7 @@ in compat suites** (old controllers lack this logging; the Describe is not label
 
 ## Lane: `telemetry` (`telemetry_test.go`)
 
-Prereq: self-contained — creates its own dex OIDC client/exporter
+Prereq: self-contained — creates its own Dex OIDC client/exporter
 (`test-client-telemetry` / `test-exporter-telemetry`, label
 `example.com/board=telemetry`), logs both in with the password grant, applies the
 driver overlay `exporter.yaml`, runs the exporter in loop mode, and takes one

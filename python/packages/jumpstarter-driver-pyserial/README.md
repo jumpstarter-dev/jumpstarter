@@ -56,9 +56,9 @@ export:
       port: "1"
 ```
 
-Drivers that create their own console (qemu, renode, dutlink, corellium) wire
+Drivers that create their own console (QEMU, Renode, DUT Link, Corellium) wire
 their power driver into it automatically, so the hotkey works there without
-any configuration (qemu: except in sidecar mode).
+any configuration (QEMU: except in sidecar mode).
 
 ### Input during reconnection
 
@@ -190,7 +190,7 @@ If these requirements are not met, the driver will raise a `ValueError` during i
 
 ## Usage
 
-The pyserial driver provides the following CLI commands for interacting with serial ports:
+The PySerial driver provides the following CLI commands for interacting with serial ports:
 
 ### console
 

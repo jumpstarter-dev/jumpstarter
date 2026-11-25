@@ -2,7 +2,7 @@
 #
 # This example creates a scalable pool of aarch64 virtual targets
 # running as Podman containers on remote lab hosts. The
-# exporter-set controller manages the lifecycle via SSH.
+# ExporterSet controller manages the lifecycle via SSH.
 #
 # Uses the qemu-ssh-aarch64 VirtualTargetClass (see
 # v1alpha1_virtualtargetclass_qemu_ssh.yaml).

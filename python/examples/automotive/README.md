@@ -32,7 +32,7 @@ uv run --directory examples/automotive pytest -v
 ## How it maps to real deployments
 
 In production, you would replace the mock ECU with a real ECU connected via
-DoIP (TCP/IP) or CAN bus. The exporter configuration would point to the real
+DoIP (TCP/IP) or CAN bus. The exporter config would point to the real
 ECU's IP address and logical address:
 
 ```yaml
@@ -48,7 +48,7 @@ export:
 ```
 
 The test code using Jumpstarter's client API would remain unchanged - only the
-exporter configuration changes between mock and real hardware.
+exporter config changes between mock and real hardware.
 
 ## Drivers used
 

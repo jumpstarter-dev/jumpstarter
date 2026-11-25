@@ -2,9 +2,9 @@
 
 This section explains how to configure Jumpstarter for your environment.
 
-- [Files](files.md): Understanding the structure and content of configuration
+- [Files](files.md): Understanding the structure and content of config
   files
-- [Loading Order](loading-order.md): Understanding how configuration files are
+- [Loading Order](loading-order.md): Understanding how config files are
   prioritized from different sources (environment variables, command line,
   system and user config files)
 - [Authentication](authentication.md): Setting up OIDC and managing tokens

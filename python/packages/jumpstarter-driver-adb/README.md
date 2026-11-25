@@ -406,7 +406,7 @@ device is picked up the moment its relay turns on.
 ### Power cycles and re-enumeration
 
 Nothing to configure: the device's serial and its forward are resolved fresh on every
-connection. A relay power-cycle re-enumerates USB and can hand the device a different
+connection. A relay power cycle re-enumerates USB and can hand the device a different
 ADB serial, and the old forward disappears with it — the driver notices, re-resolves
 the declared `usb_port` to the new serial, and forwards again. No config edit, no
 exporter restart.

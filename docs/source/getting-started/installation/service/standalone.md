@@ -50,7 +50,7 @@ The default password for root will be `jumpstarter` and you will be requested to
 ### Network
 
 The system uses `nip.io` for automatic DNS resolution (e.g.
-`jumpstarter.10.0.2.2.nip.io`) although you can setup your own domain if you
+`jumpstarter.10.0.2.2.nip.io`) although you can set up your own domain if you
 have control over your DNS.
 
 | Port | Service | Description |
@@ -126,7 +126,7 @@ sudo podman exec -it jumpstarter-microshift-okd oc get pods -A
 
 ### Build Bootable Images
 
-Create a QCOW2 image for VMs or bare-metal deployments:
+Create a qcow2 image for VMs or bare-metal deployments:
 
 ```console
 make build-image
@@ -154,7 +154,7 @@ make download-centos-iso  # Downloads CentOS Stream 10 ISO
 make build-ks-iso          # Creates kickstart ISO
 ```
 
-For ARM64 builds:
+For arm64 builds:
 
 ```console
 make download-centos-iso ARCH=aarch64

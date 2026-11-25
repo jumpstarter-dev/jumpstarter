@@ -173,7 +173,7 @@ When the ExporterSet scales up:
    credentials Secret name) on the Exporter CR — before touching the remote
    host, so cleanup can always find the instance
 3. Connects to the remote host via SSH
-4. Writes the exporter configuration YAML to `/etc/jumpstarter/exporters/`
+4. Writes the exporter config YAML to `/etc/jumpstarter/exporters/`
 5. Creates Podman quadlet `.container` files under `/etc/containers/systemd/`
    for both the **runtime** (QEMU) and **exporter** containers
 6. Creates a shared Podman volume for inter-container communication
@@ -257,7 +257,7 @@ jmp shell -l board=aarch64-qemu,virtual=true
 
 ## Troubleshooting
 
-### Check exporter-set controller logs
+### Check ExporterSet controller logs
 
 ```bash
 kubectl logs -l component=exporterset-controller,provisioner=qemu-ssh-jumpstarter-dev \

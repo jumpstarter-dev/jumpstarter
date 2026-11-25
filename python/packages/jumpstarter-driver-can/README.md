@@ -37,7 +37,7 @@ export:
 
 ### IsoTpPython
 
-A Pure python ISO-TP socket driver
+A pure Python ISO-TP socket driver
 
 Available on any platform (does not require Linux ISO-TP kernel module), moderate
 performance and reliability, wide support for non-standard hardware interfaces

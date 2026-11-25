@@ -1,6 +1,6 @@
 # SSHMount Driver
 
-`jumpstarter-driver-ssh-mount` provides remote filesystem mounting via sshfs. It allows you to mount remote directories from a target device to your local machine using SSHFS (SSH Filesystem).
+`jumpstarter-driver-ssh-mount` provides remote filesystem mounting via SSHFS. It allows you to mount remote directories from a target device to your local machine using SSHFS (SSH Filesystem).
 
 ## Installation
 
@@ -21,7 +21,7 @@ You also need `sshfs` installed on the client machine:
 The SSHMount driver references an existing SSH driver to inherit credentials
 (username, identity key) and TCP connectivity. No duplicate configuration is needed.
 
-Example exporter configuration:
+Example exporter config:
 
 ```yaml
 export:
@@ -70,12 +70,12 @@ j mount --umount /local/mountpoint
 j mount --umount /local/mountpoint --lazy
 ```
 
-By default, `j mount` runs sshfs in foreground mode and spawns a subshell
+By default, `j mount` runs SSHFS in foreground mode and spawns a subshell
 with a modified prompt. The mount stays active while the subshell is running.
-When you type `exit` (or press Ctrl+D), sshfs is terminated and all resources
+When you type `exit` (or press Ctrl+D), SSHFS is terminated and all resources
 (port forwards, temporary identity files) are cleaned up automatically.
 
-Use `--foreground` to skip the subshell and block directly on sshfs. Press
+Use `--foreground` to skip the subshell and block directly on SSHFS. Press
 Ctrl+C to unmount.
 
 The `--umount` flag is available as a fallback for mounts that were orphaned
@@ -85,8 +85,8 @@ The `--umount` flag is available as a fallback for mounts that were orphaned
 
 ### SSHMountClient
 
-- `mount(mountpoint, *, remote_path="/", direct=False, foreground=False, extra_args=None)` - Mount remote filesystem locally via sshfs
-- `umount(mountpoint, *, lazy=False)` - Unmount an sshfs filesystem (fallback for orphaned mounts)
+- `mount(mountpoint, *, remote_path="/", direct=False, foreground=False, extra_args=None)` - Mount remote filesystem locally via SSHFS
+- `umount(mountpoint, *, lazy=False)` - Unmount an SSHFS filesystem (fallback for orphaned mounts)
 
 ### Required Children
 
@@ -98,8 +98,8 @@ The `--umount` flag is available as a fallback for mounts that were orphaned
 
 The driver registers as `mount` in the exporter config. When used in a `jmp shell` session, the CLI is a single command with a `--umount` flag for unmounting.
 
-Note: Each `-o` value is forwarded directly to sshfs as an `-o` option flag. You can
-pass any option that sshfs (and by extension, the underlying SSH client) supports.
+Note: Each `-o` value is forwarded directly to SSHFS as an `-o` option flag. You can
+pass any option that SSHFS (and by extension, the underlying SSH client) supports.
 By default, the driver sets `StrictHostKeyChecking=no`, `UserKnownHostsFile=/dev/null`,
 and `LogLevel=ERROR`. To override a default, pass the replacement via `-o` (e.g.,
 `-o StrictHostKeyChecking=yes`). Common options include `reconnect`, `cache=yes`,

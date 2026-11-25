@@ -9,19 +9,19 @@ Jumpstarter loads configuration from the following sources, in order of
 precedence (highest to lowest):
 
 1. **Command-line arguments** - Highest priority, override all other settings
-2. **Configuration files** - Client and {term}`exporter` configs in
+2. **Config files** - Client and {term}`exporter` configs in
    `${HOME}/.config/jumpstarter/`, and {term}`exporter` configs in
    `/etc/jumpstarter/exporters/`
-3. **Environment variables** - Supply settings that the configuration file
+3. **Environment variables** - Supply settings that the config file
    leaves out
 
 `JMP_RETRY_TIMEOUT`, `JMP_DIAL_TIMEOUT` and `JMP_GRPC_INSECURE` are exceptions:
-they take precedence over the configuration file. Environment variables can
+they take precedence over the config file. Environment variables can
 also replace the current client entirely, as described below.
 
-## Client Configuration Hierarchy
+## Client Config Hierarchy
 
-For client operations, Jumpstarter selects the client configuration in this
+For client operations, Jumpstarter selects the client config in this
 order:
 
 1. **Command-line options** `--client <alias>` or `--client-config <path>`
@@ -33,9 +33,9 @@ order:
 
 The `jmp shell` options `--retry-timeout` and `--dial-timeout` override the
 `JMP_RETRY_TIMEOUT` and `JMP_DIAL_TIMEOUT` variables, which override the
-`leases` section of the configuration file.
+`leases` section of the config file.
 
-## Exporter Configuration Hierarchy
+## Exporter Config Hierarchy
 
 For {term}`exporter` operations, `jmp run` loads the configuration named by one
 of these command-line options:
@@ -52,7 +52,7 @@ them out.
 
 Here's a practical example of how configuration overrides work:
 
-1. You create a client configuration file at
+1. You create a client config file at
    `${HOME}/.config/jumpstarter/clients/default.yaml`:
 
    ```yaml

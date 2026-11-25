@@ -5,7 +5,7 @@ Jumpstarter uses internally issued JWT tokens to authenticate clients and
 Connect (OIDC) providers.
 
 When installing with the {term}`operator`, authentication is configured directly on the
-`Jumpstarter` custom resource, under `spec.authentication`. 
+`Jumpstarter` Custom Resource, under `spec.authentication`. 
 
 For {term}`operator` installation context, see
 [Production](../installation/service/production.md).
@@ -588,7 +588,7 @@ The {term}`controller` records the expiry of a client's internal token in the
 ### Headless and Container Environments
 
 By default, `jmp login` prints a URL to open in a browser and waits for the
-identity provider to redirect to a callback server on `localhost`. Where that
+OIDC provider to redirect to a callback server on `localhost`. Where that
 redirect cannot reach the CLI, for example in a container or a cloud IDE, use
 the OAuth 2.0 Device Authorization Grant
 ([RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)) instead:
@@ -600,7 +600,7 @@ $ jmp login --device-flow <client-name>@<login-endpoint>
 The CLI prints a verification URL, and a code to enter there unless the URL
 already contains it, then waits until you approve the login in any browser. Set
 `JMP_OIDC_DEVICE_FLOW=1` to use the device flow without the flag, including when
-the CLI logs in again after a token expires. The identity provider must list a
+the CLI logs in again after a token expires. The OIDC provider must list a
 `device_authorization_endpoint` in its OIDC discovery document, otherwise
 `jmp login` stops with an error. `--token`, and `--username` with `--password`,
 take precedence over the device flow.

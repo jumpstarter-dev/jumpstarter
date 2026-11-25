@@ -36,7 +36,7 @@ avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;x86_64
 
 ## Configuration
 
-Example exporter configuration:
+Example exporter config:
 
 ```yaml
 export:

@@ -25,7 +25,7 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-flashers
 | TIJ784S4Flasher | quay.io/jumpstarter-dev/jumpstarter-flasher-ti-j784s4:latest |
 
 
-### Driver configuration
+### Driver config
 **driver**: `jumpstarter_driver_flashers.driver.${DRIVER}`
 
 ```yaml
@@ -367,8 +367,8 @@ flasherclient.flash("/path/to/image.raw.xz", partition="emmc")
 
 In addition to the flashing mechanisms, the flasher drivers also provide a way
 to access the DUT bootloader and busybox shell for convenience and debugging,
-when using the `busybox_shell` and `bootloader_shell` methods the embedded http
-and tftp servers will be online and serving the images from the flasher bundle.
+when using the `busybox_shell` and `bootloader_shell` methods the embedded HTTP
+and TFTP servers will be online and serving the images from the flasher bundle.
 
 Get the busybox shell on the device
 ```python

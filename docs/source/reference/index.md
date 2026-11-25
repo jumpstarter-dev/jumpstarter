@@ -6,7 +6,7 @@ covers:
 - [MAN Pages](man-pages/index.md): Command-line tools and utilities
 - [Package APIs](package-apis/index.md): API documentation for Jumpstarter
   packages and components
-- [CRDs](crds/index.md): Field reference for all Jumpstarter custom resources
+- [CRDs](crds/index.md): Field reference for all Jumpstarter Custom Resource Definitions
 - [gRPC Protocol](grpc/index.md): Reference for the Jumpstarter gRPC protocol
   definitions
 

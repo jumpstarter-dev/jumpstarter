@@ -162,7 +162,7 @@ sigrok-cli -d fx2lafw -C D0,D1,D2,D3 \
 
 ### Example 3: Oscilloscope (Analog Channels)
 
-**Exporter configuration:**
+**Exporter config:**
 ```yaml
 export:
   oscilloscope:

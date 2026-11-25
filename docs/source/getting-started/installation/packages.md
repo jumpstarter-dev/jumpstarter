@@ -20,7 +20,7 @@ tools you need to interact with hardware locally.
 #### Using the Installer
 ##### Quick Install (Recommended)
 
-Install directly using our installer from github:
+Install directly using our installer from GitHub:
 
 For the latest release:
 ```{code-block} console

@@ -1,6 +1,6 @@
-# TMT Driver
+# tmt Driver
 
-`jumpstarter-driver-tmt` provides functionality for running TMT (Test Management Tool) commands locally while connecting to remote devices via SSH network connections. This driver allows you to execute TMT test plans and commands that provision and test remote hardware through SSH connections.
+`jumpstarter-driver-tmt` provides functionality for running tmt (Test Management Tool) commands locally while connecting to remote devices via SSH network connections. This driver allows you to execute tmt test plans and commands that provision and test remote hardware through SSH connections.
 
 ## Installation
 
@@ -48,7 +48,7 @@ export:
 
 ### CLI Commands
 
-The TMT driver provides a CLI command `tmt` that allows you to run TMT commands locally while connecting to remote devices:
+The tmt driver provides a CLI command `tmt` that allows you to run tmt commands locally while connecting to remote devices:
 
 ```bash
 # assuming that your DUT has a power and storage driver
@@ -87,16 +87,16 @@ j --log-level DEBUG tmt --root . -c tracing=off -c arch=aarch64 -c distro=rhel-9
 | `--forward-ssh` | Use SSH port forwarding for connection | false |
 | `--tmt-username` | Username for SSH connections | from config |
 | `--tmt-password` | Password for SSH connections | from config |
-| `--tmt-cmd` | TMT command to execute | "tmt" |
-| `--tmt-on-exporter` | Run TMT on the exporter (not implemented) | false |
+| `--tmt-cmd` | tmt command to execute | "tmt" |
+| `--tmt-on-exporter` | Run tmt on the exporter (not implemented) | false |
 
 ### Provision Arguments Handling
 
-The driver automatically handles TMT provision arguments by:
+The driver automatically handles tmt provision arguments by:
 
-1. **Detecting provision sections**: Looks for `provision` or `run` commands in the TMT arguments
+1. **Detecting provision sections**: Looks for `provision` or `run` commands in the tmt arguments
 2. **Replacing connection details**: Automatically replaces or adds SSH connection parameters (`-h connect -g <host> -P <port> -u <username> -p <password>`), followed by `--feeling-safe --hard-reboot <reboot_cmd>` when `reboot_cmd` is set
-3. **Preserving other arguments**: Keeps all other TMT arguments intact
+3. **Preserving other arguments**: Keeps all other tmt arguments intact
 
 Example of how arguments are transformed:
 ```bash

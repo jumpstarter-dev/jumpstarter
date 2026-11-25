@@ -39,7 +39,7 @@ export:
 
 ## API Reference
 
-The yepkit ykush driver provides a `PowerClient` with the following API:
+The Yepkit YKUSH driver provides a `PowerClient` with the following API:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_power.client.PowerClient()

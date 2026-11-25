@@ -17,7 +17,7 @@ connection between an exporter and client without physical hardware.
 
 ## Instructions
 
-### Create an Exporter Configuration
+### Create an Exporter Config
 
 Create an exporter config named `example-local` to define the
 capabilities of your local test {term}`exporter`. This configuration mirrors a regular

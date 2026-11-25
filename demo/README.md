@@ -37,7 +37,7 @@ a team would gate a build on rather than a smoke test:
 | `test_workload_was_deployed` | `j mount` really wrote the program to the board |
 | `test_workload_runs` | it executes and records the boot it ran under |
 | `test_stays_healthy_under_load` | `stress-ng` on every core plus memory: no failures, no OOM kills, no failed units, workload still good |
-| `test_survives_a_power_cycle` | `client.power.cycle()`, wait for ssh, deployment intact and boot still within budget |
+| `test_survives_a_power_cycle` | `client.power.cycle()`, wait for SSH, deployment intact and boot still within budget |
 
 The last two are the ones an ordinary test framework cannot do, because they
 need control over the hardware rather than just a shell on it. Boot time is a
@@ -127,7 +127,7 @@ Other useful options:
 | `--cast` | where to write the recording, default `docs/source/_static/demo.cast` |
 | `--duration` | lease duration, default `1h` |
 | `--lease-id` | lease name, default `demo-MMDD`; it appears in the recording |
-| `--boot-wait` | dead air after a power cycle before the first ssh, default 45s |
+| `--boot-wait` | dead air after a power cycle before the first SSH, default 45s |
 | `--boot-timeout` | seconds the board may take to answer after a power cycle, default 900 |
 | `--speed` | typing speed multiplier; `1.0` is human pace |
 | `--idle-limit` | cap idle gaps in the recording, default 2s |
@@ -173,7 +173,7 @@ The lease name shows up on screen, so it is kept short and readable, but it
 cannot be a fixed string. Releasing a lease leaves the object behind with its
 name still reserved: `jmp create lease --lease-id demo` then fails with
 `leases.jumpstarter.dev "demo" already exists`, while `jmp delete lease demo`
-refuses with `has already been released`. Only deleting the custom resource
+refuses with `has already been released`. Only deleting the Custom Resource
 from the cluster frees the name, which a plain client config cannot do.
 
 So the default is the date, `demo-1005`, and the script checks with

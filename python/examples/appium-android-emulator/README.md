@@ -42,7 +42,7 @@ jmp shell --exporter-config exporter.yaml -- pytest jumpstarter_example_appium_a
 ```
 
 Outside a `jmp shell`, `JumpstarterTest` leases an exporter labeled
-`example=appium-android-emulator` with the client configuration named
+`example=appium-android-emulator` with the client config named
 `default` instead.
 
 ## What the Tests Demonstrate

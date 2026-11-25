@@ -285,7 +285,7 @@ Jumpstarter does not build, sign, install or bundle
 
 Appium reaches the device through the exporter's own usbmux daemon (the
 `usbmux_socket`, or `usbmux_host` for network transport) and every session is
-pinned to the device's udid and iOS version. Choose how WDA starts:
+pinned to the device's UDID and iOS version. Choose how WDA starts:
 
 - **Attach to a running WDA** with `wda_port`, usually 8100. Start WDA with
   your device tools; Appium reaches it through a loopback forward on the

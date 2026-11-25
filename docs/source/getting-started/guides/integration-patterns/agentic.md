@@ -82,7 +82,7 @@ Add to your Claude Desktop configuration:
 
 ### Other Clients
 
-Any {term}`MCP`-compatible client can use the Jumpstarter server. It
+Any {term}`MCP`-compatible client can use the Jumpstarter MCP server. It
 communicates over stdio:
 
 ```console

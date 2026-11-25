@@ -58,12 +58,12 @@ source.
 | `boot_timeout` | `180` | Boot and readiness timeout in seconds |
 | `companion_timeout` | `30` | Companion readiness timeout in seconds |
 | `shutdown_timeout` | `30` | Shutdown, deletion and process-stop timeout in seconds |
-| `http_service` | Unconfigured | HTTPS provider class and options from trusted exporter configuration |
+| `http_service` | Unconfigured | HTTPS provider class and options from trusted exporter config |
 | `appium` | Unconfigured | Run Appium on the exporter for the simulator; see [Appium](#appium) |
 
 ## Usage
 
-Inside a local or leased Jumpstarter shell:
+Inside a local or leased exporter shell:
 
 ```shell
 j simulator power on
@@ -159,7 +159,7 @@ because they would break the lease's idb companion.
 
 ### Optional HTTPS service
 
-A trusted exporter configuration can add an HTTPS service for the lease's
+A trusted exporter config can add an HTTPS service for the lease's
 simulator by naming an `HttpServiceProvider` class and its options in the
 simulator's `config`:
 

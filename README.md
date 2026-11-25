@@ -32,7 +32,7 @@ This monorepo contains all Jumpstarter components:
 | Directory | Description |
 |-----------|-------------|
 | [`python/`](python/) | Python client, CLI, drivers, and testing framework |
-| [`controller/`](controller/) | Kubernetes controller and operator (Jumpstarter Service) |
+| [`controller/`](controller/) | Kubernetes controller and operator (Jumpstarter service) |
 | [`protocol/`](protocol/) | gRPC protocol definitions (protobuf) |
 | [`e2e/`](e2e/) | End-to-end testing infrastructure |
 
@@ -58,7 +58,7 @@ jmp self update
 
 ### Deploy the Service
 
-To install the Jumpstarter Service in your Kubernetes cluster, see the
+To install the Jumpstarter service in your Kubernetes cluster, see the
 [Service Installation](https://jumpstarter.dev/main/getting-started/installation/index.html)
 documentation.
 

@@ -96,7 +96,7 @@ export:
 
 The `copilot` export provides GPIO access. The separate `power` export adds the
 standard power client and a switch-state query; it requires managed GPIO0.
-Inside a Jumpstarter shell:
+Inside an exporter shell:
 
 ```shell
 j copilot info
@@ -240,8 +240,8 @@ export:
         ref: copilot
 ```
 
-Ports are numbered from 1; port N drives `usb_lines[N - 1]`. Inside a
-Jumpstarter shell:
+Ports are numbered from 1; port N drives `usb_lines[N - 1]`. Inside an
+exporter shell:
 
 ```shell
 j usb 1 on

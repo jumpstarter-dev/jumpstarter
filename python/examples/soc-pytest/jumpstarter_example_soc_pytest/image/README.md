@@ -1,10 +1,10 @@
 # Image preparation scripts
 
-This directory contains scripts to prepare the image for the example SOC test,
+This directory contains scripts to prepare the image for the example SoC test,
 running `make` should:
 
-* Download a minimal raspbian image
-* Inject the settings for the test to be performed (enable UART, setup basic password, tpm dtb)
+* Download a minimal Raspbian image
+* Inject the settings for the test to be performed (enable UART, set up a basic password, TPM DTB)
 
 You will need guestmount installed, sudo permissions.
 

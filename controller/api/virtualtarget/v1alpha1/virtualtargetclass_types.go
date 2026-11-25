@@ -101,7 +101,7 @@ type ImageOverrides struct {
 
 // VirtualTargetClassSpec defines the desired state of VirtualTargetClass.
 type VirtualTargetClassSpec struct {
-	// Provisioner identifies which exporter-set controller handles this class.
+	// Provisioner identifies which ExporterSet controller handles this class.
 	// Example: "qemu.jumpstarter.dev", "corellium.jumpstarter.dev"
 	// +kubebuilder:validation:MinLength=1
 	Provisioner string `json:"provisioner"`

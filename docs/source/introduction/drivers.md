@@ -4,7 +4,7 @@ Jumpstarter uses a modular driver model to build abstractions around the
 interfaces used to interact with target devices, both physical hardware and
 virtual systems.
 
-An [{term}`Exporter`](exporters.md) uses Drivers to "export" these interfaces from a
+An [{term}`Exporter`](exporters.md) uses drivers to "export" these interfaces from a
 {term}`host` machine to the clients via {term}`gRPC`. Drivers can be thought
 of as a simplified API for an interface or device type.
 
@@ -203,7 +203,7 @@ Driver access is controlled through Jumpstarter's authentication mechanisms:
 ### Local Mode Authentication
 
 In {term}`local mode`, drivers are accessible to any process that can connect to the
-local Unix socket. This is typically restricted by file system permissions. When
+local Unix socket. This is typically restricted by filesystem permissions. When
 running tests locally, authentication is simplified since everything runs in the
 same user context.
 
@@ -217,7 +217,7 @@ In {term}`distributed mode`, authentication is handled through JWT tokens:
   {term}`controller` with their own tokens
 - **Driver Access Control**: The {term}`controller` enforces access control by only
   allowing authorized clients to acquire {term}`lease`s on {term}`exporter`s and their drivers
-- **Driver allowlist**: Client configurations can specify which driver packages
+- **Driver allowlist**: Client configs can specify which driver packages
   are allowed to be loaded, preventing unintended execution of untrusted code
 
 ### Driver Package Security
@@ -237,7 +237,7 @@ While Jumpstarter comes with drivers for many basic interfaces, custom drivers
 can be developed for specialized hardware interfaces, emulated environments, or
 to provide domain-specific abstractions for your use case. Custom drivers follow
 the same architecture pattern as built-in drivers and can be integrated into the
-system through the exporter configuration.
+system through the exporter config.
 
 ## Example Implementation
 

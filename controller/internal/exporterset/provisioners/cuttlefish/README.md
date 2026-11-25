@@ -95,13 +95,13 @@ ADB and simulator listeners, while leaving outbound exporter connections and
 same-Pod loopback traffic available. Deploy with a CNI that enforces NetworkPolicy.
 Other policies must not grant ingress to these Pods: Kubernetes allow rules are
 additive. Verify denial from a second Pod, using the actual runtime image;
-loopback addresses in driver configuration do not change the server's listeners.
+loopback addresses in driver config do not change the server's listeners.
 NetworkPolicy does not isolate privileged containers from their node.
 
 Controllers deployed outside the operator also need `get,list,watch,create,update,patch`
 on `networking.k8s.io/networkpolicies`. The operator supplies these permissions.
 Existing Pods must be drained and replaced to receive the isolation label,
-service account, runtime marker and managed driver configuration.
+service account, runtime marker and managed driver config.
 
 ## Configuration and resource allocation
 
@@ -228,7 +228,7 @@ spec:
 The class carries the provisioner parameters and images; the drivers live in the
 ExporterSet template. Use `ExitAndReplace`, and keep `env_config.instances` to a
 single entry. The provisioner fills in the managed endpoints, so the driver
-configuration below only needs what it overrides:
+config below only needs what it overrides:
 
 ```yaml
 apiVersion: virtualtarget.jumpstarter.dev/v1alpha1

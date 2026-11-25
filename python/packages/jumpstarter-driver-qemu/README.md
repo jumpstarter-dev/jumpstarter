@@ -40,7 +40,7 @@ export:
 | `disk_size` | Grow the root disk to this size before boot (shrinking is refused) | str | none |
 | `hostname`, `username`, `password` | Guest hostname and user created through cloud-init | str | `demo`, `jumpstarter`, `password` |
 | `default_partitions` | Files used for `root`, `bios`, `OVMF_CODE.fd` or `OVMF_VARS.fd` when nothing was flashed to them | dict | `{}` |
-| `virtio_transport` | `pci`, or `mmio` for firmware that cannot enumerate PCI, such as the u-boot that boots aboot images | str | `pci` |
+| `virtio_transport` | `pci`, or `mmio` for firmware that cannot enumerate PCI, such as the U-Boot that boots aboot images | str | `pci` |
 | `hostfwd` | Forwarded TCP ports, each exposed as a child of the same name; entries take `hostport`, `guestport` and optionally `hostaddr` (default `127.0.0.1`) | dict | `{}` |
 | `fls_version` | Download this `fls` release from GitHub for `oci://` flashing instead of using `fls` from `PATH` | str | none |
 | `fls_allow_custom_binaries` | Allow `fls_custom_binary_url` | bool | `false` |
@@ -57,7 +57,7 @@ automotive-image-builder aboot image this way.
 The driver exposes `power`, `flasher`, `console` and `vnc` children, an `ssh`
 child when `/dev/vhost-vsock` is usable on the exporter, and one child per
 `hostfwd` entry. A `hostfwd` entry named `ssh`, like the one in the example
-above, replaces the vsock `ssh` child.
+above, replaces the VSOCK `ssh` child.
 
 ## API Reference
 

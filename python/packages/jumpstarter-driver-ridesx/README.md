@@ -171,7 +171,7 @@ See `examples/exporter-platform.yaml` and reference manifests in
 TAC serial handles power on/off and mode switching (EDL/fastboot). Export as `firmware` with
 `tac`, `serial`, and `sail` children for identification.
 
-### Example exporter configuration
+### Example exporter config
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -280,7 +280,7 @@ interrupted download is fetched again on the next `--cached` run. Use
 `--force-download` with `--cached` to discard the cached copy and download it again.
 
 Archives may embed `jumpstarter_manifest.yaml`. See `examples/exporter-platform.yaml` for
-exporter configuration and the QDL module for manifest schema details.
+exporter config and the QDL module for manifest schema details.
 
 ### Board revision and CDT flash
 

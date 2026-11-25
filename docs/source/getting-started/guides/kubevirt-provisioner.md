@@ -228,7 +228,7 @@ without blocking VM deletion. Creating them does not require permission to updat
 ## Auto-Injected Drivers
 
 The provisioner automatically injects the following drivers into the exporter
-configuration:
+config:
 
 | Driver | Type | Purpose |
 |--------|------|---------|
