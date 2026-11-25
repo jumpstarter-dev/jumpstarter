@@ -106,6 +106,14 @@ def test_packets_are_found_by_name_by_field_and_by_where_they_are():
     assert select(records, "disconnection_complete", {"reason": 0x08}) == []
     # a field is found however deep: the status of a command is in its return parameters
     assert [packet["index"] for packet in select(records, "command_complete", {"status": "success"})] == [1]
+    # a number that crossed from a client is a float, and a status or a reason may be said by its name
+    assert [packet["index"] for packet in select(records, "disconnection_complete", {"connection_handle": 1.0})] == [6]
+    assert [packet["index"] for packet in select(records, "disconnection_complete", {"reason": "0x13"})] == [6]
+    assert [packet["index"] for packet in select(records, "disconnection_complete", {"status": "SUCCESS"})] == [6]
+    by_name = {"reason": "remote user terminated connection"}
+    assert [packet["index"] for packet in select(records, "disconnection_complete", by_name)] == [6]
+    assert select(records, "disconnection_complete", {"reason": "PAGE_TIMEOUT"}) == []
+    assert select(records, "disconnection_complete", {"connection_handle": 2.0}) == []
     assert [packet["index"] for packet in select(records, match={"bd_addr": "06:05:04:03:02:01"})] == [2, 3, 4]
     assert [packet["index"] for packet in select(records, match={"connection_handle": 1}, since=3)] == [5, 6]
     assert [packet["index"] for packet in select(records, match={"type": "command"})] == [0, 4]

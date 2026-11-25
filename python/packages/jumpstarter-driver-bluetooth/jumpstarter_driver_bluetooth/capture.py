@@ -148,11 +148,37 @@ def _find(where: Any, name: str) -> list:
     return found
 
 
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        return float(int(str(value), 0))  # ("19", "0x13")
+    except ValueError:
+        return None
+
+
+def _same(value: Any, wanted: Any) -> bool:
+    """A field is what a test asked for. A number that has crossed from a client is a float (1.0 for a
+    connection handle of 1); and a status or a reason, which is a number on the wire, may be asked for by its
+    name: ``SUCCESS``, ``PAGE_TIMEOUT``, ``REMOTE_USER_TERMINATED_CONNECTION``."""
+    if str(value).lower() == str(wanted).lower():
+        return True
+    number, asked = _number(value), _number(wanted)
+    if number is not None and asked is not None:
+        return number == asked
+    if isinstance(value, int) and not isinstance(value, bool) and isinstance(wanted, str):
+        said = wanted.strip().lower().replace(" ", "_").removeprefix("hci_").removesuffix("_error")
+        return hci.HCI_Constant.error_name(value).lower().removesuffix("_error") == said
+    return False
+
+
 def matches(packet: dict, event: str = "", match: dict | None = None) -> bool:
     if event and short_name(packet["name"]) != short_name(event):
         return False
     for name, wanted in (match or {}).items():
-        if not any(str(value).lower() == str(wanted).lower() for value in _find(packet, name)):
+        if not any(_same(value, wanted) for value in _find(packet, name)):
             return False
     return True
 

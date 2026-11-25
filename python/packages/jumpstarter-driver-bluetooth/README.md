@@ -608,7 +608,9 @@ How it records:
   ISO) is given by its connection handle and length only, since a key may be in it.
 - An event is named as a test would say it: `connection_complete`, `Connection Complete` and
   `HCI_CONNECTION_COMPLETE_EVENT` are the same. Keyword arguments narrow it by field, however deep the field
-  is (`status="SUCCESS"` finds a command's return parameters). `since` takes an `index`.
+  is (`status="SUCCESS"` finds a command's return parameters). A status or a reason, which the packet has as
+  a number, may be said by its name (`status="SUCCESS"`, `reason="REMOTE_USER_TERMINATED_CONNECTION"`) or as
+  the number. `since` takes an `index`.
 - A device whose mode is not `full` any more (its Bluetooth was reset behind the driver) writes what its
   build writes by itself. On a `userdebug` build that is a *filtered* log, `btsnoop_hci.log.filtered`: every
   command and event, with what the profiles say cut short. It is read in place of the full log, so the
