@@ -22,13 +22,12 @@ import (
 )
 
 const (
-	// AnnotationHost is the annotation key on Exporter CRs that
-	// records which remote host an instance was assigned to.
-	AnnotationHost = "qemu-ssh.jumpstarter.dev/host"
-
-	// AnnotationCredentialsSecret records the SSH credentials Secret
-	// name alongside the host assigned during Deploy.
-	AnnotationCredentialsSecret = "qemu-ssh.jumpstarter.dev/credentials-secret"
+	// AnnotationConnection records the full SSH connection details
+	// (host, port, user, credentials Secret) as JSON. Deploy writes it
+	// before creating any remote containers; Cleanup reads it back so
+	// teardown reconnects exactly as Deploy did. Its presence also marks
+	// that remote resources may exist and must be cleaned up.
+	AnnotationConnection = "qemu-ssh.jumpstarter.dev/connection"
 
 	// AnnotationDeployedAt records when deployment completed (RFC3339). Its
 	// presence is the deployment marker — DeployedAt returns deployed=true
@@ -52,8 +51,8 @@ const (
 // same VirtualTargetClass. Capacity is controlled via ExporterSet
 // replica bounds, not per-host slot accounting.
 type HostConfig struct {
-	// Name is the FQDN or IP of the remote host.
-	Name string `json:"name"`
+	// Host is the FQDN or IP of the remote host (parameters.host.name).
+	Host string `json:"name"`
 
 	// Port is the SSH port (default: 22).
 	Port int `json:"port,omitempty"`
@@ -86,7 +85,7 @@ func ParseHost(mergedParameters map[string]any) (HostConfig, error) {
 		return HostConfig{}, fmt.Errorf("unmarshal host: %w", err)
 	}
 
-	if host.Name == "" {
+	if host.Host == "" {
 		return HostConfig{}, fmt.Errorf("parameters.host.name is required")
 	}
 

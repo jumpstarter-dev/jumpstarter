@@ -72,27 +72,21 @@ type SSHHost struct {
 	mu         sync.Mutex
 }
 
-// SSHConnectConfig holds the parameters needed to establish an SSH connection.
-type SSHConnectConfig struct {
-	Host       string
-	Port       int
-	User       string
-	PrivateKey []byte
-}
-
-// Connect establishes an SSH + SFTP connection to a remote host.
-func Connect(cfg SSHConnectConfig) (*SSHHost, error) {
-	if cfg.Port == 0 {
-		cfg.Port = 22
+// Connect establishes an SSH + SFTP connection to a remote host, dialing the
+// host, port, and user recorded in conn with the given private key.
+func Connect(conn ConnectionConfig, privateKey []byte) (*SSHHost, error) {
+	port := conn.Port
+	if port == 0 {
+		port = defaultSSHPort
 	}
 
-	signer, err := ssh.ParsePrivateKey(cfg.PrivateKey)
+	signer, err := ssh.ParsePrivateKey(privateKey)
 	if err != nil {
 		return nil, fmt.Errorf("parse SSH private key: %w", err)
 	}
 
 	sshConfig := &ssh.ClientConfig{
-		User: cfg.User,
+		User: conn.User,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
@@ -106,7 +100,7 @@ func Connect(cfg SSHConnectConfig) (*SSHHost, error) {
 		Timeout:         defaultConnectTimeout,
 	}
 
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
+	addr := fmt.Sprintf("%s:%d", conn.Host, port)
 
 	sshClient, err := ssh.Dial("tcp", addr, sshConfig)
 	if err != nil {
@@ -122,7 +116,7 @@ func Connect(cfg SSHConnectConfig) (*SSHHost, error) {
 	return &SSHHost{
 		sshClient:  sshClient,
 		sftpClient: sftpClient,
-		hostName:   cfg.Host,
+		hostName:   conn.Host,
 	}, nil
 }
 

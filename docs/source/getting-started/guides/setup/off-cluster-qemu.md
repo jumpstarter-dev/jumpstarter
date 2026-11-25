@@ -199,19 +199,22 @@ When scaling down or cleaning up:
 4. Force-removes any leftover containers and the shared Podman volume
 5. Deletes the Exporter CR
 
-Cleanup resolves the SSH user and port by merging the VirtualTargetClass and
-ExporterSet parameters, so the class must still exist when the ExporterSet
-goes away: delete the ExporterSet before its VirtualTargetClass.
+Cleanup uses the SSH connection (host, port, user, and credentials Secret name)
+recorded on the Exporter when it was deployed, so it does not re-read the
+VirtualTargetClass or ExporterSet parameters. The ExporterSet and its
+VirtualTargetClass can therefore be deleted in any order, and editing the
+class's host settings after an instance is deployed does not break its teardown.
 
-It also reads the private key from the credentials Secret recorded on the
-Exporter when it was deployed, so keep that Secret as well. If the Secret is
-missing or SSH to the host fails, cleanup skips the remote teardown and lets
-the finalizer clear — but the remote containers and volume are orphaned on the
-host. Delete the class and the Secret only after the ExporterSet is gone.
-If remote resources were orphaned (missing Secret, unreachable host), remove
-them by hand on the host. The full teardown order matters — the quadlet files
-set `Restart=always`, so removing a container without stopping the service
-first will just restart it:
+Cleanup still reads the private key from the recorded credentials Secret, so
+keep that Secret until the ExporterSet is gone. If the Secret is missing or SSH
+to the host fails, cleanup skips the remote teardown and lets the finalizer
+clear so it does not wedge — but the remote containers and volume are then
+orphaned on the host. In that case the controller emits a Warning Event
+(`OrphanedRemoteResources`) on the ExporterSet naming the leftover containers
+and volume; `kubectl describe exporterset <name>` shows it. Remove the orphans
+by hand on the host. The full teardown order matters — the quadlet files set
+`Restart=always`, so removing a container without stopping the service first
+will just restart it:
 
 ```bash
 # 1. Stop the services (suppresses Restart=always)
