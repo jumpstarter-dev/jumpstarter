@@ -34,6 +34,62 @@ def _pty_pair():
         yield SimpleNamespace(reader=reader, writer=writer)
 
 
+class _SerialDevice:
+    """The device end of a PTY used as a serial port, read continuously in the background."""
+
+    def __init__(self, master: int, path: str):
+        self.path = path
+        self._master = master
+        self._data = bytearray()
+        self._arrived = threading.Condition()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+
+    def _drain(self):
+        while not self._stop.is_set():
+            if not select.select([self._master], [], [], 0.05)[0]:
+                continue
+            try:
+                chunk = os.read(self._master, 1024)
+            except OSError:  # macOS reports EIO while no one has the port open
+                time.sleep(0.01)
+                continue
+            with self._arrived:
+                self._data += chunk
+                self._arrived.notify_all()
+
+    def read_until(self, marker: bytes, timeout: float = 5) -> bytes:
+        """Wait until marker arrives or timeout passes; return all that arrived since the last call."""
+        with self._arrived:
+            self._arrived.wait_for(lambda: marker in self._data, timeout)
+            data = bytes(self._data)
+            self._data.clear()
+        return data
+
+
+@contextmanager
+def _serial_device():
+    """Open a raw PTY to stand in for a serial device at `path`.
+
+    Its output is read until the end, not only while a test is looking: macOS
+    blocks tcdrain() on a PTY until everything written to it has been read, and
+    pyserial calls tcdrain() when the exporter closes the port. Bytes nobody
+    reads, such as the first two of the Ctrl-B x3 that ends a console, would
+    otherwise hang the exporter's shutdown.
+    """
+    master, slave = os.openpty()
+    tty.setraw(slave)
+    device = _SerialDevice(master, os.ttyname(slave))
+    device._thread.start()
+    try:
+        yield device
+    finally:
+        device._stop.set()
+        device._thread.join()
+        os.close(slave)
+        os.close(master)
+
+
 @contextmanager
 def _running_console(console, keyboard, stdout=None):
     """Run Console.run() in a worker with borrowed streams.
@@ -118,13 +174,20 @@ def _wait_read(stream, timeout=5):
     return True
 
 
+def _terminal_attrs(fd):
+    """tcgetattr() without PENDIN, which macOS sets by itself when a terminal returns to canonical mode."""
+    attrs = termios.tcgetattr(fd)
+    attrs[3] &= ~termios.PENDIN
+    return attrs
+
+
 def test_setraw_restores_the_terminal():
     master, slave = os.openpty()
     with os.fdopen(master, "r+b", buffering=0), os.fdopen(slave, "r") as reader, patch("sys.stdin", reader):
-        cooked = termios.tcgetattr(reader)
+        cooked = _terminal_attrs(reader)
         with Console(Mock()).setraw():
-            assert termios.tcgetattr(reader) != cooked
-        assert termios.tcgetattr(reader) == cooked
+            assert _terminal_attrs(reader) != cooked
+        assert _terminal_attrs(reader) == cooked
 
 
 def test_ctrl_b_exits():
@@ -552,7 +615,11 @@ def test_a_refused_connect_raises_its_driver_error():
 
 def test_leaving_a_console_that_is_still_connecting_frees_the_write_token(tmp_path):
     port = tmp_path / "ttyLATE"
-    with _pty_pair() as device, _pty_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
+    with (
+        _serial_device() as device,
+        _pty_pair() as keyboard,
+        serve(PySerial(url=str(port), check_present=False)) as client,
+    ):
         with _running_console(Console(client), keyboard) as run:
             _wait_registered(client, run)
             keyboard.writer.write(EXIT_HOTKEY)
@@ -562,25 +629,29 @@ def test_leaving_a_console_that_is_still_connecting_frees_the_write_token(tmp_pa
         status = _wait_detached(client)
         assert not status["write_token_held"], status
 
-        port.symlink_to(os.ttyname(device.reader.fileno()))
+        port.symlink_to(device.path)
         with _running_console(Console(client), keyboard) as run:
             _wait_registered(client, run)
             keyboard.writer.write(b"next")
-            received = _read_until(device.writer, b"next", timeout=10)
+            received = device.read_until(b"next", timeout=10)
         assert run.error is None
     assert received == b"next", f"the next console did not reach the device: {received!r}"
 
 
 def test_keys_typed_while_the_console_connects_reach_the_device(tmp_path):
     port = tmp_path / "ttyLATE"
-    with _pty_pair() as device, _pty_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
+    with (
+        _serial_device() as device,
+        _pty_pair() as keyboard,
+        serve(PySerial(url=str(port), check_present=False)) as client,
+    ):
         with _running_console(Console(client), keyboard) as run:
             _wait_registered(client, run)
             keyboard.writer.write(b"ahead")
-            port.symlink_to(os.ttyname(device.reader.fileno()))
-            received = _read_until(device.writer, b"ahead", timeout=10)
+            port.symlink_to(device.path)
+            received = device.read_until(b"ahead", timeout=10)
             keyboard.writer.write(b"after")
-            received += _read_until(device.writer, b"after")
+            received += device.read_until(b"after")
         assert run.error is None
     assert received == b"aheadafter", f"keys typed while connecting were lost or reordered: {received!r}"
 
@@ -588,17 +659,21 @@ def test_keys_typed_while_the_console_connects_reach_the_device(tmp_path):
 def test_a_power_cycle_while_connecting_drops_the_keys_typed_before_it(tmp_path):
     port = tmp_path / "ttyLATE"
     power = _FakePowerControl()
-    with _pty_pair() as device, _pty_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
+    with (
+        _serial_device() as device,
+        _pty_pair() as keyboard,
+        serve(PySerial(url=str(port), check_present=False)) as client,
+    ):
         with _running_console(Console(client, power_control=power), keyboard) as run:
             _wait_registered(client, run)
             keyboard.writer.write(b"before" + POWER_HOTKEY)
             assert power.cycled.wait(timeout=5), "power cycle was not triggered"
-            port.symlink_to(os.ttyname(device.reader.fileno()))
+            port.symlink_to(device.path)
             received = b""
             deadline = time.monotonic() + 10
             while not received and time.monotonic() < deadline:
                 keyboard.writer.write(b"!")
-                received += _read_until(device.writer, b"!", timeout=0.2)
+                received += device.read_until(b"!", timeout=0.2)
         assert run.error is None
     assert received, "keys typed after the power cycle did not reach the device"
     assert received == b"!" * len(received), f"keys typed before the power cycle reached the device: {received!r}"
@@ -606,13 +681,17 @@ def test_a_power_cycle_while_connecting_drops_the_keys_typed_before_it(tmp_path)
 
 def test_a_console_run_again_sends_what_is_typed_to_its_new_stream(tmp_path):
     port = tmp_path / "ttyLATE"
-    with _pty_pair() as device, _pipe_pair() as keyboard, serve(PySerial(url=str(port), check_present=False)) as client:
-        port.symlink_to(os.ttyname(device.reader.fileno()))
+    with (
+        _serial_device() as device,
+        _pipe_pair() as keyboard,
+        serve(PySerial(url=str(port), check_present=False)) as client,
+    ):
+        port.symlink_to(device.path)
         console = Console(client)
         with _running_console(console, keyboard) as run:
             _wait_registered(client, run)
             keyboard.writer.write(b"first")
-            received = _read_until(device.writer, b"first")
+            received = device.read_until(b"first")
         assert run.error is None
         assert received == b"first", f"the first run did not reach the device: {received!r}"
         _wait_detached(client)
@@ -622,8 +701,8 @@ def test_a_console_run_again_sends_what_is_typed_to_its_new_stream(tmp_path):
             _wait_registered(client, run)
             keyboard.writer.write(b"second")
             assert _wait_read(keyboard.reader), "console did not read input while connecting"
-            port.symlink_to(os.ttyname(device.reader.fileno()))
-            received = _read_until(device.writer, b"second", timeout=10)
+            port.symlink_to(device.path)
+            received = device.read_until(b"second", timeout=10)
         assert run.error is None
     assert b"second" in received, f"the second run lost what was typed while connecting: {received!r}"
 
