@@ -583,8 +583,16 @@ class TestInRobot:
                 tmp_path, f"suites/{index}.robot", "*** Settings ***\n" + resources + "\n*** Test Cases ***\n" + cases
             )
         run = run_robot(tmp_path / "suites")
-        assert leases.calls
-        # whatever was refused, no session was ever opened for the other one's selector
-        assert {(name, call["selector"]) for name, call in leases.calls} == {(name, f"board={name}") for name in order}
-        refused = any("same variable and keyword names" in error.message for error in run.result.errors)
-        assert refused is not literal
+        first, second = order
+        statuses = {name: run.status(name) for name in run.tests}
+        assert statuses == dict.fromkeys(
+            [f"Open {first} In 1", f"Open {second} In 2", f"Open {first} In 3", f"Open {second} In 3"], "PASS"
+        )
+        opened = [(name, call["selector"]) for name, call in leases.calls]
+        own = [(first, f"board={first}"), (second, f"board={second}")]
+        assert opened[:2] == own  # the suites that import one session
+        assert opened[2:] == own  # the suite that imports both
+        # with variables the second import is refused, and its session stays as suite 2 declared it
+        refused = [e.message for e in run.result.errors if "same variable and keyword names" in e.message]
+        assert len(refused) == (0 if literal else 1)
+        assert all(f"{second}.resource" in message for message in refused)
