@@ -75,7 +75,7 @@ export:
 
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
-| `methods` | Dictionary of methods. Values can be:<br/>- String: just the command<br/>- Dict: `{command: "...", description: "...", timeout: ..., session: ...}` | `dict[str, str \| dict]` | Yes | - |
+| `methods` | Dictionary of methods. Each value is either the command as a string or a dict `{command: "...", description: "...", timeout: ..., session: ...}` | `dict[str, str \| dict]` | Yes | - |
 | `cwd` | Working directory for shell commands | `str` | No | `None` |
 | `shell` | Shell command to execute scripts | `list[str]` | No | `["bash", "-c"]` |
 | `timeout` | Command timeout in seconds | `int` | No | `300` |

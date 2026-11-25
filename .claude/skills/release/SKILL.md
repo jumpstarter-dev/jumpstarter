@@ -27,8 +27,8 @@ Release input: $ARGUMENTS
 
 ## Ordering constraint
 
-```
-[optional FLS release] → Makefile/FLS pin update → commit → tag push → GitHub Release / [CI builds images] → make bundle → make contribute
+```text
+[optional FLS release] -> Makefile/FLS pin update -> commit -> tag push -> GitHub Release / [CI builds images] -> make bundle -> make contribute
 ```
 
 If a new FLS version is needed, release FLS first so binaries exist before Jumpstarter CI builds the exporter image. Images must exist before bundle generation. The skill enforces this by splitting the process into phases.
@@ -154,6 +154,7 @@ gh api "repos/${REPO}/git/refs" -f ref=refs/heads/release-X.Y -f sha="$SHA"
 If both fail, the user needs to temporarily remove `release-*` from the branch protection ruleset, push the branch, then re-add it.
 
 After pushing, inform the user:
+
 - The branch push triggers CI to build images tagged with the branch name (e.g., `:release-0.9`)
 - If a new FLS version is needed, do step 2B next; otherwise tag the first RC via step 2C (`vX.Y.0-rc.1`)
 
@@ -256,11 +257,13 @@ git pull origin release-X.Y
    - `python/packages/jumpstarter-driver-flashers/jumpstarter_driver_flashers/client.py` → `flash()` default and `--fls-version` click default
 
 3. **Regenerate manifests and set the operator image tag:**
+
    ```bash
    cd controller/deploy/operator
    make build-installer
    grep newTag config/manager/kustomization.yaml   # must show X.Y.Z
    ```
+
    `build-installer` runs `make manifests generate` and then sets `newTag` in `config/manager/kustomization.yaml` from `VERSION`. It needs no images, so it belongs in this pre-tag commit. `make bundle` in step 2D sets the same tag, but only after the tag is cut, so without this step the tagged tree keeps the previous release's image tag.
 
 4. **Commit and push via PR** — release branches are protected and require merge queue, so direct pushes will be rejected. Files to include:
@@ -302,13 +305,16 @@ git reset --hard origin/release-X.Y
 
 #### Phase 2: Tag and GitHub Release
 
+<!-- pyml disable-next-line md029 -->
 5. **Create and push the git tag:**
+
    ```bash
    git tag vX.Y.Z       # or vX.Y.Z-rc.N
    git push origin vX.Y.Z
    ```
 
 6. **Create the GitHub Release:**
+
    ```bash
    # For a release candidate:
    gh release create vX.Y.Z-rc.N \
@@ -323,21 +329,25 @@ git reset --hard origin/release-X.Y
      --generate-notes \
      --notes-start-tag vPREVIOUS_TAG
    ```
+
    Use the previous tag as `--notes-start-tag` to scope the generated release notes.
 
 #### Phase 3: Wait for CI
 
 The tag push triggers:
+
 - `build-images.yaml` — builds and pushes all container images
 - `trigger-packages.yaml` — regenerates the Python package index
 
 The GitHub Release triggers:
+
 - `release-operator-installer.yaml` — uploads `operator-installer.yaml` to the release
 - `publish-pypi.yaml` — builds and publishes the Python packages to PyPI (final releases only, RC releases are skipped)
 
 Tell the user that CI is now building the container images and you will monitor progress.
 
 Find the CI run triggered by the tag and monitor it:
+
 ```bash
 # Find the run triggered by the tag push
 gh run list --workflow=build-images.yaml --limit 3 --json databaseId,status,conclusion,headBranch,event,createdAt
@@ -387,6 +397,7 @@ uv publish dist/jumpstarter-X.Y.Z* dist/jumpstarter_*-X.Y.Z*
 **Strategy when rate-limited:**
 
 1. Check which packages already exist on PyPI (any version):
+
    ```bash
    for f in dist/jumpstarter-X.Y.Z-py3-none-any.whl dist/jumpstarter_*-X.Y.Z-py3-none-any.whl; do
      name=$(basename "$f" | sed 's/-X.Y.Z-.*//' | tr '_' '-')
@@ -394,14 +405,19 @@ uv publish dist/jumpstarter-X.Y.Z* dist/jumpstarter_*-X.Y.Z*
      [ "$code" = "200" ] && echo "EXISTS: $name" || echo "NEW:    $name"
    done
    ```
+
 2. Publish existing packages one at a time (they won't hit the new-project limit):
+
    ```bash
    uv publish dist/<existing_package>-X.Y.Z*
    ```
+
 3. For new packages, wait for the rate limit to reset (typically a few hours, sometimes ~24h) and retry:
+
    ```bash
    uv publish dist/<new_package>-X.Y.Z*
    ```
+
 4. Report to the user which packages succeeded and which are still pending.
 
 **Long-term solution:** The `publish-pypi.yaml` workflow uses PyPI Trusted Publishing (OIDC, no token). Once configured, tag pushes handle everything automatically. Note: a pending publisher does not pre-create the PyPI project — the first publish creates it, so the new-project rate limit can still apply on the first release of a new package.

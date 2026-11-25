@@ -1,3 +1,4 @@
+<!-- pyml disable-next-line md041 -->
 ```{eval-rst}
 .. click:: jumpstarter_cli.jmp:jmp
    :prog: jmp
