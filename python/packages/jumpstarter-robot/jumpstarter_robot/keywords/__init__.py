@@ -9,4 +9,6 @@ from __future__ import annotations
 
 def load_all() -> list[type]:
     """The keyword set classes, in the order their keywords are documented."""
-    return []
+    from .appium import AppiumKeywords
+
+    return [AppiumKeywords]

@@ -349,6 +349,40 @@ each keyword, run
 | `List Drivers` | `session=None` | Lists the drivers of the session and their client classes. |
 | `Use Device` | `device, session=None` | Connects each role library to its driver below `device`. |
 
+### Appium
+
+These keywords need the `appium` extra:
+`pip install "jumpstarter-robot[appium]"`.
+
+`Start Appium` connects a local HTTPS port to the Appium server of a target.
+It returns a dictionary with `url`, `capabilities`, `ca_file` and `alias`.
+Give the `url` and the `capabilities` to the `Open Application` keyword of
+[AppiumLibrary](https://github.com/serhatbolsu/robotframework-appiumlibrary):
+
+```robotframework
+*** Settings ***
+Library     AppiumLibrary
+Resource    client.resource
+
+*** Test Cases ***
+Settings Opens
+    ${appium}=    Start Appium    phone.appium
+    Open Application    ${appium.url}    &{appium.capabilities}
+    ...    appium:appPackage=com.android.settings
+    [Teardown]    Run Keywords    Close All Applications    AND    Stop Appium
+```
+
+| Keyword | Arguments | Description |
+| --- | --- | --- |
+| `Start Appium` | `path=appium, port=0, alias=None, scope=global, session=None` | Connects a local HTTPS port to the Appium of the driver at `path`. Returns its URL and capabilities. |
+| `Stop Appium` | `alias=None` | Closes the local port. Close the applications first with `Close All Applications`. |
+| `Upload App` | `path, file, session=None` | Sends an application file to the Appium at `path`. Returns a token for `appium:app`. |
+
+The exporter starts Appium when you call `Start Appium` the first time. If you
+call `Start Appium` again for the same driver, it returns the same server.
+The local port closes at the end of `scope`, when the session closes, or with
+`Stop Appium`.
+
 ## Change the keywords of a driver
 
 Each public method of a `DriverClient` class is a keyword. You do not change
