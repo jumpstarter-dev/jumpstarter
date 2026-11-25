@@ -250,6 +250,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	var legacyTokens *authentication.StoredTokenAuthenticator
+	if cfg.AllowStoredTokenFallback {
+		legacyTokens = &authentication.StoredTokenAuthenticator{
+			Primary: cfg.Authenticator, Cache: mgr.GetCache(), Reader: mgr.GetAPIReader(), Namespace: watchNamespace,
+			Issuer: oidcSigner.Issuer(), Audience: oidcSigner.Audience(), Prefix: cfg.Prefix,
+		}
+		cfg.Authenticator = legacyTokens
+	}
+
 	if err = (&controller.ExporterReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -285,10 +294,11 @@ func main() {
 	}
 
 	if err = (&service.ControllerService{
-		Client: watchClient,
-		Scheme: mgr.GetScheme(),
-		Authn:  authentication.NewBearerTokenAuthenticator(cfg.Authenticator),
-		Authz:  authorization.NewBasicAuthorizer(watchClient, cfg.Prefix, cfg.Provisioning.Enabled),
+		LegacyTokens: legacyTokens,
+		Client:       watchClient,
+		Scheme:       mgr.GetScheme(),
+		Authn:        authentication.NewBearerTokenAuthenticator(cfg.Authenticator),
+		Authz:        authorization.NewBasicAuthorizer(watchClient, cfg.Prefix, cfg.Provisioning.Enabled),
 		Attr: authorization.NewMetadataAttributesGetter(authorization.MetadataAttributesGetterConfig{
 			NamespaceKey: "jumpstarter-namespace",
 			ResourceKey:  "jumpstarter-kind",

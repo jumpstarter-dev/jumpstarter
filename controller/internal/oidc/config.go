@@ -13,6 +13,7 @@ import (
 	tokenunion "k8s.io/apiserver/pkg/authentication/token/union"
 	"k8s.io/apiserver/pkg/server/dynamiccertificates"
 	"k8s.io/apiserver/plugin/pkg/authenticator/token/oidc"
+	"k8s.io/utils/ptr"
 )
 
 func LoadAuthenticationConfiguration(
@@ -21,7 +22,7 @@ func LoadAuthenticationConfiguration(
 	configuration []byte,
 	signer *Signer,
 	certificateAuthority string,
-) (authenticator.Token, string, error) {
+) (authenticator.Token, string, bool, error) {
 	var authenticationConfiguration jumpstarterdevv1alpha1.AuthenticationConfiguration
 	if err := runtime.DecodeInto(
 		serializer.NewCodecFactory(scheme, serializer.EnableStrict).
@@ -29,7 +30,7 @@ func LoadAuthenticationConfiguration(
 		configuration,
 		&authenticationConfiguration,
 	); err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
 
 	if authenticationConfiguration.Internal.Prefix == "" {
@@ -56,9 +57,9 @@ func LoadAuthenticationConfiguration(
 		authenticationConfiguration,
 	)
 	if err != nil {
-		return nil, "", err
+		return nil, "", false, err
 	}
-	return authn, authenticationConfiguration.Internal.Prefix, nil
+	return authn, authenticationConfiguration.Internal.Prefix, ptr.Deref(authenticationConfiguration.Internal.AllowStoredTokenFallback, true), nil
 }
 
 // Reference: https://github.com/kubernetes/kubernetes/blob/v1.32.1/pkg/kubeapiserver/authenticator/config.go#L244
