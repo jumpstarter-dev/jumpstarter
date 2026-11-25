@@ -40,10 +40,12 @@ Drivers that provide various communication interfaces:
 - {doc}`ADB <adb>` (`jumpstarter-driver-adb`) - Android Debug Bridge tunneling
 - {doc}`iOS Device <iosdevice>` (`jumpstarter-driver-iosdevice`) - Per-device iOS usbmux transport
 - {doc}`BLE <ble>` (`jumpstarter-driver-ble`) - Bluetooth Low Energy communication
+- {doc}`Bluetooth <bluetooth>` (`jumpstarter-driver-bluetooth`) - A device's Bluetooth, virtual or real: its link to another device of a lease, and the device's own stack
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
 - {doc}`DDS <dds>` (`jumpstarter-driver-dds`) - DDS (Data Distribution Service) pub/sub communication using Eclipse CycloneDDS
 - {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP communication
+- {doc}`Wi-Fi <wifi>` (`jumpstarter-driver-wifi`) - A device's Wi-Fi, on a simulated medium or a real test network, as a port that can be joined between exporters
 - {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
 - {doc}`DUT Network <dut-network>` (`jumpstarter-driver-dut-network`) - DUT network isolation with bridge, DHCP, DNS, and NAT
 - {doc}`Network <network>` (`jumpstarter-driver-network`) - Network interfaces and configuration
@@ -107,7 +109,6 @@ Drivers for virtual and emulated targets:
 - {doc}`Corellium <corellium>` (`jumpstarter-driver-corellium`) - Corellium virtualization platform
 - {doc}`Cuttlefish <cuttlefish>` (`jumpstarter-driver-cuttlefish`) - Android Cuttlefish virtual device management
 - {doc}`Netsim <netsim>` (`jumpstarter-driver-netsim`) - Android netsim virtual radio control (Bluetooth, WiFi, UWB)
-- {doc}`Radio <radio>` (`jumpstarter-driver-radio`) - A device's radios (Wi-Fi, Bluetooth, UWB), simulated or real, as ports that can be joined between exporters
 
 ### Test and Measurement
 
@@ -130,6 +131,7 @@ adb.md
 androidemulator.md
 appium.md
 ble.md
+bluetooth.md
 bt-peer.md
 can.md
 copilot.md
@@ -152,7 +154,6 @@ iscsi.md
 kubevirt.md
 mitmproxy.md
 netsim.md
-radio.md
 network.md
 nanokvm-usb.md
 noyito-relay.md
@@ -184,6 +185,7 @@ uds-doip.md
 ustreamer.md
 video.md
 vnc.md
+wifi.md
 xcp.md
 yepkit.md
 zephyr.md

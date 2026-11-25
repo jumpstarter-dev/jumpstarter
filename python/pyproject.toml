@@ -66,7 +66,6 @@ jumpstarter-driver-video = { workspace = true }
 jumpstarter-driver-yepkit = { workspace = true }
 jumpstarter-driver-vnc = { workspace = true }
 jumpstarter-driver-bluetooth = { workspace = true }
-jumpstarter-driver-radio = { workspace = true }
 jumpstarter-driver-wifi = { workspace = true }
 jumpstarter-driver-xcp = { workspace = true }
 jumpstarter-driver-gptp = { workspace = true }

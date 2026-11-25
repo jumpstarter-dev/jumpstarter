@@ -180,10 +180,11 @@ With `remote`, the provisioner:
 Cuttlefish then connects the guest's HCI (H4, one TCP stream) to
 `127.0.0.1:7301` and tries once a second until something listens there. A driver
 in the exporter must listen on that port and carry the stream to the other
-device's simulator: `jumpstarter_driver_radio.direct.RemoteController`, whose
+device's simulator: `jumpstarter_driver_bluetooth.driver.Bluetooth` with
+`link: remote-controller` (or `BluetoothRemoteController` by itself), whose
 `requires` port a forward of the lease joins to the `provides` port of a
-`RootcanalController` on the other device (see the README of
-`jumpstarter-driver-radio`). Do not point a plain `requires` port at 7301:
+`link: controller-port` on the other device (see the README of
+`jumpstarter-driver-bluetooth`). Do not point a plain `requires` port at 7301:
 Cuttlefish stops the whole device when that stream is cut.
 
 Android does not finish booting without a controller, so the device with the
