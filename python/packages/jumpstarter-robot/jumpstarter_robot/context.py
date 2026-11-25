@@ -16,8 +16,7 @@ import threading
 import time
 import weakref
 from collections.abc import Awaitable, Callable, Generator
-from concurrent.futures import Future
-from contextlib import AbstractAsyncContextManager, ExitStack, contextmanager
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -213,27 +212,6 @@ def close_session(name: str) -> None:
     sessions.close(name)
 
 
-def enter_cancellable(portal: BlockingPortal, manager: AbstractAsyncContextManager, stack: ExitStack) -> Any:
-    """Enter ``manager`` in the session's portal, cancelling the enter if the keyword is interrupted.
-
-    An RF timeout or Ctrl-C interrupts only the wait in this thread. The enter
-    keeps running in the portal, and once entered it waits for an exit that
-    never comes, which blocks the portal, and so the session, from closing.
-    """
-    blocking = portal.wrap_async_context_manager(manager)
-    try:
-        value = blocking.__enter__()
-    except BaseException:
-        # anyio keeps the task that runs the context manager here; cancelling it
-        # cancels a pending enter, or exits a context that was entered meanwhile
-        task = getattr(blocking, "_exit_future", None)
-        if isinstance(task, Future):
-            task.cancel()
-        raise
-    stack.push(blocking.__exit__)
-    return value
-
-
 # How long an interrupted keyword waits for its call in the portal to stop.
 CANCEL_GRACE = 5.0
 
@@ -323,15 +301,6 @@ class _PortalCall:
     def _cancel(self) -> None:
         for scope in self.scopes:
             scope.cancel()
-
-
-def call_cancellable(portal: BlockingPortal, func: Callable[..., Awaitable[Any]], *args: Any) -> Any:
-    """``portal.call(func, *args)`` that cancels ``func`` when the keyword is interrupted.
-
-    ``portal.call`` returns on an RF timeout or Ctrl-C but leaves ``func``
-    running in the portal: a stream being read stays open on the exporter.
-    """
-    return _PortalCall(portal, func, args).wait()
 
 
 async def _cancel_stream(stream: Any) -> None:

@@ -129,7 +129,7 @@ class TestKeywords:
         names = library.get_keyword_names()
         assert "Get Gadget Label" in names
         assert "Gadget Numbers" in names
-        assert "Gadget Opened" not in names  # context managers go through Open Driver Context
+        assert "Gadget Opened" not in names  # context managers get no keyword
         assert "Gadget Background" not in names  # async members are skipped
 
     def test_include_exclude(self):

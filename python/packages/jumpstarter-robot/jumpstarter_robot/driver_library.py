@@ -319,7 +319,7 @@ class Driver:
         text += f"\n\nKeywords for the driver at ``{self.default_path or '(root)'}``, client ``{class_path(cls)}``."
         if getattr(self, "_contexts", None):
             listed = ", ".join(f"``{c}``" for c in self._contexts)
-            text += f" Context managers ({listed}) are used with `Open Driver Context`."
+            text += f" Context managers ({listed}) have no keyword."
         return text
 
     def run_keyword(self, name: str, args: list[Any], named: dict[str, Any] | None = None) -> Any:

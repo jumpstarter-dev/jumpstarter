@@ -83,8 +83,8 @@ class Jumpstarter:
     """Robot Framework support for Jumpstarter.
 
     This library connects a Robot Framework run to Jumpstarter exporters and
-    provides the keywords that work across drivers: leases and sessions,
-    driver contexts, streams and port forwards. Each driver's own keywords
+    provides the keywords that work across drivers: leases, sessions
+    and calls to a driver by its path. Each driver's own keywords
     come from a `Driver` library per
     driver, which a suite or a resource file imports, or which this library
     imports itself once it is connected.

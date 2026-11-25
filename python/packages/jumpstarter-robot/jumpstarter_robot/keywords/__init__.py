@@ -9,6 +9,4 @@ from __future__ import annotations
 
 def load_all() -> list[type]:
     """The keyword set classes, in the order their keywords are documented."""
-    from .contexts import ContextKeywords
-
-    return [ContextKeywords]
+    return []
