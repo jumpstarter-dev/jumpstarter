@@ -420,7 +420,7 @@ with its [UiAutomator2 driver](https://github.com/appium/appium-uiautomator2-dri
 for the lease, and clients open sessions through the shared
 {doc}`Appium client <appium>`, the same interface every UI-automation target
 provides. The
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 explains why Jumpstarter uses Appium and how to set it up.
 Appium, UiAutomator2 and the Android SDK they use belong on the exporter,
 usually pinned in its container image; clients do not need Appium or adb.

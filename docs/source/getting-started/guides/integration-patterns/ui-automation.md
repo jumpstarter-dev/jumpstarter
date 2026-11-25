@@ -1,4 +1,4 @@
-# Appium UI Automation
+# UI Automation
 
 Jumpstarter gives every UI-automation target the same
 [Appium](https://appium.io/docs/en/latest/) client interface, whatever its
@@ -39,11 +39,11 @@ device's tools.
 
 | Target | Driver | Appium runs | Configure |
 | --- | --- | --- | --- |
-| Android device | {doc}`adb <../../reference/package-apis/drivers/adb>` | exporter | `appium:` |
-| Android emulator | {doc}`androidemulator <../../reference/package-apis/drivers/androidemulator>` | exporter | `appium:` |
-| iPhone or iPad on USB | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | exporter | `appium:` with `wda_port` for an already running WebDriverAgent, or WebDriverAgent launch capabilities |
-| iOS simulator | {doc}`iossimulator <../../reference/package-apis/drivers/iossimulator>` | exporter (macOS) | `appium:` with a prebuilt simulator WebDriverAgent |
-| iPhone or iPad in Xcode's Device Hub | {doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>` | this Mac | `devicehub_appium()` with your WebDriverAgent build |
+| Android device | {doc}`adb <../../../reference/package-apis/drivers/adb>` | exporter | `appium:` |
+| Android emulator | {doc}`androidemulator <../../../reference/package-apis/drivers/androidemulator>` | exporter | `appium:` |
+| iPhone or iPad on USB | {doc}`iosdevice <../../../reference/package-apis/drivers/iosdevice>` | exporter | `appium:` with `wda_port` for an already running WebDriverAgent, or WebDriverAgent launch capabilities |
+| iOS simulator | {doc}`iossimulator <../../../reference/package-apis/drivers/iossimulator>` | exporter (macOS) | `appium:` with a prebuilt simulator WebDriverAgent |
+| iPhone or iPad in Xcode's Device Hub | {doc}`iosdevice <../../../reference/package-apis/drivers/iosdevice>` | this Mac | `devicehub_appium()` with your WebDriverAgent build |
 
 Device Hub is the one case where Appium runs on the client: WebDriverAgent is
 reachable only inside the Mac's Device Hub connection, so the Mac starts your
@@ -112,7 +112,7 @@ over Device Hub, so Jumpstarter installs them with `xcrun devicectl` before
 Appium sees the request, resetting an installed copy as Appium does, and starts
 an `appium:app` by its bundle identifier. Web views, MJPEG screen streaming and
 `mobile: listApps` are not available over Device Hub; see
-{doc}`iosdevice <../../reference/package-apis/drivers/iosdevice>`.
+{doc}`iosdevice <../../../reference/package-apis/drivers/iosdevice>`.
 
 ## Command line
 
@@ -176,7 +176,7 @@ macOS exporters for simulators install Appium and its XCUITest driver on the
 ## Security
 
 A lease controls its device through Appium, and Appium runs inside the exporter.
-The {doc}`Appium driver <../../reference/package-apis/drivers/appium>` keeps
+The {doc}`Appium driver <../../../reference/package-apis/drivers/appium>` keeps
 it to the device:
 
 - Appium listens on exporter loopback only, with every Appium insecure feature

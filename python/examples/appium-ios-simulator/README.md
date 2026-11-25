@@ -89,5 +89,5 @@ WebDriverAgent.
 
 `target.capabilities()` already pins the session to this simulator and its
 WebDriverAgent, so the tests add nothing device-specific. See the
-[Appium UI Automation guide](../../../docs/source/getting-started/guides/ui-automation.md)
+[UI Automation guide](../../../docs/source/getting-started/guides/integration-patterns/ui-automation.md)
 for how the shared Appium interface works across targets.

@@ -105,7 +105,7 @@ With an `appium` block in the simulator's `config`, the exporter runs
 [Appium](https://appium.io/docs/en/latest/) for the lease and clients open
 sessions through the shared {doc}`Appium client <appium>`, the same interface
 every UI-automation target provides. The
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 explains why Jumpstarter uses Appium and how to set it up. The exporter needs
 Appium, its [XCUITest driver](https://github.com/appium/appium-xcuitest-driver)
 and a complete prebuilt simulator

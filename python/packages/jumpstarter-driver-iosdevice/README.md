@@ -163,7 +163,7 @@ Device Hub also gives Xcode on the Mac the device's developer services, so
 WebDriverAgent (WDA) can run over the same connection: tests run on the device
 while you watch them, and can pause to inspect it, in Device Hub. Appium then
 runs on the Mac rather than the exporter; the
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 compares the two.
 
 Build WDA once, signed with a provisioning profile that includes the device;
@@ -275,7 +275,7 @@ With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/lat
 for the lease, and clients open sessions through the shared
 {doc}`Appium client <appium>`, the same interface every UI-automation target
 provides. The
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 explains why Jumpstarter uses Appium and how to set it up.
 The exporter needs Appium and its
 [XCUITest driver](https://github.com/appium/appium-xcuitest-driver), usually

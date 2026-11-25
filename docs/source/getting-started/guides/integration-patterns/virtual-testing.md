@@ -1,4 +1,4 @@
-# KubeVirt Provisioner
+# Virtual Testing
 
 The `kubevirt.jumpstarter.dev` {term}`provisioner` creates virtual machines on a remote
 [KubeVirt](https://kubevirt.io/) / [OpenShift Virtualization](https://docs.openshift.com/container-platform/latest/virt/about_virt/about-virt.html)

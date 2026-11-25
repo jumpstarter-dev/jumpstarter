@@ -10,10 +10,10 @@ service pushes the logs to Loki.
 
 This guide lists the signals, how to turn them on and how to consume them. The
 Telemetry endpoints section of
-[Production](../installation/service/production.md) explains how to expose the
+[Production](../../installation/service/production.md) explains how to expose the
 telemetry service to exporters and {term}`client`s and how to provide its TLS
 certificate. The design is described in
-[JEP-0013](../../contributing/jeps/JEP-0013-observability-telemetry-logs.md);
+[JEP-0013](../../../contributing/jeps/JEP-0013-observability-telemetry-logs.md);
 this guide describes what is implemented.
 
 ## Signals
@@ -88,7 +88,7 @@ telemetry Deployment after it, `<name>-telemetry`.
 With `baseDomain` set and an Ingress or Route API in the cluster, the
 operator exposes telemetry at `telemetry.<baseDomain>`. To expose it
 another way, set `spec.telemetry.grpc.endpoints` as described in
-[Production](../installation/service/production.md). Exporters must be able to
+[Production](../../installation/service/production.md). Exporters must be able to
 verify the telemetry certificate; see [Security](#security).
 
 The operator runs the `/telemetry` binary from `spec.telemetry.image`. Its
@@ -121,7 +121,7 @@ Telemetry log handler attached
 ### Telemetry settings
 
 These fields are under `spec.telemetry`; the
-[CRD reference](../../reference/crds/index.md) covers the whole resource.
+[CRD reference](../../../reference/crds/index.md) covers the whole resource.
 
 | Field | Default | Description |
 |-------|---------|-------------|
@@ -130,7 +130,7 @@ These fields are under `spec.telemetry`; the
 | `imagePullPolicy` | `IfNotPresent` | Image pull policy |
 | `replicas` | `1` | `0` suspends the Deployment, and the controller stops advertising telemetry |
 | `resources` | Requests 50m CPU and 128Mi, limits 500m CPU and 256Mi | Used when no requests, limits or claims are set |
-| `grpc.endpoints`, `grpc.tls.certSecret` | | Exposure and TLS, see [Production](../installation/service/production.md) |
+| `grpc.endpoints`, `grpc.tls.certSecret` | | Exposure and TLS, see [Production](../../installation/service/production.md) |
 | `logging.filter.minSeverity` | `info` | Lowest severity that exporters and `jmp shell` send: `debug`, `info`, `warning`, `error` or `critical`. Their `--log-level` still applies first |
 | `metrics.scrapeTimeout` | `7s` | How long a scrape waits for exporters, at most `60s`. Keep it below the Prometheus `scrape_timeout` |
 | `metrics.driverTypeEnum` | `power`, `storage`, `network`, `serial`, `console`, `video`, `composite` | Allowed `driver_type` label values, at most 16. Other values become `other` |
@@ -280,7 +280,7 @@ affects only `jmp run`. A JSON line looks like this:
 
 To change how much a single driver logs, set `log_level` under the driver's
 `config`; its children inherit it. See Common Configuration in
-[Drivers](../../reference/package-apis/drivers/index.md).
+[Drivers](../../../reference/package-apis/drivers/index.md).
 
 ### Lease context
 
@@ -307,7 +307,7 @@ lease context entries.
 ### Exporter logs in a session
 
 `jmp shell` always prints the output of the exporter's {term}`hook` scripts;
-see [Hooks](../../introduction/hooks.md). With `--exporter-logs` it also
+see [Hooks](../../../introduction/hooks.md). With `--exporter-logs` it also
 prints the exporter's driver and system logs:
 
 ```console
@@ -344,7 +344,7 @@ When telemetry is enabled, exporters send their log records with component
 timestamp and, when known, the lease, client, operation, result and driver
 type. Other fields, such as the lease context, travel as up to 16 extra
 fields, with keys up to 64 and values up to 256 characters. The `LogEntry`
-message in the [telemetry protocol reference](../../reference/grpc/telemetry.md)
+message in the [telemetry protocol reference](../../../reference/grpc/telemetry.md)
 lists every field.
 
 Sending is best effort. A batch that fails is dropped, and the exporter or
