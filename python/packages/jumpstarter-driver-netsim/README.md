@@ -3,7 +3,7 @@
 `jumpstarter-driver-netsim` controls
 [Cuttlefish](https://source.android.com/docs/devices/cuttlefish)
 netsim virtual radio interfaces through the netsim REST API.
-It manages Bluetooth (classic + BLE), WiFi, and UWB radios on
+It manages Bluetooth (classic + BLE), Wi-Fi, and UWB radios on
 [Cuttlefish](https://source.android.com/docs/devices/cuttlefish) virtual devices:
 toggle state and capture HCI packets.
 
@@ -17,12 +17,12 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-netsim
 ### Prerequisites
 
 - A running netsim instance. Launch Cuttlefish with `--netsim=true` to enable all
-  virtual radios (Bluetooth, WiFi, UWB). For Bluetooth only, use `--netsim_bt=true`.
+  virtual radios (Bluetooth, Wi-Fi, UWB). For Bluetooth only, use `--netsim_bt=true`.
 - netsim REST API accessible (see port notes below)
 
 ## Configuration
 
-Example exporter configuration:
+Example exporter config:
 
 ```yaml
 export:
@@ -155,25 +155,25 @@ with serve(driver) as client:
 ## Architecture
 
 ```text
-┌────────────┐     gRPC      ┌────────────────┐    HTTP     ┌──────────────────┐
-│ jmp shell  │──────────────►│ Netsim         │────────────►│ netsim           │
-│ (client)   │               │ Driver         │  port 7681  │ (netsimd)        │
-└────────────┘               └────────────────┘             └────────┬─────────┘
-                                                                     │
-                                                              ┌──────┴──────┐
-                                                              │  rootcanal  │
-                                                              │  (BT HCI)  │
-                                                              └──────┬──────┘
-                                                                     │
-                                                            ┌────────┴────────┐
-                                                            │ CVD-1    CVD-2  │
-                                                            │ (virtual BT/    │
-                                                            │  WiFi/UWB)      │
-                                                            └─────────────────┘
++------------+     gRPC      +----------------+    HTTP     +------------------+
+| jmp shell  |-------------->| Netsim         |------------>| netsim           |
+| (client)   |               | Driver         |  port 7681  | (netsimd)        |
++------------+               +----------------+             +--------+---------+
+                                                                     |
+                                                              +------+------+
+                                                              |  rootcanal  |
+                                                              |  (BT HCI)  |
+                                                              +------+------+
+                                                                     |
+                                                            +--------+--------+
+                                                            | CVD-1    CVD-2  |
+                                                            | (virtual BT/    |
+                                                            |  WiFi/UWB)      |
+                                                            +-----------------+
 ```
 
 The driver is a thin REST client that translates Jumpstarter driver calls into
-netsim API requests. netsim embeds rootcanal as the virtual Bluetooth HCI
+netsim API requests. netsim embeds RootCanal as the virtual Bluetooth HCI
 controller, each Cuttlefish CVD auto-registers its radio chips with netsim,
 and all CVDs on the same netsim instance share the virtual radio medium.
 
@@ -183,7 +183,7 @@ and all CVDs on the same netsim instance share the virtual radio medium.
 | ----------- | ------------ | ------------------------------------- |
 | BT Classic  | `bt_classic` | Classic Bluetooth (A2DP, HFP, etc.)   |
 | BLE         | `ble`        | Bluetooth Low Energy                  |
-| WiFi        | `wifi`       | Virtual WiFi                          |
+| Wi-Fi        | `wifi`       | Virtual Wi-Fi                          |
 | UWB         | `uwb`        | Ultra-Wideband                        |
 
 ### Host-Wide Operations

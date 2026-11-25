@@ -33,12 +33,13 @@ export:
 
 | Parameter | Description                                                       | Type | Required | Default |
 | --------- | ----------------------------------------------------------------- | ---- | -------- | ------- |
-| serial    | The serial number of the ykush hub, empty means auto-detection    | no   | None     |         |
-| port      | The port number to be managed, "0", "1", "2", "a" which means all | str  | yes      | "a"     |
+| serial    | The serial number of the ykush hub, empty means auto-detection    | str  | no       | None    |
+| port      | The port number to be managed, "1", "2", "3", or "all" which means all | str  | no       | "all"   |
+| default   | Power state set when the exporter starts and at the start of every lease: "on", "off", or "keep" (leave it unchanged) | str | no | "off" |
 
 ## API Reference
 
-The yepkit ykush driver provides a `PowerClient` with the following API:
+The Yepkit YKUSH driver provides a `PowerClient` with the following API:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_power.client.PowerClient()
@@ -49,6 +50,7 @@ The yepkit ykush driver provides a `PowerClient` with the following API:
 ### Examples
 
 Powering on and off a device
+
 ```{testcode}
 :skipif: True
 client.power.on()
@@ -70,11 +72,15 @@ Usage: j [OPTIONS] COMMAND [ARGS]...
   Generic composite device
 
 Options:
-  --help  Show this message and exit.
+  --log-level [DEBUG|INFO|WARNING|ERROR|CRITICAL]
+                                  Set the log level
+  --help                          Show this message and exit.
 
 Commands:
+  all     Generic power
   power   Generic power
   power2  Generic power
+  power3  Generic power
 
 $$ j power on
 INFO:Ykush:Power ON for Ykush YK25838 on port 1

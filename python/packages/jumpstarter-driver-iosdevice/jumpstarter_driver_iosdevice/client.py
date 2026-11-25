@@ -368,7 +368,7 @@ class IosDeviceClient(DriverClient):
         create it with sudo, which prompts for the password. The first time a
         Mac uses a device, whenever
         the device is not listed in Device Hub (for example after Unpair), or
-        with ``pair=True``, choose File > Pair Nearby Device… in Device Hub and
+        with ``pair=True``, choose File > Pair Nearby Device... in Device Hub and
         type the code it shows when asked.
         """
         self._require_macos()

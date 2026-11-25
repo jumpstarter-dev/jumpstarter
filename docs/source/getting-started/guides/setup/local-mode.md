@@ -1,6 +1,6 @@
 # Local Mode
 
-This guide shows you how to use Jumpstarter with a client and exporter running
+This guide shows you how to use Jumpstarter with a {term}`client` and {term}`exporter` running
 on the same {term}`host`.
 
 ## Prerequisites
@@ -10,17 +10,17 @@ environment:
 
 - `jumpstarter-cli` - The Jumpstarter CLI for interacting with exporters
 - `jumpstarter-driver-opendal` - The OpenDAL storage driver for file operations
-- `jumpstarter-driver-power` - The base power driver for managing power states
+- `jumpstarter-driver-power` - The base power {term}`driver` for managing power states
 
 These driver packages include mock implementations, enabling you to test the
 connection between an exporter and client without physical hardware.
 
 ## Instructions
 
-### Create an Exporter Configuration
+### Create an Exporter Config
 
-Create an exporter config named `example-local` to define the
-capabilities of your local test {term}`exporter`. This configuration mirrors a regular
+Create an {term}`exporter config` named `example-local` to define the
+capabilities of your local test exporter. This configuration mirrors a regular
 exporter config but without the `endpoint` and `token` fields since you
 don't need to connect to the {term}`controller` {term}`service`.
 
@@ -42,16 +42,23 @@ export:
 ### Spawn an Exporter Shell
 
 Interact with your local exporter using the {term}`exporter shell` functionality in
-the {term}`jmp` CLI. When you spawn a shell, Jumpstarter runs a local {term}`exporter`
+the {term}`jmp` CLI. When you spawn a shell, Jumpstarter runs a local exporter
 instance in the background for the duration of your shell {term}`session`.
 
 ```console
 $ jmp shell --exporter example-local
 ```
 
+To run a single command instead of an interactive shell, pass it after `--`.
+`jmp shell` exits with the command's exit status, so scripts can check it:
+
+```console
+$ jmp shell --exporter example-local -- j power on
+```
+
 ### Exiting the Exporter Shell
 
-To terminate the local {term}`exporter`, simply exit the shell:
+To terminate the local exporter, simply exit the shell:
 
 ```console
 $ exit
@@ -59,6 +66,6 @@ $ exit
 
 ## Next Steps
 
-Once you have your {term}`exporter shell` running, you can start using Jumpstarter
+Once you have your exporter shell running, you can start using Jumpstarter
 commands to interact with your hardware. To learn more about common workflow
 patterns and implementation examples, see [Examples](../examples/index.md).

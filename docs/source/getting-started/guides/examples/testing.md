@@ -12,7 +12,7 @@ Install the following packages in your Python environment:
 - `jumpstarter-testing` - `pytest` integration for Jumpstarter
 - `pytest` - the test framework
 
-Install any driver packages your tests require (for example,
+Install any {term}`driver` packages your tests require (for example,
 `jumpstarter-driver-power` or `jumpstarter-driver-opendal`). The examples in this
 guide that use console interaction with `PexpectAdapter` require
 `jumpstarter-driver-network`.
@@ -23,10 +23,11 @@ guide that use console interaction with `PexpectAdapter` require
 the test class. It connects to a Jumpstarter {term}`exporter` in one of two ways:
 
 1. **Shell mode**: when the `JUMPSTARTER_HOST` environment variable is set (for
-   example, inside a `jmp shell` session), it connects to the {term}`exporter` from that
+   example, inside a `jmp shell` {term}`session`), it connects to the exporter from that
    environment.
-2. **{term}`Lease` mode**: when `JUMPSTARTER_HOST` is not set, it loads the default
-   client config and acquires a {term}`lease` using the `selector` class variable.
+2. **{term}`Lease` mode**: when `JUMPSTARTER_HOST` is not set, it loads the client
+   config named `default` and acquires a lease using the `selector` class
+   variable.
 
 ```python
 from jumpstarter_testing.pytest import JumpstarterTest
@@ -43,16 +44,16 @@ class TestPowerCycle(JumpstarterTest):
 ```
 
 The `selector` class variable is a comma-separated list of {term}`label selector`s that
-identify which {term}`exporter` to {term}`lease`. It is only used when running outside a shell
-{term}`session`.
+identify which exporter to lease. It is only used when running outside a shell
+session.
 
 The `client` object exposes driver interfaces as nested attributes. In the
 example above, `dutlink` is a composite driver that provides child drivers like
-`power` and `storage`. The exact attribute names depend on your exporter config.
+`power` and `storage`. The exact attribute names depend on your {term}`exporter config`.
 
 ## Running tests
 
-### Inside a shell session
+### Inside an exporter shell
 
 Start an {term}`exporter shell` first, then run `pytest` inside it:
 
@@ -63,19 +64,22 @@ $ exit
 ```
 
 In this mode, `JumpstarterTest` detects `JUMPSTARTER_HOST` and connects to the
-active {term}`exporter`. The `selector` class variable is ignored.
+active exporter. The `selector` class variable is ignored.
 
 ### With automatic lease acquisition
 
-Run `pytest` directly without a shell {term}`session`. `JumpstarterTest` loads the default
-client configuration and acquires a {term}`lease` matching your `selector`:
+Run `pytest` directly without a shell session. `JumpstarterTest` loads the client
+config named `default` and acquires a lease matching your `selector`:
 
 ```console
 $ pytest test_my_device.py
 ```
 
-This requires a configured client (see
-[Setup Distributed Mode](../setup/distributed-mode.md)).
+This requires a {term}`client config` with the alias `default`, normally
+`~/.config/jumpstarter/clients/default.yaml` (see
+[Distributed Mode](../setup/distributed-mode.md)). The {term}`client` selected
+with `jmp config client use` does not change which config `JumpstarterTest`
+loads.
 
 ## Writing custom fixtures
 
@@ -232,7 +236,7 @@ class TestWithFirmware(JumpstarterTest):
 
 ## CI integration
 
-`JumpstarterTest` works in CI pipelines. Use either shell mode or {term}`lease` mode
+`JumpstarterTest` works in CI pipelines. Use either shell mode or lease mode
 depending on your setup.
 
 ### Shell mode in CI
@@ -262,10 +266,14 @@ hardware-test:
 ```
 ````
 
+`jmp shell` exits with the exit code of `pytest`, so failing tests fail the job.
+
 ### Lease mode in CI
 
-When tests use `selector` and run outside a shell, configure the client before
-running `pytest`:
+When tests use `selector` and run outside a shell, `JumpstarterTest` acquires the
+lease with the runner's client config named `default`, so create that
+config on the runner before running `pytest` (`jmp config client use` has no
+effect here):
 
 ````{tab} GitHub
 ```yaml
@@ -275,8 +283,6 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
-      - name: Configure client
-        run: jmp config client use ci-client
       - name: Run tests
         run: pytest tests/
 ```
@@ -289,26 +295,27 @@ hardware-test:
   tags:
     - self-hosted
   script:
-    - jmp config client use ci-client
     - pytest tests/
 ```
 ````
 
 ## Troubleshooting
 
-**Tests fail with `RuntimeError` about missing environment**
-: Ensure you are either running inside a `jmp shell` session or have a default
-  client configured with `jmp config client use <name>`.
+**Tests fail because `clients/default.yaml` does not exist**
+: Outside a `jmp shell` session `JUMPSTARTER_HOST` is not set, so
+  `JumpstarterTest` loads the client config named `default`. Run the tests inside
+  a `jmp shell` session, or create a client config with that alias, for example
+  with `jmp config client create default`.
 
 **Lease acquisition times out**
-: Verify that an {term}`exporter` matching your `selector` labels is running and
-  registered with the {term}`controller`. Check available {term}`exporter`s with
+: Verify that an exporter matching your `selector` labels is running and
+  registered with the {term}`controller`. Check available exporters with
   `jmp get exporters`, and `jmp describe exporter <name>` for one exporter's
-  labels and the {term}`lease` currently holding it. If the {term}`lease` was
+  {term}`label`s and the lease currently holding it. If the lease was
   created but never became ready, `jmp describe lease <name>` reports its
   conditions.
 
 **`client` fixture setup fails**
 : Confirm that `jumpstarter-testing` is installed, and either: `JUMPSTARTER_HOST`
-  is set correctly in shell mode, or a valid default client is configured for
-  {term}`lease` mode.
+  is set correctly in shell mode, or a valid client config named `default` exists
+  for lease mode.

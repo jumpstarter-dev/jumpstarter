@@ -28,12 +28,13 @@ Example configuration:
 
 The OpenDAL driver tracks all files and directories created during a session:
 
-- **File Creation**: Files opened in write modes (`"wb"`, `"w"`, `"ab"`, `"a"`)
+- **File Creation**: Files opened in write mode (`"wb"`)
 - **Directory Creation**: Directories created via `create_dir()`
 - **Copy Operations**: Target files/directories from `copy()` operations
 - **Rename Operations**: Target files/directories from `rename()` operations (source is removed from tracking)
 
 **Automatic Cleanup**: The tracking is automatically updated when resources are removed:
+
 - **Delete Operations**: `delete()` removes the path from tracking
 - **Remove Operations**: `remove_all()` removes the path from tracking
 
@@ -53,12 +54,14 @@ for path in created_resources:
 #### Use Cases
 
 **Temporary File Management:**
+
 ```yaml
 # Enable cleanup for temporary storage
 remove_created_on_close: true
 ```
 
 **Persistent Storage:**
+
 ```yaml
 # Disable cleanup to preserve files (default)
 remove_created_on_close: false

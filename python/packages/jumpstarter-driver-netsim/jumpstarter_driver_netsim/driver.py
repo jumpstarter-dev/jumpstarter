@@ -270,6 +270,6 @@ class Netsim(Driver):
 
     @export
     def status(self) -> str:
-        """Health check — verifies netsim is reachable. Returns device count."""
+        """Health check - verifies netsim is reachable. Returns device count."""
         devices = self._list_devices_raw()
         return f"OK ({len(devices)} devices)"

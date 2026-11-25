@@ -1,6 +1,6 @@
 # Tasmota Driver
 
-`jumpstarter-driver-tasmota` provides functionality for interacting with tasmota compatible devices.
+`jumpstarter-driver-tasmota` provides functionality for interacting with Tasmota-compatible devices.
 
 ## Installation
 
@@ -17,6 +17,10 @@ Example configuration:
 export:
   power:
     type: jumpstarter_driver_tasmota.driver.TasmotaPower
+    config:
+      host: "mqtt.example.com"
+      cmnd_topic: "cmnd/tasmota_6990F2/POWER"
+      stat_topic: "stat/tasmota_6990F2/POWER"
 ```
 
 ### Config parameters
@@ -36,7 +40,7 @@ export:
 
 ## API Reference
 
-The tasmota power driver provides a `PowerClient` with the following API:
+The Tasmota power driver provides a `PowerClient` with the following API:
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_power.client.PowerClient()

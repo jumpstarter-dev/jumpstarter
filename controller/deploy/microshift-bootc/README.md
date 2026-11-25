@@ -1,1 +1,1 @@
-../../../python/docs/source/getting-started/installation/service/bootc.md
+../../../docs/source/getting-started/installation/service/standalone.md

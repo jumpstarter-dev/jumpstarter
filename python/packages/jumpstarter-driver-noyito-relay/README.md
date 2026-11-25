@@ -92,7 +92,7 @@ port or a HID device:
   (1/2-channel CH340 board)
 - **No serial port / HID only**: Use `NoyitoPowerHID` (4/8-channel HID
   Drive-free board). Confirm with `lsusb` - the NOYITO HID module appears with
-  VID `0x1409` / PID `0x07D7` (decimal: 5131 / 2007).
+  VID `0x140B` / PID `0x07D7` (decimal: 5131 / 2007).
 
 #### Hardware Notes (Serial)
 
@@ -108,13 +108,13 @@ port or a HID device:
 - **Purchase (4-channel)**: [NOYITO 4-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B538N95Q)
 - **Purchase (8-channel)**: [NOYITO 8-Channel HID Drive-free USB Relay (Amazon)](https://www.amazon.com/NOYITO-Drive-Free-Computer-2-Channel-Micro-USB/dp/B0B536M5MH)
 - **Interface**: USB HID (no serial port)
-- **Default VID/PID**: `5131` / `2007` (0x1409 / 0x07D7)
+- **Default VID/PID**: `5131` / `2007` (0x140B / 0x07D7)
 - **Channels**: 4 or 8 independent relay channels
 - **Supply voltage**: 5 V via USB
 
 ## Usage
 
-Inside a `jmp exporter shell`:
+Inside a `jmp shell`:
 
 ```shell
 # Power on relay 1

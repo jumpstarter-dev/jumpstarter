@@ -1,23 +1,30 @@
-# KubeVirt Provisioner
+# Virtual Testing
 
-The `kubevirt.jumpstarter.dev` provisioner creates virtual machines on a remote
+The `kubevirt.jumpstarter.dev` {term}`provisioner` creates virtual machines on a remote
 [KubeVirt](https://kubevirt.io/) / [OpenShift Virtualization](https://docs.openshift.com/container-platform/latest/virt/about_virt/about-virt.html)
 cluster and manages them through the Jumpstarter {term}`ExporterSet` lifecycle.
 
 This guide walks through configuring a two-cluster setup where:
 
-- A **management cluster** (e.g. kind) runs the Jumpstarter operator and
-  lightweight exporter pods.
+- A **management cluster** (e.g. kind) runs the Jumpstarter {term}`operator` and
+  lightweight {term}`exporter` pods.
 - A **target cluster** (e.g. OpenShift with CNV) runs the actual VMs.
 
 ## Prerequisites
 
-- Jumpstarter operator installed on the management cluster
+- Jumpstarter operator installed on the management cluster, with
+  `kubevirt.jumpstarter.dev` enabled in the Jumpstarter {term}`CR`'s
+  `spec.exporterSets.provisioners` list
 - A KubeVirt-capable target cluster (OpenShift Virtualization or upstream
   KubeVirt)
-- A kubeconfig for the target cluster with permissions to create
-  `VirtualMachine`, `Service`, and `DataVolume` resources
-- The `jumpstarter-kubevirt` exporter image available to the management cluster
+- A kubeconfig for the target cluster with permissions to get, create, and
+  delete `VirtualMachine` and `Service` resources and to get and create
+  `DataVolume` resources; `NodePort` access also needs cluster-scoped `list`
+  on Nodes
+- The exporter image available to the management cluster:
+  `quay.io/jumpstarter-dev/jumpstarter` by default, which includes the KubeVirt
+  {term}`driver`s. Override it with `images.exporter` in the {term}`VirtualTargetClass` or
+  ExporterSet.
 
 For flashing, CDI must be installed and its HTTPS upload proxy must be reachable
 from the exporter pod on the management cluster. Configure `storage.uploadProxyURL`
@@ -36,21 +43,21 @@ disks, and for CDI scratch space during conversion.
 
 ## Architecture
 
-```
-┌──────────────────────────┐       ┌──────────────────────────────┐
-│   Management Cluster     │       │   Target Cluster (CNV)       │
-│                          │       │                              │
-│  ExporterSet controller  │──────▶│  VirtualMachine CR           │
-│  Exporter Pod            │       │  DataVolume (disk image)     │
-│    ├─ KubevirtPower      │──────▶│  SSH Service (NodePort/LB)   │
-│    ├─ KubevirtConsole    │       │  Forward Port Services       │
-│    ├─ KubevirtStorage    │       │                              │
-│    ├─ ssh (TcpNetwork)   │       │                              │
-│    └─ custom (TcpNetwork)│       │                              │
-└──────────────────────────┘       └──────────────────────────────┘
+```text
++--------------------------+       +------------------------------+
+|   Management Cluster     |       |   Target Cluster (CNV)       |
+|                          |       |                              |
+|  ExporterSet controller  |------>|  VirtualMachine CR           |
+|  Exporter Pod            |       |  DataVolume (disk image)     |
+|    +- KubevirtPower      |------>|  SSH Service (NodePort/LB)   |
+|    +- KubevirtConsole    |       |  Forward Port Services       |
+|    +- KubevirtStorage    |       |                              |
+|    +- ssh (TcpNetwork)   |       |                              |
+|    +- custom (TcpNetwork)|       |                              |
++--------------------------+       +------------------------------+
 ```
 
-The provisioner creates VMs with `RunStrategy: Halted` — the Python
+The provisioner creates VMs with `RunStrategy: Halted` - the Python
 `KubevirtPower` driver's `power.on()` starts the VM.
 
 ## Setup
@@ -68,7 +75,7 @@ kubectl create secret generic kubevirt-credentials \
 
 ### 2. Create a VirtualTargetClass
 
-The {term}`VirtualTargetClass` defines the provisioner backend and shared
+The VirtualTargetClass defines the provisioner backend and shared
 parameters for all VMs in the pool.
 
 #### Minimal example (containerDisk)
@@ -85,9 +92,6 @@ spec:
   reclaimPolicy: Delete
   credentialsSecretRef:
     name: kubevirt-credentials
-  images:
-    exporter:
-      image: quay.io/jumpstarter-dev/jumpstarter-kubevirt:latest
   parameters:
     namespace: my-vms
     image: quay.io/containerdisks/fedora:latest
@@ -107,9 +111,6 @@ spec:
   reclaimPolicy: Delete
   credentialsSecretRef:
     name: kubevirt-credentials
-  images:
-    exporter:
-      image: quay.io/jumpstarter-dev/jumpstarter-kubevirt:latest
   parameters:
     namespace: my-vms
     resources:
@@ -139,7 +140,7 @@ spec:
 
 ### 3. Create an ExporterSet
 
-The {term}`ExporterSet` references the VirtualTargetClass and defines how many
+The ExporterSet references the VirtualTargetClass and defines how many
 replicas (VMs) to maintain:
 
 ```yaml
@@ -171,12 +172,12 @@ spec:
 | `image` | string | *required for containerDisk* | Container disk image |
 | `resources.cpu` | int | `2` | vCPU cores |
 | `resources.memory` | string | `"4Gi"` | Guest memory |
-| `resources.storage` | string | `"20Gi"` | Root disk size |
+| `resources.storage` | string | `"20Gi"` | Default disk size when `storage.size` is not set |
 | `sshAccess` | string | `""` | `"NodePort"` or `"LoadBalancer"` to expose SSH |
 | `forwardPorts` | map | `{}` | Named ports to forward (e.g. `adb: 6520`) |
 | `cloudInit` | string | `""` | Cloud-init userdata |
 | `storage.type` | string | `"containerDisk"` | `"containerDisk"` or `"dataVolume"` |
-| `storage.size` | string | `"20Gi"` | DataVolume disk size |
+| `storage.size` | string | `resources.storage` | DataVolume disk size |
 | `storage.storageClassName` | string | `""` | Storage class for the DataVolume |
 | `storage.accessModes` | list | `["ReadWriteOnce"]` | PV access modes |
 | `storage.volumeMode` | string | StorageProfile default | `Block` or `Filesystem` |
@@ -216,8 +217,9 @@ storage:
         blank: {}
 ```
 
-Disks have stable names and serial numbers and use the virtio bus. `cloudinit` is
-reserved. The provisioner creates standalone DataVolumes owned by the remote VM;
+Disks have stable names and serial numbers and use the virtio bus. Names must be
+DNS-1123 labels of at most 20 characters, and `cloudinit` is reserved. The
+provisioner creates standalone DataVolumes owned by the remote VM;
 source PVCs are cloned, and are not adopted or deleted.
 Initial and flashed DataVolumes keep VM owner references for garbage collection
 without blocking VM deletion. Creating them does not require permission to update
@@ -226,18 +228,15 @@ without blocking VM deletion. Creating them does not require permission to updat
 ## Auto-Injected Drivers
 
 The provisioner automatically injects the following drivers into the exporter
-configuration:
+config:
 
 | Driver | Type | Purpose |
 |--------|------|---------|
-| `power` | `KubevirtPower` | Start/stop/status via KubeVirt API |
+| `power` | `KubevirtPower` | Start/stop/read via KubeVirt API |
 | `console` | `KubevirtConsole` | Serial console via WebSocket |
-| `storage` | `KubevirtStorage` | Flash disk images via DataVolume |
+| `storage` | `KubevirtStorage` | Flash disk images via DataVolume (`dataVolume` storage only) |
 | `ssh` | `TcpNetwork` | SSH connectivity (when `sshAccess` is set) |
-| `adb` | `AdbServer` | ADB tunneling (when `forwardPorts` has `adb`) |
-| `rootcanal` | `RootCanal` | Bluetooth simulation via RootCanal test channel (when `forwardPorts` has `rootcanal`) |
-| `netsim` | `Netsim` | Wireless simulation via netsim REST API (when `forwardPorts` has `netsim`) |
-| *custom* | `TcpNetwork` | Other `forwardPorts` entries |
+| *port name* | `TcpNetwork` | One per `forwardPorts` entry, named after it (for example `adb`) |
 
 All KubeVirt drivers receive the remote cluster's kubeconfig automatically.
 
@@ -253,7 +252,7 @@ jmp shell -l app=kubevirt-pool
 
 ```bash
 j power on
-j power read    # Running / Halted
+j power read    # voltage=5.0 V while the VM runs, 0.0 V otherwise
 j power off
 ```
 
@@ -317,7 +316,7 @@ power. A flash whose setup fails or is interrupted discards its own volumes, so
 re-running the flash is the retry.
 
 An interrupted flash needs no manual recovery: the next flash, or the next
-lease, cleans it up. The next flash discards uncommitted replacement volumes,
+{term}`lease`, cleans it up. The next flash discards uncommitted replacement volumes,
 and if activation already succeeded it preserves the new disks and finishes
 cleaning up the old ones. A second flash started while the first is unfinished
 preempts it, releasing the volumes and claims the first one staged before creating
@@ -330,10 +329,10 @@ are not supported, and their power and flash operations can interleave.
 
 ## Lifecycle
 
-- **Create**: ExporterSet controller → provisioner creates VM + Services on
-  target cluster → exporter pod starts on management cluster
+- **Create**: ExporterSet controller -> provisioner creates VM + Services on
+  target cluster -> exporter pod starts on management cluster
 - **Running**: Exporter pod uses kubeconfig to control VM via KubeVirt API
-- **Delete**: `reclaimPolicy: Delete` → provisioner deletes VM and Services on
+- **Delete**: `reclaimPolicy: Delete` -> provisioner deletes VM and Services on
   target cluster. Services also have `ownerReferences` to the VM as a
   secondary cleanup mechanism.
 
@@ -356,9 +355,10 @@ When `sshAccess` is set to `NodePort` or `LoadBalancer`, the provisioner:
 
 ### Port Forwarding
 
-Each entry in `forwardPorts` follows the same pattern — a port is added to the
+Each entry in `forwardPorts` follows the same pattern - a port is added to the
 VMI interface, a Service is created, and a `TcpNetwork` driver is injected with
-the resolved address.
+the resolved address. The Service is a `LoadBalancer` when `sshAccess` is
+`LoadBalancer`, and a `NodePort` otherwise.
 
 ## Troubleshooting
 

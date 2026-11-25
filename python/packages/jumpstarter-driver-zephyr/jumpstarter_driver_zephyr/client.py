@@ -39,7 +39,7 @@ class ZephyrClient(StreamingFlasherClient, CompositeClient):
 
     Collects the fixed-name firmware artifacts from a Zephyr build directory and
     streams them to the exporter, which runs its configured flash command. The
-    client knows nothing about the probe or flash command — that lives in the
+    client knows nothing about the probe or flash command - that lives in the
     exporter's driver config.
 
     Flashing comes from :class:`~jumpstarter.client.flasher.StreamingFlasherClient`:

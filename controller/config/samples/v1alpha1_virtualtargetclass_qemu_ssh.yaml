@@ -2,7 +2,7 @@
 #
 # This example defines a virtual target profile for aarch64 targets
 # running on a remote lab host (bare metal or VM with KVM). The
-# exporter-set controller connects via SSH and deploys Podman
+# ExporterSet controller connects via SSH and deploys Podman
 # containers (quadlets) on the host.
 #
 # Each ExporterSet manages one host. To use multiple hosts, create
@@ -27,8 +27,9 @@ spec:
   bindingMode: Immediate
   reclaimPolicy: Delete
   parameters:
-    # SSH connection defaults (per-host overrides available in ExporterSet)
-    ssh:
+    # SSH connection defaults; each ExporterSet sets host.name and can
+    # override these
+    host:
       user: root
       port: 22
     # Runtime container configuration

@@ -33,7 +33,7 @@ export:
 | host                    | IP address to bind the server to                                 | str  | no       | None (auto-detect)|
 | advertised_host         | IP address to advertise to clients without binding to it         | str  | no       | None (bind host)  |
 | port                    | Port number to listen on (0 = OS-assigned)                       | int  | no       | 8080              |
-| timeout                 | Request timeout in seconds                                       | int  | no       | 600               |
+| timeout                 | Accepted but currently not used by the server                    | int  | no       | 600               |
 | remove_created_on_close | Automatically remove created files/directories when driver closes| bool | no       | true              |
 
 ### File Management

@@ -7,13 +7,15 @@ installable unit.
 
 ## Development
 
-```sh
-make docker-build docker-push IMG=<some-registry>/jumpstarter-operator:tag
-make install
-make deploy IMG=<some-registry>/jumpstarter-operator:tag
+Run these from the repository root:
 
-make undeploy
-make uninstall
+```sh
+make -C controller/deploy/operator docker-build docker-push IMG=<some-registry>/jumpstarter-operator:tag
+make -C controller/deploy/operator install
+make -C controller/deploy/operator deploy IMG=<some-registry>/jumpstarter-operator:tag
+
+make -C controller/deploy/operator undeploy
+make -C controller/deploy/operator uninstall
 ```
 
 For production deployment, see the

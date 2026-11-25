@@ -23,17 +23,19 @@ help:
 	@echo "  make build      - Build all projects"
 	@echo "  make test       - Run tests in all projects"
 	@echo "  make clean      - Clean build artifacts in all projects"
-	@echo "  make lint       - Run linters in all projects"
+	@echo "  make lint       - Run linters in all projects and on Markdown files"
 	@echo "  make fmt        - Format code in all projects"
 	@echo ""
 	@echo "Documentation targets:"
-	@echo "  make docs            - Build HTML documentation with warnings as errors"
-	@echo "  make docs-singlehtml - Build single HTML page documentation"
-	@echo "  make docs-all        - Build multiversion documentation"
-	@echo "  make docs-serve      - Build and serve documentation locally"
-	@echo "  make docs-serve-all  - Build and serve multiversion documentation locally"
-	@echo "  make docs-linkcheck  - Check documentation links"
-	@echo "  make docs-test       - Run documentation tests"
+	@echo "  make docs              - Build HTML documentation with warnings as errors"
+	@echo "  make docs-singlehtml   - Build single HTML page documentation"
+	@echo "  make docs-all          - Build multiversion documentation"
+	@echo "  make docs-serve        - Build and serve documentation locally"
+	@echo "  make docs-serve-all    - Build and serve multiversion documentation locally"
+	@echo "  make docs-linkcheck    - Check documentation links"
+	@echo "  make docs-test         - Run documentation tests"
+	@echo "  make lint-markdown     - Check the formatting of all tracked Markdown files"
+	@echo "  make lint-markdown-fix - Fix the Markdown problems that can be fixed automatically"
 	@echo ""
 	@echo "End-to-end testing:"
 	@echo "  make e2e-setup             - Setup e2e test environment (one-time)"
@@ -164,9 +166,20 @@ clean:
 		fi \
 	done
 
+# Markdown files tracked in git, without symlinks (they point at files linted anyway)
+MARKDOWN_FILES = $(shell git ls-files -s -- '*.md' | awk '$$1 != "120000" { print $$4 }')
+PYMARKDOWN = cd python && uv run --isolated --only-group dev pymarkdown --config ../.pymarkdown.yml
+
+.PHONY: lint-markdown lint-markdown-fix
+lint-markdown:
+	$(PYMARKDOWN) scan $(addprefix ../,$(MARKDOWN_FILES))
+
+lint-markdown-fix:
+	$(PYMARKDOWN) fix $(addprefix ../,$(MARKDOWN_FILES))
+
 # Lint all projects
 .PHONY: lint
-lint:
+lint: lint-markdown
 	@for dir in $(SUBDIRS); do \
 		if [ -f $$dir/Makefile ]; then \
 			echo "Linting $$dir..."; \

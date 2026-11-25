@@ -1,7 +1,7 @@
 # uStreamer Driver
 
-`jumpstarter-driver-ustreamer` provides functionality for using the ustreamer
-video streaming server driven by the jumpstarter exporter. This driver takes a
+`jumpstarter-driver-ustreamer` provides functionality for using the uStreamer
+video streaming server driven by the Jumpstarter exporter. This driver takes a
 video device and exposes both snapshot and streaming interfaces.
 
 ## Installation
@@ -84,8 +84,8 @@ Usage: j video stream [OPTIONS]
 
   Start local MJPEG streaming server
 
-  Proxies ustreamer's native MJPEG stream through the jumpstarter tunnel. Frame
-  rate is controlled by ustreamer's configuration.
+  Proxies the source's native MJPEG stream through the jumpstarter tunnel.
+  Frame rate is controlled by the video source.
 
 Options:
   -p, --port INTEGER        Local server port (0 = auto)

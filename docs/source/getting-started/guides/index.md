@@ -7,10 +7,6 @@ development workflow.
 - [Examples](examples/index.md): Practical examples for common tasks
 - [Integration Patterns](integration-patterns/index.md): Incorporate Jumpstarter
   into your existing workflows and systems
-- [KubeVirt Provisioner](kubevirt-provisioner.md): Create VMs on a remote
-  KubeVirt cluster using the `kubevirt.jumpstarter.dev` provisioner
-- [Appium UI Automation](ui-automation.md): Drive iOS and Android targets
-  through one Appium interface
 
 ```{toctree}
 :maxdepth: 1
@@ -18,6 +14,4 @@ development workflow.
 setup/index.md
 examples/index.md
 integration-patterns/index.md
-kubevirt-provisioner.md
-ui-automation.md
 ```

@@ -4,8 +4,9 @@
 
 ## Installation
 
-```shell
-pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-http-power
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-http-power
 ```
 
 ## Configuration
@@ -44,7 +45,7 @@ For devices that require HTTP Digest Auth instead, replace the `basic` block wit
           password: "secret"
 ```
 
-### Example configuration for Shelly Smart Plug (Gen1):
+### Example configuration for Shelly Smart Plug (Gen1)
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -69,7 +70,7 @@ export:
           password: something
 ```
 
-### Example configuration for Shelly Smart Plug (Gen2/Gen3):
+### Example configuration for Shelly Smart Plug (Gen2/Gen3)
 
 Gen2/Gen3 plugs (e.g. Plug S G3) use the RPC API and report `voltage`/`current`
 as top-level keys, so `read()` works with no path configuration:
@@ -88,7 +89,7 @@ export:
         url: "http://192.168.0.111/rpc/Switch.GetStatus?id=0"
 ```
 
-Using the `examples/exporter-shelly-gen3.yaml` config, power on, take 4 measurements one second apart, then power off:
+With the Gen2/Gen3 `export` section above in a complete exporter config like the Gen1 example, saved as `exporter.yaml`, power on, take 4 measurements one second apart, then power off:
 
 ```shell
 $ jmp shell --exporter-config exporter.yaml -- sh -c 'j power on && j power read -n 4 -i 1 && j power off'
@@ -130,15 +131,15 @@ error at exporter startup.
 
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
-| user | Username for basic authentication | str | yes | |
-| password | Password for basic authentication | str | yes | |
+| user | Username for basic authentication | str | no | "" |
+| password | Password for basic authentication | str | no | "" |
 
 #### HttpDigestAuth parameters
 
 | Parameter | Description | Type | Required | Default |
 |-----------|-------------|------|----------|---------|
-| user | Username for digest authentication | str | yes | |
-| password | Password for digest authentication | str | yes | |
+| user | Username for digest authentication | str | no | "" |
+| password | Password for digest authentication | str | no | "" |
 
 ## API Reference
 
@@ -151,6 +152,7 @@ error at exporter startup.
 ### Examples
 
 Basic power control:
+
 ```python
 # Power on the device
 http_power_client.on()
@@ -158,7 +160,6 @@ http_power_client.on()
 # Power off the device
 http_power_client.off()
 ```
-
 
 Reading measurements: `read()` parses the JSON returned by `power_read` and pulls
 voltage and current from `voltage_path` / `current_path` (defaulting to top-level

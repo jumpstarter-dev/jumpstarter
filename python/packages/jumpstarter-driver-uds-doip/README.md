@@ -25,7 +25,7 @@ pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-d
 | `auto_reconnect_tcp`   | bool   | false    | Auto-reconnect on TCP connection close     |
 | `request_timeout`      | float  | 5.0      | UDS request timeout in seconds             |
 
-### Example exporter configuration
+### Example exporter config
 
 ```yaml
 export:

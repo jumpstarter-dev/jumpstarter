@@ -8,7 +8,7 @@ Jumpstarter includes the following installable Python packages:
 - `jumpstarter-cli`: CLI components metapackage including admin and user
   interfaces
 - `jumpstarter-cli-admin`: Admin CLI for {term}`controller` management and {term}`lease` control
-- `jumpstarter-driver-*`: Drivers for device connectivity
+- `jumpstarter-driver-*`: {term}`Driver`s for {term}`device` connectivity
 - `jumpstarter-imagehash`: Image checking library for video inputs
 - `jumpstarter-testing`: Tools for Jumpstarter-powered pytest integration
 
@@ -18,16 +18,19 @@ The [Jumpstarter Python packages](https://pkg.jumpstarter.dev/) provide all the
 tools you need to interact with hardware locally.
 
 #### Using the Installer
+
 ##### Quick Install (Recommended)
 
-Install directly using our installer from github:
+Install directly using our installer from GitHub:
 
 For the latest release:
+
 ```{code-block} console
 curl -fsSL https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/python/install.sh | bash
 ```
 
 Or with explicit source specification (main branch example)
+
 ```{code-block} console
 curl -fsSL https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/python/install.sh | bash -s - -s main
 ```
@@ -46,33 +49,40 @@ If you have the repository cloned locally:
 
 ##### Built-in installer
 
-If you have the jumpstarter python packages installed and want to upgrade:
+If you installed Jumpstarter with the installer and want to upgrade:
 
 ```{code-block} console
 jmp self update
 ```
 
+`jmp self update` downloads the installer from the `main` branch and runs it on
+the installation directory of the `jmp` found on your `PATH`. It installs from
+the source that the previous run recorded in `install_source` in that
+directory; pass `--source` to switch, for example `jmp self update --source main`.
+
 ##### Installation Directory Structure
 
 After installation, the following structure is created:
 
-```
+```text
 ~/.local/jumpstarter/
-├── venv/                    # Python virtual environment
-├── bin/                     # Command symlinks
-│   ├── jmp
-│   └── j
-└── set                      # Environment activation script
++-- venv/                    # Python virtual environment
++-- bin/                     # Command symlinks
+|   +-- jmp
+|   +-- j
++-- set                      # Environment activation script
 ```
 
 ##### Activating the Environment
 
 Activate for current session, adjust `~/.local/jumpstarter` if you picked a custom install directory.
+
 ```{code-block} console
 source ~/.local/jumpstarter/set
 ```
 
 Or add to your shell profile for permanent activation, adjust `~/.local/jumpstarter` if you picked a custom install directory.
+
 ```{code-block} console
 echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 ```
@@ -81,7 +91,7 @@ echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-s, --source SOURCE` | Installation source ({{stable_branch}}, latest, rc, main) | {{stable_branch_code}} |
+| `-s, --source SOURCE` | Installation source ({{stable_branch}}, latest, rc, main) | {{stable_branch_code}}, or the source of the previous installation in the directory |
 | `-d, --dir DIR` | Installation directory | `~/.local/jumpstarter` |
 | `-h, --help` | Show help message | - |
 
@@ -89,8 +99,8 @@ echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 
 - Python {{requires_python}} (see [.py-version](https://github.com/jumpstarter-dev/jumpstarter/blob/main/.py-version) for the recommended development version)
 - pip3
+- curl
 - bash shell
-
 
 ##### Uninstalling
 
@@ -156,7 +166,7 @@ $ sudo mkdir /etc/jumpstarter
 $ uv venv
 
 # Install with uv
-$ uv add --extra-index-url {{index_url}} jumpstarter-all
+$ uv pip install --extra-index-url {{index_url}} jumpstarter-all
 
 # Create config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
@@ -174,6 +184,8 @@ indexes:
 | [releases](https://pkg.jumpstarter.dev/)               | Release, or release-candidate versions                                |
 | [main](https://pkg.jumpstarter.dev/main/)              | Index tracking the main branch, equivalent to installing from sources |
 | {{stable_branch_index}} | Index tracking a stable branch                                        |
+
+Final releases, but not release candidates, are also published to PyPI.
 
 #### Installing from Source
 
@@ -193,11 +205,11 @@ Run the following commands to clone the repository and create a virtual environm
 # Clone the git repository
 $ git clone https://github.com/jumpstarter-dev/jumpstarter.git
 
-# Open the Python workspace
-$ cd jumpstarter/python
+# Enter the repository
+$ cd jumpstarter
 
 # Install Python venv and sync packages with uv
-$ make sync
+$ make -C python sync
 
 # Create local config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
@@ -206,7 +218,7 @@ $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
 
 # Activate the virtual environment to use the Jumpstarter CLI
-$ source .venv/bin/activate
+$ source python/.venv/bin/activate
 $ jmp version
 ```
 
@@ -245,12 +257,12 @@ $ docker run --rm -it \
 ````
 
 ```{tip}
-If you need Kubernetes access (e.g. for jmp admin commands), also mount your kubeconfig:
+If you need Kubernetes access (e.g. for {term}`jmp` admin commands), also mount your kubeconfig:
 `-v "${HOME}/.kube/config:/root/.kube/config":z`
 ```
 
 To interact with Jumpstarter without local Python package installation,
-create an alias to run the {term}`jmp` client in a container.
+create an alias to run the jmp {term}`client` in a container.
 
 We recommend adding this alias to your shell profile (`~/.bashrc` or `~/.zshrc`) for persistent use:
 
@@ -274,13 +286,13 @@ $ alias jmp='docker run --rm -it -w /home \
 ```
 ````
 
-If you've configured a {term}`jmp` alias you can undefine it with:
+If you've configured a jmp alias you can undefine it with:
 
 ```console
 $ unalias jmp
 ```
 
-When you need hardware access for running the {term}`jmp` command or following the
+When you need hardware access for running the jmp command or following the
 [local-only workflow](../../introduction/index.md#local-mode), configure the
 container with device access, host networking, and privileged mode. This
 typically requires `root` privileges:

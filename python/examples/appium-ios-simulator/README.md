@@ -60,7 +60,8 @@ jmp shell --exporter-config exporter.yaml -- pytest jumpstarter_example_appium_i
 ```
 
 Outside a `jmp shell`, `JumpstarterTest` leases an exporter labeled
-`example=appium-ios-simulator` with your default client configuration instead.
+`example=appium-ios-simulator` with the client config named `default`
+instead.
 
 ## What the Tests Demonstrate
 
@@ -88,5 +89,5 @@ WebDriverAgent.
 
 `target.capabilities()` already pins the session to this simulator and its
 WebDriverAgent, so the tests add nothing device-specific. See the
-[Appium UI Automation guide](../../../docs/source/getting-started/guides/ui-automation.md)
+[UI Automation guide](../../../docs/source/getting-started/guides/integration-patterns/ui-automation.md)
 for how the shared Appium interface works across targets.

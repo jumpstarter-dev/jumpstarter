@@ -36,7 +36,7 @@ avdmanager create avd -n Pixel_6 -k "system-images;android-35;google_apis;x86_64
 
 ## Configuration
 
-Example exporter configuration:
+Example exporter config:
 
 ```yaml
 export:
@@ -68,14 +68,14 @@ export:
 # Power on the emulator
 j android power on
 
-# Check ADB devices through the tunnel
+# List devices visible to the exporter's ADB server
 j android adb devices
 
-# Run ADB commands
-j android adb shell getprop ro.product.model
+# Serve the exporter's ADB server on a local port; holds until Ctrl+C
+j android adb serve
 
-# Create a persistent ADB tunnel
-j android adb tunnel
+# In another terminal, after exporting the ANDROID_ADB_SERVER_* variables it prints
+adb shell getprop ro.product.model
 
 # Power off the emulator
 j android power off
@@ -105,7 +105,7 @@ With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/lat
 with its UiAutomator2 driver for the emulator, and clients use the shared
 {doc}`Appium client <appium>`, the same interface every UI-automation target
 provides. The
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 explains why Jumpstarter uses Appium and how to set it up. Enable it in the
 emulator's `config`:
 
@@ -144,12 +144,13 @@ the endpoint. See {doc}`adb` for the capabilities Android targets reject.
 
 ## Architecture
 
-This is a composite driver with two children:
+This is a composite driver with two children, plus `appium` when it is configured:
 
 - **`adb`** (`AdbServer` from `jumpstarter-driver-adb`): Manages the ADB server
   and provides TCP tunneling for remote ADB access
 - **`power`** (`AndroidEmulatorPower`): Controls the emulator process lifecycle
-  via the standard `PowerInterface` (on/off/read)
+  via the standard `PowerInterface` (on/off/read). Power on is ignored while the
+  emulator is running, and starts a new one if the previous emulator has exited.
 
 The emulator registers with the custom ADB server on port 15037 (via the
 `ANDROID_ADB_SERVER_PORT` environment variable) to avoid conflicts with any

@@ -58,11 +58,12 @@ source.
 | `boot_timeout` | `180` | Boot and readiness timeout in seconds |
 | `companion_timeout` | `30` | Companion readiness timeout in seconds |
 | `shutdown_timeout` | `30` | Shutdown, deletion and process-stop timeout in seconds |
-| `http_service` | Unconfigured | HTTPS provider class and options from trusted exporter configuration |
+| `http_service` | Unconfigured | HTTPS provider class and options from trusted exporter config |
+| `appium` | Unconfigured | Run Appium on the exporter for the simulator; see [Appium](#appium) |
 
 ## Usage
 
-Inside a local or leased Jumpstarter shell:
+Inside a local or leased exporter shell:
 
 ```shell
 j simulator power on
@@ -104,7 +105,7 @@ With an `appium` block in the simulator's `config`, the exporter runs
 [Appium](https://appium.io/docs/en/latest/) for the lease and clients open
 sessions through the shared {doc}`Appium client <appium>`, the same interface
 every UI-automation target provides. The
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 explains why Jumpstarter uses Appium and how to set it up. The exporter needs
 Appium, its [XCUITest driver](https://github.com/appium/appium-xcuitest-driver)
 and a complete prebuilt simulator
@@ -158,7 +159,7 @@ because they would break the lease's idb companion.
 
 ### Optional HTTPS service
 
-A trusted exporter configuration can add an HTTPS service for the lease's
+A trusted exporter config can add an HTTPS service for the lease's
 simulator by naming an `HttpServiceProvider` class and its options in the
 simulator's `config`:
 
@@ -185,7 +186,6 @@ certificate and hostname verification enabled. The CLI passes
 `JUMPSTARTER_IOS_HTTPS_URL`, `JUMPSTARTER_IOS_HTTPS_CA_FILE` and
 `JUMPSTARTER_IOS_HTTPS_METADATA` to the command. The client API is shared with
 the {doc}`iOS device driver <iosdevice>`.
-
 
 ## Security and limitations
 

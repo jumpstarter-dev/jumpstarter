@@ -37,7 +37,7 @@ lab resources:
    {term}`controller`
 4. The same test code works in both environments
 
-See [Setup Local Mode](../setup/local-mode.md) for more information on configuring
+See [Local Mode](../setup/local-mode.md) for more information on configuring
 your local environment.
 
 ## Cloud Native Developer Workflow
@@ -93,9 +93,9 @@ maintaining flexibility to work with both local and remote systems:
      connected to the developer's machine
    - The local Jumpstarter {term}`exporter` manages the {term}`device` directly
 4. For access to shared lab resources:
-   - The same test code can request access to remote {term}`device`s through the
-     {term}`controller`
-   - The {term}`controller` manages {term}`lease`s and routes connections through the standard
+   - The same test code can request access to remote devices through the
+     controller
+   - The controller manages {term}`lease`s and routes connections through the standard
      infrastructure
 
 Key benefits of this approach:
@@ -113,5 +113,5 @@ Key benefits of this approach:
 This workflow eliminates the distinction between local and cloud development
 while providing the best of both worlds for system testing.
 
-See [Setup Distributed Mode](../setup/distributed-mode.md) for more details on
+See [Distributed Mode](../setup/distributed-mode.md) for more details on
 configuring your distributed environment.

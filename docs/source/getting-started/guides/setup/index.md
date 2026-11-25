@@ -2,9 +2,9 @@
 
 Step-by-step instructions for each operation mode.
 
-- [Local Mode](local-mode.md): Running Jumpstarter with devices connected
+- [Local Mode](local-mode.md): Running Jumpstarter with {term}`device`s connected
   directly to your machine
-- [Direct Mode](direct-mode.md): Connecting a client directly to an {term}`exporter`
+- [Direct Mode](direct-mode.md): Connecting a {term}`client` directly to an {term}`exporter`
   over TCP, without a {term}`controller`
 - [Distributed Mode](distributed-mode.md): Configuring Jumpstarter for team
   environments with shared resources

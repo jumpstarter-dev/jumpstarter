@@ -2,14 +2,15 @@
 
 Install Jumpstarter on local Kubernetes clusters using kind or minikube. Ideal
 for learning about the {term}`service` quickly or for validating Jumpstarter
-drivers in CI/CD pipelines. For production deployments, see
+{term}`driver`s in CI/CD pipelines. For production deployments, see
 [Production](production.md).
 
 ## Prerequisites
 
 - Docker or Podman installed
+- kind or minikube installed
 - `kubectl` installed and configured
-- Administrator access to your cluster (required for CRD installation)
+- Administrator access to your cluster (required for {term}`CRD` installation)
 
 ## Install
 
@@ -21,8 +22,7 @@ $ jmp admin create cluster
 ```
 
 ```{warning}
-If automatic IP detection fails, check with `jmp admin ip` and use `--ip` to
-set your address manually.
+If automatic IP detection fails, use `--ip` to set your address manually.
 ```
 
 ```{tip}
@@ -55,15 +55,18 @@ Jumpstarter requires specific NodePort configurations. It is recommended to
 create a new cluster or use the automatic creation above.
 ```
 
+`jmp admin create cluster` reuses a kind or minikube cluster that already exists
+under the given name and installs Jumpstarter into it:
+
 ````{tab} kind
 ```{code-block} console
-$ jmp admin install --kind
+$ jmp admin create cluster <cluster-name> --kind
 ```
 ````
 
 ````{tab} minikube
 ```{code-block} console
-$ jmp admin install --minikube
+$ jmp admin create cluster <cluster-name> --minikube
 ```
 ````
 
@@ -120,7 +123,7 @@ $ kind create cluster --config kind_config.yaml
 
 ````{tab} minikube
 ```{code-block} console
-$ minikube start --extra-config=apiserver.service-node-port-range=8000-9000
+$ minikube start --extra-config=apiserver.service-node-port-range=30000-32767
 ```
 ````
 
@@ -129,8 +132,12 @@ appropriate for your local environment (for example, `nip.io` based hostnames).
 
 ## Uninstall
 
+To remove Jumpstarter but keep the cluster, delete the `Jumpstarter` resource
+that `jmp admin create cluster` created. The {term}`operator` and cert-manager stay
+installed:
+
 ```{code-block} console
-$ jmp admin uninstall
+$ kubectl delete jumpstarter jumpstarter -n jumpstarter-lab
 ```
 
 To delete the local cluster completely:

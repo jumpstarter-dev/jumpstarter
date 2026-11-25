@@ -31,13 +31,22 @@ export:
 | `baudrate` | Console baud rate. | `115200` |
 | `timeout_s` | Timeout for USB control transfers, in seconds. Power sequences can block for a long time. | `20` |
 
+The driver does not power off the DUT or switch the storage mux when a lease
+starts or ends, so the board stays as the last client left it. To power it off
+between leases, run `j dutlink power off` in an `afterLease`
+{doc}`hook <../../../introduction/hooks>`.
+
+The console gets the board's power control as its `power` child, so pressing
+Ctrl-] three times in `j dutlink console console` power cycles the DUT (see the
+{doc}`PySerial driver <pyserial>`).
+
 ### Firmware
 
 Power and storage control need DUT Link firmware 0.08 or later: older firmware has
 no control interface, and the driver then fails at the first power or storage call
 with an error naming the firmware version. The console works with older firmware.
 Releases and flashing instructions are at
-https://github.com/jumpstarter-dev/dutlink-firmware.
+<https://github.com/jumpstarter-dev/dutlink-firmware>.
 
 ### Permissions
 
@@ -45,7 +54,7 @@ The exporter opens the board over libusb and opens its console tty. To run it as
 non-root user, add a udev rule such as
 `/etc/udev/rules.d/60-dutlink.rules`:
 
-```
+```text
 SUBSYSTEM=="usb", ATTR{idVendor}=="2b23", ATTR{idProduct}=="1012", MODE="0660", GROUP="plugdev"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2b23", ATTRS{idProduct}=="1012", MODE="0660", GROUP="plugdev"
 ```

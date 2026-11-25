@@ -1,8 +1,8 @@
 # Jumpstarter Driver CLI
 
-## Driver configuration schemas
+## Driver config schemas
 
-`jmp driver schema` describes the configuration accepted by drivers installed
+`jmp driver schema` describes the config keys accepted by drivers installed
 in the local Python environment. Editors can use it for exporter YAML
 completion and validation without maintaining a hard-coded driver catalog.
 It is distinct from inspecting driver clients in a running lease.
@@ -21,11 +21,11 @@ supports tables (default), JSON, YAML, and `-o name`.
 JSON and YAML return a `drivers` list. Each entry contains:
 
 - `name`, `type`, `package`, and `version`: installed driver identity.
-- `client`: the client class path used by client-config `drivers.allow` patterns,
+- `client`: the client class path used by the client config's `drivers.allow` patterns,
   when it can be discovered.
 - `description`: the first line of the driver class docstring.
 - `properties` and `required`: JSON Schema fragments for the exporter's
-  driver-specific `config:` block; common Driver fields and non-constructor
+  driver-specific `config:` block; common driver fields and non-constructor
   fields are excluded.
 - `defs`: definitions referenced as `#/$defs/...` inside those fragments.
   Consumers combining driver schemas must preserve and namespace these references.

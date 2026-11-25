@@ -17,7 +17,7 @@ The command name is determined by the key in the `export` section. Use `ssh_mitm
 
 ```yaml
 export:
-  ssh_mitm:  # ← This gives you "j ssh_mitm" command
+  ssh_mitm:  # This gives you "j ssh_mitm" command
     type: jumpstarter_driver_ssh.driver.SSHWrapper
     config:
       default_username: root
@@ -39,7 +39,7 @@ Or with inline key:
 
 ```yaml
 export:
-  ssh_mitm:  # ← This gives you "j ssh_mitm" command
+  ssh_mitm:  # This gives you "j ssh_mitm" command
     type: jumpstarter_driver_ssh.driver.SSHWrapper
     config:
       default_username: root
@@ -64,11 +64,14 @@ export:
 
 | Parameter         | Description                              | Type  | Required | Default |
 | ----------------- | ---------------------------------------- | ----- | -------- | ------- |
-| default_username  | SSH username for DUT connection          | str   | no       | ""      |
+| default_username  | SSH username for DUT connection. When set, clients must log in with this name; when empty, the client's login name is used | str | no | "" |
 | ssh_identity      | SSH private key content (inline)         | str   | no*      | None    |
 | ssh_identity_file | Path to SSH private key file             | str   | no*      | None    |
+| channel_timeout   | Seconds to wait for the client to open a channel and request a shell or command | float | no | 30.0 |
+| default_pty_width | Terminal width for interactive shells when the client sends none | int | no | 80 |
+| default_pty_height | Terminal height for interactive shells when the client sends none | int | no | 24 |
 
-\* Either `ssh_identity` or `ssh_identity_file` must be provided.
+\* Exactly one of `ssh_identity` or `ssh_identity_file` must be provided.
 
 ### Required children
 
@@ -96,7 +99,7 @@ j ssh_mitm -v hostname
 
 ## Architecture
 
-```
+```text
 SSHWrapper --> SSHMITM --> TcpNetwork --> DUT
 ```
 

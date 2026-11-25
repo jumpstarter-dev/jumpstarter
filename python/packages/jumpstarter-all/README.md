@@ -5,4 +5,3 @@ the testing of/on hardware devices.
 
 This is a meta-package that pulls installation of all the Python modules
 produced in the Jumpstarter project.
-

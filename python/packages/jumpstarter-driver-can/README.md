@@ -24,7 +24,7 @@ Example configuration:
 ```yaml
 export:
   can:
-    type: jumpstarter_driver_can.Can
+    type: jumpstarter_driver_can.driver.Can
     config:
       channel: 1
       interface: "virtual"
@@ -37,7 +37,7 @@ export:
 
 ### IsoTpPython
 
-A Pure python ISO-TP socket driver
+A pure Python ISO-TP socket driver
 
 Available on any platform (does not require Linux ISO-TP kernel module), moderate
 performance and reliability, wide support for non-standard hardware interfaces
@@ -47,7 +47,7 @@ Example configuration:
 ```yaml
 export:
   can:
-    type: jumpstarter_driver_can.IsoTpPython
+    type: jumpstarter_driver_can.driver.IsoTpPython
     config:
       channel: 0
       interface: "virtual"
@@ -63,8 +63,8 @@ export:
 
 | Parameter     | Description | Type | Required | Default |
 | --------------| ----------- | ---- | -------- | ------- |
-| interface     | Refer to the [python-can](https://python-can.readthedocs.io/en/stable/interfaces.html) list of interfaces | `str` | no |  |
-| channel       | channel to be used, refer to the interface documentation | `int` or `str` | no |  |
+| interface     | Refer to the [python-can](https://python-can.readthedocs.io/en/stable/interfaces.html) list of interfaces | `str` | yes |  |
+| channel       | channel to be used, refer to the interface documentation | `int` or `str` | yes |  |
 | address       | Refer to the [isotp.Address](https://can-isotp.readthedocs.io/en/latest/isotp/addressing.html#isotp.Address) documentation | `isotp.Address` | yes |  |
 | params        | IsoTp parameters, refer to the [IsoTpParams](#isotpparams) section table | `IsoTpParams` | no | see table |
 | read_timeout  | Read timeout for the bus in seconds | `float` | no | 0.05 |
@@ -73,14 +73,14 @@ export:
 
 Linux kernel ISO-TP socket driver
 
-Available on any platform, moderate performance and reliability, wide support for non-standard hardware interfaces
+Available since Linux kernel 5.10, good performance and reliability, only supports standard hardware interfaces
 
 Example configuration:
 
 ```yaml
 export:
   can:
-    type: jumpstarter_driver_can.IsoTpSocket
+    type: jumpstarter_driver_can.driver.IsoTpSocket
     config:
       channel: "vcan0"
       address:
@@ -97,9 +97,10 @@ export:
 | --------------| ----------- | ---- | -------- | ------- |
 | channel       | CAN bus to be used i.e. `vcan0`, `vcan1`, etc.. |  `str` | yes |  |
 | address       | Refer to the [isotp.Address](https://can-isotp.readthedocs.io/en/latest/isotp/addressing.html#isotp.Address) documentation | isotp.Address | yes | |
-| params        | IsoTp parameters, refer to the [IsoTpParams](#isotpparams) section table | `IsoTpParams` | no | see table |
+| params        | IsoTp parameters, refer to the [IsoTpParams](#isotpparams) section table. Only `stmin`, `blocksize`, `wftmax`, `tx_padding`, `tx_data_length` and `can_fd` are applied to the kernel socket | `IsoTpParams` | no | see table |
 
 ### IsoTpParams
+
 | Parameter                   | Description                                                                                           | Type             | Required | Default    |
 |-----------------------------|-------------------------------------------------------------------------------------------------------|------------------|----------|------------|
 | `stmin`                     | Minimum Separation Time minimum in milliseconds between consecutive frames.                           | `int`            | No       | `0`        |

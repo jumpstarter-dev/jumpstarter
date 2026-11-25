@@ -1,18 +1,17 @@
 # Image preparation scripts
 
-This directory contains scripts to prepare the image for the example SOC test,
-running `make` should:
+This directory contains scripts to prepare the image for the example SoC test.
+Running `make -C python/examples/soc-pytest/jumpstarter_example_soc_pytest/image` from the repository root should:
 
-* Download a minimal raspbian image
-* Inject the settings for the test to be performed (enable UART, setup basic password, tpm dtb)
+* Download a minimal Raspbian image
+* Inject the settings for the test to be performed (enable UART, set up a basic password, TPM DTB)
 
 You will need guestmount installed, sudo permissions.
 
 fuse must be configured to enable `user_allow_other` in `/etc/fuse.conf`.
 
-
 ```shell
-$ make
+$ make -C python/examples/soc-pytest/jumpstarter_example_soc_pytest/image
 make download-image
 make[1]: Entering directory '/home/majopela/jumpstarter/examples/soc-pytest/jumpstarter_example_soc_pytest/image'
 scripts/download-latest-raspbian
@@ -22,11 +21,11 @@ Resolving downloads.raspberrypi.org (downloads.raspberrypi.org)... 2a00:1098:80:
 Connecting to downloads.raspberrypi.org (downloads.raspberrypi.org)|2a00:1098:80:56::2:1|:443... connected.
 HTTP request sent, awaiting response... 200 OK
 Length: 523828628 (500M) [application/x-xz]
-Saving to: ‘./images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz’
+Saving to: './images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz'
 
 downloads.raspberrypi.org/raspios_lite_armhf/ima 100%[=======================================================================================================>] 499.56M  77.9MB/s    in 6.6s
 
-2024-10-17 12:12:53 (75.3 MB/s) - ‘./images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz’ saved [523828628/523828628]
+2024-10-17 12:12:53 (75.3 MB/s) - './images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz' saved [523828628/523828628]
 
 FINISHED --2024-10-17 12:12:53--
 Total wall clock time: 10s

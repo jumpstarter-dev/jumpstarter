@@ -2,15 +2,15 @@
 
 Jumpstarter exposes metrics and structured logs that can be consumed by the
 standard Kubernetes observability stack. This page explains how to enable the
-integration, what the operator creates, and how to validate it.
+integration, what the {term}`operator` creates, and how to validate it.
 
 Prometheus autodiscovery is configured under `spec.telemetry`:
 
 | Capability | Field | Default | Requires |
 | --- | --- | --- | --- |
-| Prometheus autodiscovery | `metrics.serviceMonitor` | `true` | Prometheus Operator CRDs |
+| Prometheus autodiscovery | `metrics.serviceMonitor` | `true` | Prometheus Operator {term}`CRD`s |
 
-> **A cluster log shipper is required to see Controller and Router logs in
+> **A cluster log shipper is required to see {term}`Controller` and {term}`Router` logs in
 > Loki.** Jumpstarter does not run one and does not push Controller/Router logs
 > to Loki directly. Controller and Router pods emit structured JSON to stdout
 > and carry discovery labels; the examples below show how to configure a
@@ -60,7 +60,7 @@ for controller and router within 120 seconds, with no additional scrape
 configuration. The 120-second bound covers Prometheus Operator discovery and
 configuration reload; scrape freshness is measured separately, and once a
 target is discovered its last scrape is no older than two configured scrape
-intervals. That interval comes from the Prometheus CR (the test configures five
+intervals. That interval comes from the Prometheus {term}`CR` (the test configures five
 seconds), so a slower scrape configuration relaxes the freshness check.
 
 If the Prometheus Operator is not installed, reconciliation still succeeds: the
@@ -100,7 +100,7 @@ The shipper configuration should:
 - promote `component`, `exporter`, and `namespace` to Loki stream labels;
   Vector uses a separate sink so `exporter` is present only when the JSON line
   contains it;
-- keep `client`, `lease_id`, and lease `spec.context` keys inside the JSON body
+- keep `client`, `lease_id`, and {term}`lease` `spec.context` keys inside the JSON body
   so they can be queried with `| json | lease_id="..."`;
 - forward the original JSON line, so multi-line stack traces remain one record;
 - obtain Loki credentials from the shipper's own Secret.

@@ -10,7 +10,8 @@ see [Production](production.md).
 ## Prerequisites
 
 - An Intel device, capable of running CentOS 10
-- At least 4GB RAM and 40GB disk space recommended
+- At least 4GB RAM and 40GB disk space recommended; the kickstart used in
+  Method 1 creates a 64 GiB root volume, so it needs a larger disk
 
 ## Install
 
@@ -49,7 +50,7 @@ The default password for root will be `jumpstarter` and you will be requested to
 ### Network
 
 The system uses `nip.io` for automatic DNS resolution (e.g.
-`jumpstarter.10.0.2.2.nip.io`) although you can setup your own domain if you
+`jumpstarter.10.0.2.2.nip.io`) although you can set up your own domain if you
 have control over your DNS.
 
 | Port | Service | Description |
@@ -79,16 +80,25 @@ This section covers working with and modifying the bootc image for development p
 
 ### Build the Bootc Image
 
-From the `controller/deploy/microshift-bootc/` directory:
+From the repository root, first generate the
+operator installer that the image embeds,
+`controller/deploy/operator/dist/install.yaml`, which is not checked in. This
+needs Go; `IMG` selects the operator image to install:
 
 ```console
-make bootc-build
+make -C controller/deploy/operator build-installer IMG=<operator-image>
+```
+
+Then build the image:
+
+```console
+make -C controller/deploy/microshift-bootc bootc-build
 ```
 
 To build for multiple architectures (amd64 and arm64):
 
 ```console
-make bootc-build-multi
+make -C controller/deploy/microshift-bootc bootc-build-multi
 ```
 
 ### Test in a Container
@@ -96,16 +106,18 @@ make bootc-build-multi
 Run MicroShift in a privileged container for testing:
 
 ```console
-make bootc-run
+make -C controller/deploy/microshift-bootc bootc-run
 ```
 
 This creates a 1GB LVM disk image, starts MicroShift in a privileged container,
 sets up LVM volume groups for TopoLVM, and waits for MicroShift to be ready.
 
 Access the services:
+
 - **Configuration Web UI**: `http://localhost:8880` (login: `root` / `jumpstarter`)
 - **MicroShift API**: `https://jumpstarter.<your-ip>.nip.io:6443`
-- **Pod Monitoring**: `http://localhost:8880/pods`
+- **Pod Monitoring**: the **MicroShift** section of the web UI,
+  `http://localhost:8880/#microshift`
 
 Check running pods:
 
@@ -115,20 +127,20 @@ sudo podman exec -it jumpstarter-microshift-okd oc get pods -A
 
 ### Build Bootable Images
 
-Create a QCOW2 image for VMs or bare-metal deployments:
+Create a qcow2 image for VMs or bare-metal deployments:
 
 ```console
-make build-image
+make -C controller/deploy/microshift-bootc build-image
 ```
 
 Create an ISO installer image:
 
 ```console
-make build-iso
+make -C controller/deploy/microshift-bootc build-iso
 ```
 
 ```{note}
-If the container is running, stop it first with `make bootc-rm` to avoid LVM conflicts.
+If the container is running, stop it first with `make -C controller/deploy/microshift-bootc bootc-rm` to avoid LVM conflicts.
 ```
 
 The images are configured via `config.toml` with LVM partitioning (20GB minimum),
@@ -139,15 +151,15 @@ XFS root filesystem, and default password `root:jumpstarter`.
 To create a kickstart ISO that automates the installation:
 
 ```console
-make download-centos-iso  # Downloads CentOS Stream 10 ISO
-make build-ks-iso          # Creates kickstart ISO
+make -C controller/deploy/microshift-bootc download-centos-iso  # Downloads CentOS Stream 10 ISO
+make -C controller/deploy/microshift-bootc build-ks-iso          # Creates kickstart ISO
 ```
 
-For ARM64 builds:
+For arm64 builds:
 
 ```console
-make download-centos-iso ARCH=aarch64
-make build-ks-iso ARCH=aarch64
+make -C controller/deploy/microshift-bootc download-centos-iso ARCH=aarch64
+make -C controller/deploy/microshift-bootc build-ks-iso ARCH=aarch64
 ```
 
 ### Development Workflow
@@ -155,7 +167,7 @@ make build-ks-iso ARCH=aarch64
 For iterative development of the web UI without rebuilding the entire image:
 
 ```console
-make bootc-reload-app
+make -C controller/deploy/microshift-bootc bootc-reload-app
 ```
 
 This copies the updated Python modules and templates into the running container
@@ -166,7 +178,7 @@ and restarts the config service.
 Open a shell in the running container:
 
 ```console
-make bootc-sh
+make -C controller/deploy/microshift-bootc bootc-sh
 ```
 
 ### Troubleshooting
@@ -176,7 +188,9 @@ make bootc-sh
 ```console
 sudo podman exec jumpstarter-microshift-okd vgs
 sudo podman exec jumpstarter-microshift-okd pvs
-make bootc-rm && make clean && make bootc-run
+make -C controller/deploy/microshift-bootc bootc-rm
+make -C controller/deploy/microshift-bootc clean
+make -C controller/deploy/microshift-bootc bootc-run
 ```
 
 #### MicroShift Not Starting
@@ -198,13 +212,13 @@ sudo podman exec jumpstarter-microshift-okd journalctl -u config-svc -f
 Stop and remove the container:
 
 ```console
-make bootc-rm
+make -C controller/deploy/microshift-bootc bootc-rm
 ```
 
 Remove all build artifacts and images:
 
 ```console
-make clean
+make -C controller/deploy/microshift-bootc clean
 ```
 
 ### Customization
@@ -212,11 +226,12 @@ make clean
 Override the default image tag:
 
 ```console
-BOOTC_IMG=quay.io/your-org/microshift-bootc:v1.0 make bootc-build
+make -C controller/deploy/microshift-bootc bootc-build BOOTC_IMG=quay.io/your-org/microshift-bootc:v1.0
 ```
 
-Add Kubernetes manifests by editing the kustomization.yaml file in
-`controller/deploy/microshift-bootc/manifests/` - they will be deployed to
+Add Kubernetes manifests by listing them in
+`controller/deploy/microshift-bootc/kustomization.yaml` and copying them next
+to it in the `Containerfile` - they will be deployed from
 `/etc/microshift/manifests.d/002-jumpstarter/` in the image.
 
 ### Push to Registry
@@ -224,11 +239,11 @@ Add Kubernetes manifests by editing the kustomization.yaml file in
 Push single-architecture image:
 
 ```console
-make bootc-push
+make -C controller/deploy/microshift-bootc bootc-push
 ```
 
 Push multi-architecture manifest:
 
 ```console
-make bootc-push-multi
+make -C controller/deploy/microshift-bootc bootc-push-multi
 ```

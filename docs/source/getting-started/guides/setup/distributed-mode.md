@@ -1,13 +1,15 @@
 # Distributed Mode
 
 This guide walks you through the process of creating an {term}`exporter` using the
-{term}`controller` {term}`service`, configuring drivers, and running the exporter.
+{term}`controller` {term}`service`, configuring {term}`driver`s, and running the exporter.
 
 ```{warning}
-The jumpstarter-controller endpoints are secured by TLS. However, in release 0.7.x,
-the certificates are self-signed and rotated on every restart. This means the client
-will not be able to verify the server certificate. To bypass this, you should use the
-`--insecure-tls` flag when creating clients and {term}`exporter`s.
+The controller endpoints are secured by TLS. However, unless the {term}`operator`
+manages certificates with cert-manager (`spec.certManager.enabled`) or you provide your
+own certificate secrets, the controller and {term}`router` generate self-signed certificates
+on every restart. This means the {term}`client` will not be able to verify the server
+certificate. To bypass this, you should use the
+`--insecure-tls` flag when creating clients and exporters.
 Alternatively, you can configure the ingress/route in reencrypt mode with your own key and certificate.
 ```
 
@@ -21,7 +23,7 @@ environment:
 - `jumpstarter-driver-power` - The base power driver
 
 These driver packages include mock implementations, enabling you to test the
-connection between an {term}`exporter` and client without physical hardware.
+connection between an exporter and client without physical hardware.
 
 You need the [service](../../../introduction/service.md) running in a Kubernetes
 cluster with admin access. For installation instructions, refer to the
@@ -29,20 +31,20 @@ cluster with admin access. For installation instructions, refer to the
 
 ## Instructions
 
-### Create an Exporter Configuration
+### Create an Exporter Config
 
-Create an exporter using the controller service API. The `jmp admin` CLI
-provides commands to interact with the {term}`controller` directly.
+Create an exporter in the cluster. The `jmp admin` CLI manages Jumpstarter
+resources through the Kubernetes API, using your kubeconfig.
 
-Run this command to create an {term}`exporter` named `example-distributed` and save the
+Run this command to create an exporter named `example-distributed` and save the
 configuration locally:
 
 ```console
 $ jmp admin create exporter example-distributed --label foo=bar --save --insecure-tls
 ```
 
-After creating the exporter, find the new exporter config file at
-`/etc/jumpstarter/exporters/example-distributed.yaml`. Edit the configuration
+After creating the exporter, find the new {term}`exporter config` file at
+`${HOME}/.config/jumpstarter/exporters/example-distributed.yaml`. Edit the config
 using your default text editor with:
 
 ```console
@@ -50,7 +52,7 @@ $ jmp config exporter edit example-distributed
 ```
 
 Add the `storage` and `power` drivers under the `export` field in the
-configuration file. Your configuration should look like this:
+config file. Your config should look like this:
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -69,17 +71,19 @@ export:
 
 ### Run an Exporter
 
-Start the {term}`exporter` locally using the {term}`jmp` CLI tool:
+Start the exporter locally using the {term}`jmp` CLI tool:
 
 ```console
 $ jmp run --exporter example-distributed
 ```
 
-The {term}`exporter` runs until you terminate the process with or close the shell.
+The exporter runs until you terminate the process with Ctrl+C or close the shell.
+Add `--exit-on-lease-end` to make it exit after the current {term}`lease` ends
+instead of waiting for a new one.
 
 ### Create a Client
 
-Create a client to connect to your new {term}`exporter` using the `jmp admin` CLI:
+Create a client to connect to your new exporter using the `jmp admin` CLI:
 
 The following command creates a client named "hello", enables unsafe drivers for
 development purposes, and saves the configuration locally in
@@ -91,21 +95,25 @@ $ jmp admin create client hello --save --unsafe --insecure-tls
 
 ### Inspect Exporters and Leases
 
-List the {term}`exporter`s your client can reach, to find one to select:
+List the exporters your client can reach, to find one to select:
 
 ```console
 $ jmp get exporters
-NAME                 LABELS
-example-distributed  foo=bar
+NAME                    LABELS
+example-distributed  +  foo=bar
 ```
 
-`jmp describe` shows one resource in full, including the labels you select on
-and the {term}`lease` holding it, if any:
+The unnamed column shows each exporter's status: `+` available, `~` leased,
+`*` {term}`hook` running, `!` hook failed, `x` offline and `?` unknown. Terminals that
+support emoji show emoji instead; set `NO_ICONS` to keep these characters.
+
+`jmp describe` shows one resource in full, including the {term}`label`s you select on
+and the lease holding it, if any:
 
 ```console
 $ jmp describe exporter example-distributed
 Name:       example-distributed
-Namespace:  jumpstarter-lab
+Namespace:  default
 Labels:
   foo=bar
 Online:   yes
@@ -114,13 +122,13 @@ Enabled:  yes
 Lease:  <none>
 ```
 
-Describing a {term}`lease` reports its conditions, which is the quickest way to
+Describing a lease reports its conditions, which is the quickest way to
 see why one is still waiting:
 
 ```console
 $ jmp describe lease 01a05822-e378-71cc-a98c-a216ad4a9432
 Name:                  01a05822-e378-71cc-a98c-a216ad4a9432
-Namespace:             jumpstarter-lab
+Namespace:             default
 Selector:              foo=bar
 Exporter:              example-distributed
 Client:                hello
@@ -153,8 +161,8 @@ existing lease when it finishes. It does require a connection to the exporter
 and uses the selected client's driver-access settings. Without `--drivers`,
 the existing metadata-only behavior and output shape are unchanged.
 
-Here, **drivers** means the software driver clients exposed by the lease session,
-not an inventory of physical devices attached to the exporter. The exporter's
+Here, **drivers** means the software driver clients exposed by the lease {term}`session`,
+not an inventory of physical {term}`device`s attached to the exporter. The exporter's
 existing device report is unchanged by this command.
 
 Describing a client reads the local configuration rather than the cluster, so it
@@ -166,7 +174,7 @@ Alias:      hello
 Path:       /home/user/.config/jumpstarter/clients/hello.yaml
 Current:    yes
 Name:       hello
-Namespace:  jumpstarter-lab
+Namespace:  default
 Endpoint:   grpc.jumpstarter.example.com:443
 TLS:
   CA:        configured
@@ -184,18 +192,18 @@ Add `-o json` or `-o yaml` to any of these for machine-readable output.
 
 ### Spawn an Exporter Shell
 
-Interact with your distributed {term}`exporter` using the {term}`exporter shell` functionality
-in the {term}`jmp` CLI. When you spawn a shell, the client attempts to acquire a {term}`lease`
-on an {term}`exporter`. Once the {term}`lease` is acquired, you can interact with the {term}`exporter`
-through your shell {term}`session`.
+Interact with your distributed exporter using the {term}`exporter shell` functionality
+in the jmp CLI. When you spawn a shell, the client attempts to acquire a lease
+on an exporter. Once the lease is acquired, you can interact with the exporter
+through your shell session.
 
 ```console
-$ jmp shell --client hello --selector example.com/board=foo
+$ jmp shell --client hello --selector foo=bar
 ```
 
 ### Exiting the Exporter Shell
 
-To terminate the local {term}`exporter`, simply exit the shell:
+To end the session and release the lease, exit the shell:
 
 ```console
 $ exit
@@ -203,6 +211,6 @@ $ exit
 
 ## Next Steps
 
-Once you have your {term}`exporter shell` running, you can start using Jumpstarter
+Once you have your exporter shell running, you can start using Jumpstarter
 commands to interact with your hardware. To learn more about common workflow
 patterns and implementation examples, see [Examples](../examples/index.md).

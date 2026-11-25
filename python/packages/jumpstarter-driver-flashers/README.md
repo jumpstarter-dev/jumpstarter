@@ -24,8 +24,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-flashers
 | --------------- | ------------------------------------------------------------ |
 | TIJ784S4Flasher | quay.io/jumpstarter-dev/jumpstarter-flasher-ti-j784s4:latest |
 
+### Driver config
 
-### Driver configuration
 **driver**: `jumpstarter_driver_flashers.driver.${DRIVER}`
 
 ```yaml
@@ -63,6 +63,10 @@ The power driver is used to control power cycling of the DUT, and the serial
 interface is used to communicate with the DUT bootloader via serial. TFTP and
 HTTP servers are used to serve images to the DUT bootloader and busybox shell.
 
+The `tftp` and `http` children can also be configured explicitly or as a
+`ref:`, as long as they are `Tftp` and `HttpServer` drivers. `tftp_dir`,
+`http_dir` and `exporter_ip` only apply to the auto-created ones.
+
 The auto-created `uboot` child waits up to 15 seconds for the U-Boot prompt
 after each power cycle. For a board that takes longer to reach U-Boot, or one
 with a different prompt, configure the child explicitly with its own
@@ -92,15 +96,16 @@ export:
 
 | Parameter      | Description                                | Type | Required | Default                      |
 | -------------- | ------------------------------------------ | ---- | -------- | ---------------------------- |
-| flasher_bundle | The OCI bundle to use for the flasher      | str  | yes      |                              |
+| flasher_bundle | The OCI bundle to use for the flasher      | str  | no       | (the flasher class's own bundle, such as the one in the table above for TIJ784S4Flasher) |
 | cache_dir      | The directory to cache the bundles. A cached bundle is reused across sessions until its tag moves to another manifest digest; older versions are removed by a later session once no other session uses the bundle | str  | no       | /var/lib/jumpstarter/flasher |
 | tftp_dir       | The directory to serve the images via TFTP | str  | no       | /var/lib/tftpboot            |
 | http_dir       | The directory to serve the images via HTTP | str  | no       | /var/www/html                |
 | variant        | The variant of the DUT DTB to flash to     | str  | no       | (the default defined in the manifest) |
 | manifest       | The manifest to use from the bundle. Every bundle can have multiple manifests, this is the name of the manifest to use  | str  | no       | manifest.yaml |
 | default_target | The default target to flash to if none specified | str  | no       |                              |
+| cacert         | Path on the exporter to a CA certificate passed to the DUT for the HTTPS downloads it makes itself, not through the exporter. A client `--cacert` takes precedence | str | no |                    |
 | exporter_ip        | IP address the DUT uses to reach the exporter tftp/http servers. Passed as `advertised_host` to the auto-created tftp/http children, overriding the detected server IP | str | no | (detected from the tftp/http server) |
-| fls_version    | fls version the DUT downloads from GitHub releases. When unset, the DUT fetches the fls binary shipped in the exporter image from the exporter's HTTP server. Clients can still override with `--fls-version` or `--fls-binary-url` | str | no | (serve the exporter's fls binary) |
+| fls_version    | fls version the DUT downloads from GitHub releases. When unset, the DUT fetches the fls binary shipped in the exporter image (`/usr/local/bin/fls-aarch64` or `/usr/local/bin/fls`) from the exporter's HTTP server; if the exporter has none, the DUT downloads a default fls release from GitHub. Clients can still override with `--fls-version` or `--fls-binary-url` | str | no | (serve the exporter's fls binary) |
 
 ### oci-bundles
 
@@ -110,16 +115,17 @@ bundles to package the artifacts and metadata.
 
 The bundle is a container that uses [oras](https://oras.land/) to transport the
 artifacts and metadata. It is a container that contains the following:
+
 - `manifest.yaml`: The manifest file that describes the bundle
 - `data/*`: The artifacts, including kernel, initram, dtbs, etc.
 
-### The format of the manifest is as follows:
+### Manifest format
 
 ```{literalinclude} ../../../../../python/packages/jumpstarter-driver-flashers/oci_bundles/test/manifest.yaml
 :language: yaml
 ```
 
-### Table with the spec fields of the manifest:
+### Manifest spec fields
 
 | Field                | Description                                                                | Default |
 | -------------------- | -------------------------------------------------------------------------- | ------- |
@@ -128,7 +134,7 @@ artifacts and metadata. It is a container that contains the following:
 | `bootcmd`            | Command used to boot the device (e.g. booti, bootz)                        |         |
 | `default_target`     | Default target device to flash to if none specified                        |         |
 | `targets`            | Map of target names to device paths                                        |         |
-| `login.type`         | Type of login shell                                                        | busybox |
+| `shelltype`          | Type of shell the flasher boots into, only `busybox` is supported          | busybox |
 | `login.login_prompt` | Expected login prompt string                                               | login:  |
 | `login.username`     | Username to log in with, leave empty if not needed                         |         |
 | `login.password`     | Password for login, leave empty if not needed                              |         |
@@ -140,7 +146,7 @@ artifacts and metadata. It is a container that contains the following:
 | `initram.address`    | Memory address to load initramfs to (if any)                               |         |
 | `dtb.default`        | Default DTB variant to use                                                 |         |
 | `dtb.address`        | Memory address to load DTB to                                              |         |
-| `dtb.variants`       | Map of DTB variant names to files                                          |         |
+| `dtb.variants`       | Map of DTB variant names to a `file` and/or a `bootcmd` that replaces the default `bootcmd` |         |
 
 ### Bundle Examples
 
@@ -168,6 +174,7 @@ This doesn't work with sphinx-click, so we'll just use the raw CLI
     :nested: full
 ```
 -->
+
 ```shell
 $ jmp shell -l board=ti-03
 INFO:jumpstarter.client.lease:Created lease request for labels {'board': 'ti-03'} for 0:30:00
@@ -182,11 +189,12 @@ Options:
 Commands:
   bootloader-shell  Start a uboot/bootloader interactive console
   busybox-shell     Start a busybox shell
-  flash             Flash image to DUT from file
+  flash             Flash image(s) to DUT
 
 ```
 
 #### flash
+
 ```shell
 Usage: j storage flash [OPTIONS] [FILE]
 
@@ -222,7 +230,7 @@ Options:
   --force-exporter-http          Force use of exporter HTTP
   --force-flash-bundle TEXT      Force use of a specific flasher OCI bundle
   --cacert FILE                  CA certificate to use for HTTPS
-  --insecure-tls / -k            Skip TLS certificate verification
+  -k, --insecure-tls             Skip TLS certificate verification
   --header TEXT                  Custom HTTP header in 'Key: Value' format
   --bearer TEXT                  Bearer token for HTTP authentication
   --retries INTEGER              Number of retry attempts for flash operation
@@ -242,7 +250,8 @@ Options:
 ```
 
 Example:
-```
+
+```console
 jumpstarter ⚡remote ➤ j storage flash https://autosd.sig.centos.org/AutoSD-9/nightly/TI/auto-osbuild-am69sk-autosd9-qa-regular-aarch64-1716106242.66b4d866.raw.xz
 BaseFlasherClient - INFO - Writing image to storage in the background: /AutoSD-9/nightly/TI/auto-osbuild-am69sk-autosd9-qa-regular-aarch64-1716106242.66b4d866.raw.xz
 BaseFlasherClient - INFO - Setting up flasher bundle files in exporter
@@ -275,16 +284,19 @@ BaseFlasherClient - INFO - Powering off target
 ```
 
 Flash from a private OCI registry with credentials:
+
 ```shell
 OCI_USERNAME=myuser OCI_PASSWORD=mypassword \
   j storage flash oci://registry.example.com/org/image:tag
 ```
 
 Environment variables for OCI auth:
+
 - `OCI_USERNAME`: registry username
 - `OCI_PASSWORD`: registry password
 
 #### bootloader-shell
+
 ```shell
 Usage: j storage bootloader-shell [OPTIONS]
 
@@ -296,7 +308,8 @@ Options:
 ```
 
 Example
-```
+
+```console
 jumpstarter ⚡remote ➤ j storage bootloader-shell
 BaseFlasherClient - INFO - Setting up flasher bundle files in exporter
 SNMPServerClient - INFO - Starting power cycle sequence
@@ -309,11 +322,13 @@ U-Boot 2024.01-rc3 (Jan 09 2024 - 00:00:00 +0000)
 gcc (GCC) 11.4.1 20231218 (Red Hat 11.4.1-3)
 GNU ld version 2.35.2-42.el9
 ```
+
 #### busybox-shell
+
 ```shell
 Usage: j storage busybox-shell [OPTIONS]
 
-  Start a busybox interactive console
+  Start a busybox shell
 
 Options:
   --console-debug  Enable console debug mode
@@ -321,7 +336,8 @@ Options:
 ```
 
 Example
-```
+
+```console
 jumpstarter ⚡remote ➤ j storage busybox-shell
 BaseFlasherClient - INFO - Setting up flasher bundle files in exporter
 SNMPServerClient - INFO - Starting power cycle sequence
@@ -344,16 +360,19 @@ Linux buildroot 6.1.46-dirty #2 SMP PREEMPT Thu Mar 14 14:37:01 UTC 2024 aarch64
 ### Python Examples
 
 Flash the device with a specific image
+
 ```python
 flasherclient.flash("/path/to/image.raw.xz")
 ```
 
 Flash the device with a specific image from a remote URL
+
 ```python
 flasherclient.flash("https://autosd.sig.centos.org/AutoSD-9/nightly/TI/auto-osbuild-j784s4evm-autosd9-qa-regular-aarch64-1716106242.66b4d866.raw.xz")
 ```
 
 Flash into a specific partition
+
 ```python
 flasherclient.flash("/path/to/image.raw.xz", partition="emmc")
 ```
@@ -362,28 +381,33 @@ flasherclient.flash("/path/to/image.raw.xz", partition="emmc")
 
 In addition to the flashing mechanisms, the flasher drivers also provide a way
 to access the DUT bootloader and busybox shell for convenience and debugging,
-when using the `busybox_shell` and `bootloader_shell` methods the embedded http
-and tftp servers will be online and serving the images from the flasher bundle.
+when using the `busybox_shell` and `bootloader_shell` methods the embedded HTTP
+and TFTP servers will be online and serving the images from the flasher bundle.
 
 Get the busybox shell on the device
+
 ```python
 with flasherclient.busybox_shell() as serial:
-    serial.send("ls -la\n")
-    serial.expect("#")
-    print(serial.before)
+    with serial.pexpect() as console:
+        console.send("ls -la\n")
+        console.expect("#")
+        print(console.before)
 ```
 
 Get the bootloader shell on the device
+
 ```python
 with flasherclient.bootloader_shell() as serial:
-    serial.send("version\n")
-    serial.expect("=>")
-    print(serial.before)
+    with serial.pexpect() as console:
+        console.send("version\n")
+        console.expect("=>")
+        print(console.before)
 ```
 
 ## API Reference
 
 The `BaseFlasher` class provides a set of methods to flash the DUT,
+
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_flashers.client.BaseFlasherClient()
     :members: flash, busybox_shell, bootloader_shell, use_dtb, use_initram, use_kernel

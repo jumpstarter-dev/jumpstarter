@@ -108,6 +108,7 @@ connects to the telnet monitor via `anyio.connect_tcp`, and
 programmatically sets up the platform, UART terminal, and firmware.
 
 A `RenodeMonitor` async client handles the telnet protocol:
+
 - Retry-based connection with `fail_after(timeout)`
 - Prompt detection using registered machine names
 - Per-line error marker detection
@@ -232,11 +233,11 @@ to prevent command injection.
 
 ### Component Architecture
 
-```
+```text
 Renode (composite driver)
-├── RenodePower      → manages Popen lifecycle + RenodeMonitor
-├── RenodeFlasher    → writes firmware, sends LoadELF/LoadBinary
-└── PySerial         → console over PTY terminal
++-- RenodePower      -> manages Popen lifecycle + RenodeMonitor
++-- RenodeFlasher    -> writes firmware, sends LoadELF/LoadBinary
++-- PySerial         -> console over PTY terminal
 ```
 
 ### Monitor Protocol
@@ -291,6 +292,7 @@ bytes of the firmware file. If they match the ELF magic (`\x7fELF`),
 ### CI
 
 Renode is installed in the `python-tests.yaml` workflow:
+
 - Linux: `.deb` package from builds.renode.io
 - macOS: `brew install renode`
 

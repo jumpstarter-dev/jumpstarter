@@ -17,7 +17,7 @@ Hardware references:
 ## Installation and host setup
 
 ```shell
-pip install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-copilot
+pip3 install --extra-index-url https://pkg.jumpstarter.dev/simple/ jumpstarter-driver-copilot
 ```
 
 The exporter requires Linux, a kernel exposing the CoPilot GPIO chip, and the
@@ -42,7 +42,7 @@ The driver does not install rules, change permissions or bind kernel drivers.
 
 The controller currently manages **outputs only**, not GPIO inputs. Readback is
 of an output GPIO; it does not measure supply voltage or confirm physical relay
-contact closure. The upstream candidate is covered by simulated GPIO and real
+contact closure. The driver is covered by simulated GPIO and real
 RPC tests; these examples are not a claim of physical validation on every HAT.
 
 For a complete bench with native supply, three named relay contacts and UART,
@@ -68,7 +68,7 @@ The field is `hats`, a list of mappings, each with a `type`:
 
 | `type` | Parameters | Effect |
 |--------|------------|--------|
-| `triple-relay` | `relay_lines`: three distinct integer GPIO offsets, all in `managed_lines` | Maps relay channels 1–3 to GPIOs and enables the relay commands. At most one such entry is supported. |
+| `triple-relay` | `relay_lines`: three distinct integer GPIO offsets, all in `managed_lines` | Maps relay channels 1-3 to GPIOs and enables the relay commands. At most one such entry is supported. |
 | `usb-extension` | Optional `ports`: a positive integer; optional `usb_lines`: distinct GPIO offsets in port order, all in `managed_lines` | With `usb_lines`, enables per-port control through `CoPilotUSB`. Without it, inventory metadata only. |
 | `custom` | No driver-defined control parameters | Inventory metadata for another accessory; does not implement an accessory protocol. |
 
@@ -96,7 +96,7 @@ export:
 
 The `copilot` export provides GPIO access. The separate `power` export adds the
 standard power client and a switch-state query; it requires managed GPIO0.
-Inside a Jumpstarter shell:
+Inside an exporter shell:
 
 ```shell
 j copilot info
@@ -240,8 +240,8 @@ export:
         ref: copilot
 ```
 
-Ports are numbered from 1; port N drives `usb_lines[N - 1]`. Inside a
-Jumpstarter shell:
+Ports are numbered from 1; port N drives `usb_lines[N - 1]`. Inside an
+exporter shell:
 
 ```shell
 j usb 1 on

@@ -1,9 +1,9 @@
 # Off-Cluster QEMU Provisioner
 
-The `qemu-ssh.jumpstarter.dev` provisioner runs QEMU virtual targets on remote
-lab hosts outside the Kubernetes cluster. It connects to hosts via SSH and
+The `qemu-ssh.jumpstarter.dev` {term}`provisioner` runs QEMU virtual targets on remote
+lab hosts outside the Kubernetes cluster. It connects to {term}`host`s via SSH and
 deploys containers using Podman quadlets, giving you the same container-based
-exporter + runtime pattern as in-cluster QEMU but on dedicated hardware with
+{term}`exporter` + runtime pattern as in-cluster QEMU but on dedicated hardware with
 direct KVM access.
 
 **When to use this provisioner:**
@@ -22,7 +22,9 @@ Each remote host must have:
 
 - **Podman** installed (for running containers)
 - **systemd** (for quadlet-based container lifecycle)
-- **SSH access** with key-based authentication
+- **SSH access** as `root` with key-based authentication: the provisioner
+  writes under `/etc` over SFTP and runs `systemctl` and rootful `podman`
+  without `sudo`. It does not verify the host's SSH key.
 - (Optional) **KVM** support (`/dev/kvm` present) for hardware-accelerated
   emulation
 
@@ -30,8 +32,8 @@ Each remote host must have:
 
 The cluster must have:
 
-- Jumpstarter operator installed
-- The `qemu-ssh.jumpstarter.dev` provisioner enabled in the Jumpstarter CR
+- Jumpstarter {term}`operator` installed
+- The `qemu-ssh.jumpstarter.dev` provisioner enabled in the Jumpstarter {term}`CR`
 
 ## Step 1: Enable the provisioner
 
@@ -46,7 +48,7 @@ metadata:
   namespace: jumpstarter
 spec:
   exporterSets:
-    image: quay.io/jumpstarter-dev/exporter-set-controller:latest
+    image: quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
     provisioners:
       - name: qemu.jumpstarter.dev
         enabled: true
@@ -67,13 +69,14 @@ kubectl create secret generic lab-ssh-key \
   -n jumpstarter
 ```
 
-The Secret uses the standard `kubernetes.io/ssh-auth` type. The key must be in
-the `ssh-privatekey` field. The SSH username is configured in the
-VirtualTargetClass parameters (not in the Secret).
+The key must be in the `ssh-privatekey` field, the field name of the standard
+`kubernetes.io/ssh-auth` type; the provisioner does not check the Secret type.
+The SSH user and port are set with `host.user` and `host.port` in the
+{term}`VirtualTargetClass` or {term}`ExporterSet` parameters (not in the Secret).
 
 ## Step 3: Create a VirtualTargetClass
 
-The `VirtualTargetClass` defines the pool profile — which host to use, SSH
+The `VirtualTargetClass` defines the pool profile - which host to use, SSH
 configuration, and default resource allocations:
 
 ```yaml
@@ -89,11 +92,10 @@ spec:
   bindingMode: Immediate
   reclaimPolicy: Delete
   parameters:
-    ssh:
-      user: root
-      port: 22
     host:
       name: lab-host-01.example.com
+      user: root
+      port: 22
     runtime:
       kvm: true
     arch: aarch64
@@ -108,13 +110,11 @@ spec:
 
 | Parameter | Description |
 |-----------|-------------|
-| `ssh.user` | Default SSH username (fallback: `root`) |
-| `ssh.port` | Default SSH port (fallback: `22`) |
-| `host.name` | FQDN or IP of the remote host |
-| `host.user` | Per-host SSH user override |
-| `host.port` | Per-host SSH port override |
+| `host.name` | FQDN or IP of the remote host (required) |
+| `host.user` | SSH username (default: `root`) |
+| `host.port` | SSH port (default: `22`) |
 | `runtime.kvm` | Pass `/dev/kvm` to the runtime container |
-| `runtime.devices` | Additional devices to pass through (list of paths) |
+| `runtime.devices` | Additional devices to pass through (list of `/dev/` paths) |
 | `runtime.host_network` | Run both containers on the host network instead of Podman's bridge (default `false`). Needed when the exporter must reach a service on the host's own `127.0.0.1`; only one instance per host can then use a given forwarded port |
 | `arch` | Default QEMU architecture |
 | `resources.cpu` | Default vCPU count |
@@ -157,11 +157,11 @@ spec:
           type: jumpstarter_driver_qemu.driver.Qemu
 ```
 
-By default the provisioner auto-aliases the QEMU children as root-level refs 
-`power`, `storage`, and `serial` so clients can
+By default the provisioner auto-aliases the QEMU children as root-level refs
+`power`, `storage`, and `serial` so {term}`client`s can
 use `client.power` like on real hardware. Set `parameters.exposeRootDrivers:
 false` to keep a nested-only export map (`client.qemu.power`,
-`client.qemu.flasher`, `client.qemu.console`). The `tcp` driver is also
+`client.qemu.flasher`, `client.qemu.console`). The `tcp` {term}`driver` is also
 auto-injected (SSH host-forwarding on port 2222).
 
 ## How it works
@@ -170,10 +170,10 @@ When the ExporterSet scales up:
 
 1. The controller creates an `Exporter` CR (cluster-side)
 2. Once credentials are ready, it records the host assignment (and the
-   credentials Secret name) on the Exporter CR — before touching the remote
+   credentials Secret name) on the Exporter CR - before touching the remote
    host, so cleanup can always find the instance
 3. Connects to the remote host via SSH
-4. Writes the exporter configuration YAML to `/etc/jumpstarter/exporters/`
+4. Writes the {term}`exporter config` YAML to `/etc/jumpstarter/exporters/`
 5. Creates Podman quadlet `.container` files under `/etc/containers/systemd/`
    for both the **runtime** (QEMU) and **exporter** containers
 6. Creates a shared Podman volume for inter-container communication
@@ -186,7 +186,7 @@ With `recycleStrategy: ExitAndReplace`, an instance whose containers start but
 which never registers is recycled once the startup deadline (10 minutes) has
 passed since its deployment completed, so an exporter that cannot reach the
 controller cannot hold a pool slot indefinitely. A deployment that fails
-outright — for example a quadlet that `systemctl start` rejects — never counts
+outright - for example a quadlet that `systemctl start` rejects - never counts
 as deployed: it is retried on the next reconcile and keeps its slot until it
 succeeds.
 
@@ -206,12 +206,12 @@ goes away: delete the ExporterSet before its VirtualTargetClass.
 It also reads the private key from the credentials Secret recorded on the
 Exporter when it was deployed, so keep that Secret as well. If the Secret is
 missing or SSH to the host fails, cleanup skips the remote teardown and lets
-the finalizer clear — but the remote containers and volume are orphaned on the
+the finalizer clear - but the remote containers and volume are orphaned on the
 host. Delete the class and the Secret only after the ExporterSet is gone.
 If remote resources were orphaned (missing Secret, unreachable host), remove
-them by hand on the host. The full teardown order matters — the quadlet files
-set `Restart=always`, so removing a container without stopping the service
-first will just restart it:
+them by hand on the host. The full teardown order matters - the runtime quadlet
+sets `Restart=always` and the exporter quadlet `Restart=on-failure`, so removing
+a container without stopping its service first will just restart it:
 
 ```bash
 # 1. Stop the services (suppresses Restart=always)
@@ -248,16 +248,16 @@ Both containers communicate via Unix sockets on the shared Podman volume
 
 ## Leasing targets
 
-Users lease off-cluster targets the same way as any other target — the
+Users {term}`lease` off-cluster targets the same way as any other target - the
 placement is transparent:
 
 ```bash
-jmp lease -l board=aarch64-qemu,virtual=true
+jmp shell -l board=aarch64-qemu,virtual=true
 ```
 
 ## Troubleshooting
 
-### Check exporter-set controller logs
+### Check ExporterSet controller logs
 
 ```bash
 kubectl logs -l component=exporterset-controller,provisioner=qemu-ssh-jumpstarter-dev \

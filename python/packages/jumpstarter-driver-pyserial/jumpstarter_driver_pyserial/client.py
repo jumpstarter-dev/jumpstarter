@@ -78,7 +78,7 @@ class PySerialClient(DriverClient):
     @contextmanager
     def released(self):
         """Context manager that releases the tty on enter and re-acquires
-        it on exit — even if the body raises. Intended for runner code that
+        it on exit - even if the body raises. Intended for runner code that
         wraps a flash operation::
 
             with client.console.released():

@@ -25,7 +25,7 @@ other incompatible GPL licenses, you should do your due diligence.
 This project includes cursor rules to help Cursor AI understand our codebase
 and development patterns. When working with Cursor AI:
 
-- **Driver Creation**: If asked to create a new driver, Cursor will guide you
+- **{term}`Driver` Creation**: If asked to create a new driver, Cursor will guide you
   through the process using our `create_driver.sh` script
 - **Code Style**: Cursor will follow our established patterns and conventions
 - **Testing**: Cursor will remind you to add tests and run our test suite
@@ -39,11 +39,15 @@ This project also includes Claude Code configuration in the `.claude/`
 directory. When working with Claude Code:
 
 - **Project Rules**: The `.claude/rules/` directory contains rules for project
-  structure, driver creation, {term}`operator` releases, and the {term}`JEP` process. Claude
-  Code loads these automatically.
+  structure, driver creation, {term}`operator` releases, the {term}`JEP` process,
+  the documentation demo recording, and keeping `e2e/README.md` in sync with
+  the E2E tests. Claude Code loads these automatically.
+- **Skills**: The `.claude/skills/` directory provides `/propose-jep` to draft
+  a new JEP and `/release` to guide a Jumpstarter release.
 - **CLAUDE.md**: The root `CLAUDE.md` provides project-level instructions
-  including key commands for testing (`make pkg-test-<package_name>`), linting
-  (`make lint-fix`), and type checking (`make pkg-ty-<package_name>`).
+  including key commands for testing (`make -C python pkg-test-<package_name>`),
+  linting (`make -C python lint-fix`), and type checking
+  (`make -C python pkg-ty-<package_name>`).
 - **Code Style**: Claude Code follows TDD practices - writing failing tests
   first, then minimal implementation code.
 - **Driver Creation**: When asked to create a new driver, Claude Code follows

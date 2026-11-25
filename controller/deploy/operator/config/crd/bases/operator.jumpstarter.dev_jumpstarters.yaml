@@ -2408,7 +2408,7 @@ spec:
                         type: object
                       url:
                         description: |-
-                          Loki push endpoint (http:// or https://). Optional — telemetry can run
+                          Loki push endpoint (http:// or https://). Optional - telemetry can run
                           metrics-only without Loki. grpc:// is reserved but not implemented yet.
                         type: string
                     type: object

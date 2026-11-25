@@ -75,20 +75,20 @@ that connection uses plain TCP.
 | Parameter | Description | Type | Required | Default |
 | --- | --- | --- | --- | --- |
 | `transport` | Local USB daemon or remote usbmux daemon: `usb` or `network` | str | no | `usb` |
-| `usb_port` | Linux USB topology name, for example `1-4.2` | str | one USB selector | — |
-| `udid` | Device identifier | str | one USB selector; required for network | — |
+| `usb_port` | Linux USB topology name, for example `1-4.2` | str | one USB selector | - |
+| `udid` | Device identifier | str | one USB selector; required for network | - |
 | `usbmux_socket` | Local usbmux daemon socket | str | no | `/var/run/usbmuxd` |
-| `usbmux_host` | Remote usbmux daemon host | str | for network | — |
+| `usbmux_host` | Remote usbmux daemon host | str | for network | - |
 | `usbmux_port` | Remote usbmux daemon port | int | no | `27015` |
 | `trust_mode` | `exporter` or explicit credential-sharing `passthrough` | str | no | `exporter` |
 | `forward_ports` | Device ports available as raw TCP forwards | list[int] | no | `[]` |
-| `http_port` | Device HTTP service to expose through verified HTTPS | int | no | — |
+| `http_port` | Device HTTP service to expose through verified HTTPS | int | no | - |
 | `connect_timeout` | Discovery and connection timeout, in seconds | float | no | `10.0` |
 | `kind` | Target label: `physical` or `corellium`; does not provision devices | str | no | `physical` |
 | `devicehub` | Let macOS clients show the device in Xcode's Device Hub | bool | no | `false` |
-| `devicehub_state` | File that keeps the Device Hub identity and paired Macs | str | no | — |
+| `devicehub_state` | File that keeps the Device Hub identity and paired Macs | str | no | - |
 | `devicehub_udid` | UDID the device presents in Device Hub | str | no | the device's UDID |
-| `appium` | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | — |
+| `appium` | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | - |
 
 `http_port` and `devicehub` require exporter trust mode. `http_port` must not
 also appear in `forward_ports`. The operator starts the HTTP service. Lockdown port 62078
@@ -144,10 +144,10 @@ Inside a lease:
 j ios devicehub
 ```
 
-The first time a Mac uses a device, choose File > Pair Nearby Device… in
+The first time a Mac uses a device, choose File > Pair Nearby Device... in
 Device Hub and type the code it shows when the command asks. Later leases show
 the device without a code. If the device is not listed in Device Hub, for
-example after Unpair, choose File > Pair Nearby Device… while the command runs:
+example after Unpair, choose File > Pair Nearby Device... while the command runs:
 it asks for the new code. `--pair` asks for a code straight away. When the
 command stops, the device stays paired and moves to Device Hub's Unavailable
 section until the next lease.
@@ -163,7 +163,7 @@ Device Hub also gives Xcode on the Mac the device's developer services, so
 WebDriverAgent (WDA) can run over the same connection: tests run on the device
 while you watch them, and can pause to inspect it, in Device Hub. Appium then
 runs on the Mac rather than the exporter; the
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 compares the two.
 
 Build WDA once, signed with a provisioning profile that includes the device;
@@ -222,11 +222,12 @@ and fills the gap:
 
 - `appium:app`, `appium:otherApps` and `mobile: installApp` take tokens from
   `target.upload_app()` (an `.ipa`, a zipped `.app` or an `.app` bundle built
-  for devices). The gateway installs them with `xcrun devicectl`, removing an
-  installed copy first unless you ask for `appium:noReset`, as Appium does,
-  and starts `appium:app` by its bundle identifier. Tokens from
-  `ios.appium.upload_app()` belong to the exporter's Appium and do not work
-  here.
+  for devices). The gateway installs them with `xcrun devicectl` and starts
+  `appium:app` by its bundle identifier. It removes an installed copy of
+  `appium:app` first unless you ask for `appium:noReset`, as Appium does, or
+  set `appium:enforceAppInstall` to false, and always installs
+  `appium:otherApps` afresh. Tokens from `ios.appium.upload_app()` belong to
+  the exporter's Appium and do not work here.
 - `appium:bundleId` works: Appium checks for installed apps through devicectl.
 - `mobile: removeApp` uninstalls with devicectl, and `mobile: killApp` stops
   the app as `mobile: terminateApp` does.
@@ -274,7 +275,7 @@ With an `appium` block, the exporter runs [Appium](https://appium.io/docs/en/lat
 for the lease, and clients open sessions through the shared
 {doc}`Appium client <appium>`, the same interface every UI-automation target
 provides. The
-{doc}`UI automation guide <../../../getting-started/guides/ui-automation>`
+{doc}`UI automation guide <../../../getting-started/guides/integration-patterns/ui-automation>`
 explains why Jumpstarter uses Appium and how to set it up.
 The exporter needs Appium and its
 [XCUITest driver](https://github.com/appium/appium-xcuitest-driver), usually
@@ -284,7 +285,7 @@ Jumpstarter does not build, sign, install or bundle
 
 Appium reaches the device through the exporter's own usbmux daemon (the
 `usbmux_socket`, or `usbmux_host` for network transport) and every session is
-pinned to the device's udid and iOS version. Choose how WDA starts:
+pinned to the device's UDID and iOS version. Choose how WDA starts:
 
 - **Attach to a running WDA** with `wda_port`, usually 8100. Start WDA with
   your device tools; Appium reaches it through a loopback forward on the
@@ -352,9 +353,9 @@ provide.
   can replace the bootstrap metadata. Native TLS terminates at the trusted
   exporter, not at the device.
 - **Device isolation:** Discovery, pair-record reads and connections are scoped
-  to the selected device on its USB link; a Wi-Fi copy of the same device is
-  ignored. Pair-record writes are rejected; exporter mode also rejects client
-  pairing changes.
+  to the selected device, and with USB transport to its USB link; a Wi-Fi copy
+  of the same device is then ignored. Pair-record writes are rejected; exporter
+  mode also rejects client pairing changes.
 - **Lease access:** A lease grants full control of the device. The policy above
   protects the exporter's pairing identity, not device capabilities: services
   started through lockdown, including the iOS 17.4+ CoreDevice tunnel, reach

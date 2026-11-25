@@ -1,6 +1,5 @@
 # NanoKVM-USB Driver
 
-
 `jumpstarter-driver-nanokvm-usb` provides KVM (Keyboard, Video, Mouse) control for
 [NanoKVM-USB](https://github.com/sipeed/NanoKVM-USB) devices connected directly
 to the exporter host over USB.
@@ -61,6 +60,11 @@ export:
 | video_width | Requested capture width | int | no | 1920 |
 | video_height | Requested capture height | int | no | 1080 |
 | video_fps | Capture rate for `stream()` | int | no | 30 |
+| video_format | `mjpeg_passthrough` forwards the device's MJPEG frames without re-encoding (through `v4l2-ctl`, or V4L2 directly on Linux) and falls back to OpenCV; `jpeg` captures with OpenCV and re-encodes | str | no | mjpeg_passthrough |
+| video_jpeg_quality | JPEG quality (1-100) when OpenCV re-encodes frames | int | no | 95 |
+| video_discard_stale | Buffered frames dropped before each capture so the frame is current (`0` = none) | int | no | 1 |
+| video_stream_buffer_size | Frames buffered for each `stream()` client | int | no | 32 |
+| v4l2_ctl_executable | `v4l2-ctl` name or path for MJPEG passthrough; unset looks up `v4l2-ctl` on `PATH` | str | no | |
 | screen_width | Target screen width for relative mouse moves | int | no | 1920 |
 | screen_height | Target screen height for relative mouse moves | int | no | 1080 |
 | vnc_enabled | Start an embedded RFB server (Unix socket child `vnc`) | bool | no | false |
@@ -96,30 +100,26 @@ the Jumpstarter connection to whichever **client** opens the stream.
 1. A client calls `video.stream("stream")` (context manager) or `open_stream()`.
 2. The exporter's shared FramePump already captures JPEG frames from UVC; the
    stream task forwards those frames to the client.
-3. The client reads frames with `stream.receive()` — each message is one JPEG.
+3. The client reads frames with `stream.receive()` - each message is one JPEG.
 4. When the client closes the context (or calls `close()`), the exporter stops
-   the stream task. Capture continues if VNC or another stream is still using
-   the pump.
+   the stream task. The pump keeps capturing until the driver closes at the end
+   of the session, so VNC and other streams are not interrupted.
 
 HID commands remain available on the `hid` child during streaming and VNC.
-
-For recording, OCR, frame deduplication, and preprocessing without blocking
-``jmp shell``, use ``edge-clearance-delivery/video-receiver/`` (``stream-bridge.py`` +
-``video-receiver.py``).
 
 ### Client examples
 
 Single frame via snapshot:
 
 ```python
-image = lease.drivers["nanokvm-usb"].video.snapshot()
+image = client.children["nanokvm-usb"].video.snapshot()
 image.save("screen.jpg")
 ```
 
 Low-level stream access (raw JPEG bytes):
 
 ```python
-video = lease.drivers["nanokvm-usb"].video
+video = client.children["nanokvm-usb"].video
 
 with video.stream("stream") as stream:
     while True:
@@ -150,7 +150,7 @@ j nanokvm-usb vnc forward-tcp 5900
 Or from Python:
 
 ```python
-with lease.drivers["nanokvm-usb"].session() as url:
+with client.children["nanokvm-usb"].session() as url:
     print(url)  # noVNC URL
 ```
 
@@ -170,7 +170,8 @@ built in; extra layout tables in `vnc_keymap.py` are welcome as pull requests.
 
 ### NanoKVMUSBClient
 
-Composite client with `video`, `hid`, and `vnc` children.
+Composite client with `video` and `hid` children, plus `vnc` when `vnc_enabled`
+is true.
 
 ### NanoKVMUSBVideoClient
 
@@ -239,13 +240,3 @@ from jumpstarter_driver_nanokvm_usb.video import VideoCapture
 for device in VideoCapture.list_devices():
     print(device)
 ```
-
-## Differences from the network NanoKVM driver
-
-| Feature | NanoKVM (network) | NanoKVM-USB |
-|---------|-------------------|-------------|
-| Connection | HTTP/WebSocket | USB serial + UVC |
-| Video stream | MJPEG from device API | UVC capture on exporter host |
-| Virtual disk/CD-ROM | Yes | No |
-| Device reboot | Yes | No |
-| Auth | Username/password | None (local USB) |

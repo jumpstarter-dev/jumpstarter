@@ -35,7 +35,6 @@ Example configuration for the RideSX driver:
 ```yaml
   storage:
     type: "jumpstarter_driver_ridesx.driver.RideSXDriver"
-    config:
     children:
       # fastboot management serial port
       serial:
@@ -45,7 +44,6 @@ Example configuration for the RideSX driver:
           baudrate: 115200
   power:
     type: "jumpstarter_driver_ridesx.driver.RideSXPowerDriver"
-    config:
     children:
       serial:
         type: "jumpstarter_driver_pyserial.driver.PySerial"
@@ -71,8 +69,8 @@ $$ j power on
 $$ j serial console
 ```
 
-By default the device is powered off after flashing. Use ``--no-power-off`` to
-leave it on.
+By default the device is powered off after flashing when the storage driver has
+a `power` child. Use ``--no-power-off`` to leave it on.
 
 ### Config parameters
 
@@ -81,6 +79,7 @@ leave it on.
 | Parameter   | Description                                           | Type | Required | Default                     |
 | ----------- | ----------------------------------------------------- | ---- | -------- | --------------------------- |
 | storage_dir | Directory to store firmware images and temporary files | str  | no       | /var/lib/jumpstarter/ridesx |
+| soc_type    | SoC profile whose serial command sequence boots the device to fastboot (`sa8775p`, `sa8650p`, `sa8540p1`, `sa8540p2`) | str  | no       | sa8775p                     |
 
 #### RideSXPowerDriver
 
@@ -117,7 +116,8 @@ ridesx_client.flash(partitions)
 
 ### Flash with Compressed Images
 
-The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`):
+The driver automatically handles compressed images (`.gz`, `.gzip`, `.xz`),
+decompressing them on the exporter with `zcat` or `xzcat`:
 
 ```{code-block} python
 # Flash compressed images - decompression is automatic
@@ -162,7 +162,7 @@ power_client.cycle(wait=5)  # Wait 5 seconds between off/on
 
 ## QDL platform flashing (`QualcommFlasher`)
 
-Manifest-driven QDL/fastboot flashing for vendor firmware packages (ES13, ES21, ES22, CS4, CS5, …).
+Manifest-driven QDL/fastboot flashing for vendor firmware packages (ES13, ES21, ES22, CS4, CS5, CS6, ...).
 See `examples/exporter-platform.yaml` and reference manifests in
 `jumpstarter_driver_ridesx/qdl/examples/manifests/`.
 
@@ -171,7 +171,7 @@ See `examples/exporter-platform.yaml` and reference manifests in
 TAC serial handles power on/off and mode switching (EDL/fastboot). Export as `firmware` with
 `tac`, `serial`, and `sail` children for identification.
 
-### Example exporter configuration
+### Example exporter config
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -215,15 +215,15 @@ export:
 
 ### Config parameters
 
-| Parameter            | Description                                          | Type  | Required | Default                        |
-| -------------------- | ---------------------------------------------------- | ----- | -------- | ------------------------------ |
-| soc_type             | SoC profile (`sa8775p`, `sa8650p`, `sa8540p1`, `sa8540p2`) | str   | no       | sa8775p                        |
-| work_dir             | Base directory for firmware extraction                | str   | no       | /var/lib/jumpstarter/qualcomm  |
-| board_revision       | Board revision for CDT image selection (`v1`–`v4`)   | str   | no       |                                |
-| qdl_timeout          | Timeout for QDL subprocess steps (seconds)           | int   | no       | 1800                           |
-| fastboot_timeout     | Timeout for fastboot subprocess steps (seconds)      | int   | no       | 600                            |
-| power_cycle_delay    | Delay between power off/on (seconds)                 | float | no       | 2.0                            |
-| tac_command_timeout  | Timeout for TAC command acknowledgement (seconds)    | float | no       | 10.0                           |
+| Parameter           | Description                                                | Type  | Required | Default                       |
+| ------------------- | ---------------------------------------------------------- | ----- | -------- | ----------------------------- |
+| soc_type            | SoC profile (`sa8775p`, `sa8650p`, `sa8540p1`, `sa8540p2`) | str   | no       | sa8775p                       |
+| work_dir            | Base directory for firmware extraction                     | str   | no       | /var/lib/jumpstarter/qualcomm |
+| board_revision      | Board revision for CDT image selection (`v1` to `v4`)      | str   | no       |                               |
+| qdl_timeout         | Timeout for QDL subprocess steps (seconds)                 | int   | no       | 1800                          |
+| fastboot_timeout    | Timeout for fastboot subprocess steps (seconds)            | int   | no       | 600                           |
+| power_cycle_delay   | Delay between power off/on (seconds)                       | float | no       | 2.0                           |
+| tac_command_timeout | Timeout for TAC command acknowledgement (seconds)          | float | no       | 10.0                          |
 
 ### Required children
 
@@ -248,7 +248,7 @@ j firmware flash https://example.com/firmware/sx4-r00021.1a.tar.xz --manifest ./
 # Cache firmware on the exporter for faster re-flashing
 j firmware flash ./sx4-r00021.1a.tar.xz --cached
 
-# Force re-download when cache is incomplete or corrupted
+# Force re-download even if a cached copy exists
 j firmware flash ./sx4-r00021.1a.tar.xz --cached --force-download
 
 # Identify running firmware
@@ -262,15 +262,25 @@ j firmware boot-to-edl
 j firmware boot-to-fastboot
 ```
 
-Use `--cached` to keep extracted firmware on the exporter and reuse it on subsequent
-flashes. Each source URL gets its own cache directory (namespaced by a hash of the URL)
-under `work_dir/`, so different firmware archives never overwrite each other.
+`id` power cycles the board through the TAC and reads the boot logs on the `serial`
+and `sail` consoles. It recognizes ES12, ES13, ES14, ES21, ES22, CS4, CS5 and CS6
+firmware; `--capture DIR` saves the raw logs as `sail.log` and `main.log`. `check`
+runs the same identification and exits with status 1 if the variant or any field
+given as an option does not match.
 
-If a download is interrupted, the cache may be left in an incomplete state. Use
-`--force-download` with `--cached` to clear the existing cache and re-download.
+Use `--cached` to keep extracted firmware on the exporter and reuse it on subsequent
+flashes. Each source gets its own cache directory under `work_dir/`, named by a hash
+of the URL, or of a local file's path, modification time and size, so different
+firmware archives never overwrite each other. Before reusing a cached URL, the
+exporter sends a HEAD request and downloads again if the `ETag`, `Last-Modified` or
+`Content-Length` changed.
+
+A cached copy is only reused after its download and extraction completed, so an
+interrupted download is fetched again on the next `--cached` run. Use
+`--force-download` with `--cached` to discard the cached copy and download it again.
 
 Archives may embed `jumpstarter_manifest.yaml`. See `examples/exporter-platform.yaml` for
-exporter configuration and the QDL module for manifest schema details.
+exporter config and the QDL module for manifest schema details.
 
 ### Board revision and CDT flash
 
@@ -340,7 +350,7 @@ steps:
       continue: true
 ```
 
-The `revision` field on flash operations filters by board revision — only the matching
+The `revision` field on flash operations filters by board revision - only the matching
 entry is flashed, the rest are skipped. The `continue: true` on the last fastboot step
 tells the device to boot after flashing.
 
@@ -348,5 +358,7 @@ tells the device to boot after flashing.
 
 - `qdl` (Qualcomm download tool)
 - `fastboot`
+- `tar`, with the decompressor for the archive format (`xz`, `gzip`, `bzip2` or `zstd`)
+- `dmesg` readable by the exporter, for `check_dmesg` and retry checks
 - USB access to the DUT in EDL/fastboot modes
 - TAC serial device for mode switching

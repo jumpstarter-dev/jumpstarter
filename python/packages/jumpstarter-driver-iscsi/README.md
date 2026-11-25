@@ -1,10 +1,10 @@
 # iSCSI Driver
 
 `jumpstarter-driver-iscsi` provides a lightweight iSCSI **target** implementation powered by the Linux
-[RFC-tgt](https://github.com/open-iscsi/tcmu-runner/) framework via the
+LIO target framework via the
 [`rtslib-fb`](https://github.com/open-iscsi/rtslib-fb) Python bindings.
 
-> ⚠️  The driver **creates and manages an iSCSI _target_** (server).  To access the
+> **Note:** The driver **creates and manages an iSCSI _target_** (server). To access the
 > exported LUNs you still need a separate iSCSI **initiator** (client) on the
 > machine running your test-code / DUT.
 
@@ -32,7 +32,8 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-iscsi
 ## Configuration
 
 The driver is configured through the exporter YAML file.  A minimal example
-exports the local file `disk.img` as a 5 GiB LUN:
+configures the target; LUNs are added at runtime with `add_lun`, `upload_image`
+or `j iscsi serve`:
 
 ```yaml
 export:
@@ -62,7 +63,7 @@ export:
 
 ### File Management
 
-The iSCSI server driver automatically tracks disk image files and directories created during the session. By default, `remove_created_on_close` is set to `false` to preserve disk images that are typically reused across test sessions. Set to `true` if you want temporary disk images to be cleaned up automatically.
+The iSCSI server driver tracks the image files and directories written through its `storage` child during the session, such as uncompressed images uploaded with `upload_image`. Images that `upload_image` decompresses on the exporter (`.gz`, `.xz` and `.bz2` sources) and new backing files that `add_lun` creates are not tracked. By default, `remove_created_on_close` is set to `false` to preserve disk images that are typically reused across test sessions. Set to `true` if you want temporary disk images to be cleaned up automatically.
 
 ## API Reference
 

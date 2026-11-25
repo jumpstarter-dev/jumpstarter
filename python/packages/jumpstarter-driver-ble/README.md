@@ -1,7 +1,7 @@
 # BLE Driver
 
-`jumpstarter-driver-ble` provides communication functionality via ble with the DUT.
-The driver expects a ble service with a write and notify characteristic to send and receive data respectively.
+`jumpstarter-driver-ble` provides communication functionality via BLE with the DUT.
+The driver expects a BLE service with a write and notify characteristic to send and receive data respectively.
 
 ## Installation
 
@@ -30,7 +30,7 @@ export:
 | Parameter        | Description                                        | Type | Required | Default |
 | ---------------- | -------------------------------------------------- | ---- | -------- | ------- |
 | address          | BLE address to connect to                      | str  | yes      |         |
-| service_uuid     | BLE service uuid to connect to                     | str  | yes      |         |
+| service_uuid     | BLE service UUID to connect to                     | str  | yes      |         |
 | write_char_uuid  | BLE write characteristic to send data to DUT       | str  | yes      |         |
 | notify_char_uuid | BLE notify characteristic to receive data from DUT | str  | yes      |         |
 
@@ -43,7 +43,7 @@ export:
 
 ### CLI
 
-The ble driver client comes with a CLI tool that can be used to interact with
+The BLE driver client comes with a CLI tool that can be used to interact with
 the target device.
 
 ```console
@@ -56,6 +56,8 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  info           Get target information
-  console        Start BLE console
+  console  Start BLE console
+  info     Get target information
 ```
+
+`start-console` is still accepted as an alias for `console`.

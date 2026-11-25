@@ -35,8 +35,8 @@ def _wait_for_interrupt(client: DriverClient) -> None:
 
     Driver CLIs run in a worker thread driven by a ``BlockingPortal``, while
     ``jmp shell`` handles Ctrl+C with ``anyio.open_signal_receiver`` and cancels
-    the enclosing task group. A thread-side wait — ``Event().wait()``,
-    ``time.sleep()``, or ``signal.signal()`` — cannot observe either: Python
+    the enclosing task group. A thread-side wait - ``Event().wait()``,
+    ``time.sleep()``, or ``signal.signal()`` - cannot observe either: Python
     delivers signals only to the main thread, and anyio cancellation only unwinds
     tasks. So the CLI printed "SIGINT pressed, terminating" while the worker
     thread kept waiting, the caller's ``finally`` never ran (leaving a stale
@@ -60,13 +60,13 @@ def _adb_connect(adb: str, target: str, *, timeout: float = ADB_CONNECT_TIMEOUT)
     The exit status cannot be used: ``adb connect`` returns 0 even when it fails,
     reporting the failure on **stdout** instead ("failed to connect to ...", "failed
     to resolve host: ...", "bad port number ..."). Verified against adb 1.0.41, for
-    a refused port, an unresolvable host and an out-of-range port — all rc=0. So a
+    a refused port, an unresolvable host and an out-of-range port - all rc=0. So a
     `check=True` here would silently accept a device that never attached, leaving the
     caller to believe it had one.
 
     A local ADB server is *not* required: if none is running, ``adb connect`` starts
-    one on 5037 first (verified — it does so even when the connect itself then fails).
-    That is the whole point of attach — the developer does not have to own, configure,
+    one on 5037 first (verified - it does so even when the connect itself then fails).
+    That is the whole point of attach - the developer does not have to own, configure,
     or even have an ADB server.
 
     Args:
@@ -99,7 +99,7 @@ class AdbClient(DriverClient):
     """Client for the exporter's ADB server.
 
     Use this to point your own tooling *at* the exporter's ADB server, which is
-    exclusive — you see the exporter's devices instead of your own. To add a single
+    exclusive - you see the exporter's devices instead of your own. To add a single
     remote device to an ADB server you already run, use an ``AdbDevice`` and its
     ``attach`` instead.
     """
@@ -244,15 +244,15 @@ class AdbDeviceClient(DriverClient):
         Three steps, none of them clever: the exporter streams the device's adbd,
         Jumpstarter tunnels it here, and plain ``adb connect`` adds it to the local
         server. Because ``adb connect`` is additive, the device lands in the *default*
-        server — the one Android Studio, tradefed, gradle and a bare ``adb`` all talk
-        to — with no environment variables and no IDE restart. If you have no ADB
+        server - the one Android Studio, tradefed, gradle and a bare ``adb`` all talk
+        to - with no environment variables and no IDE restart. If you have no ADB
         server at all, ``adb connect`` starts one.
 
         Args:
             adb: path to your local adb binary.
             host: local bind address.
             port: local port to bind; 0 lets the OS choose. The device's address is
-            whatever this resolves to — deliberately not something this driver
+            whatever this resolves to - deliberately not something this driver
             invents, since ADB owns device addressing.
             timeout: seconds to allow the local ``adb connect``. A client-side
             timeout, distinct from the exporter's ``connect_timeout``, because it

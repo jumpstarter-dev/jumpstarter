@@ -3,7 +3,7 @@
 This section provides reference documentation for Jumpstarter's package APIs.
 The documentation covers:
 
-- [Drivers](drivers/index.md): APIs for various driver categories
+- [Drivers](drivers/index.md): APIs for various {term}`driver` categories
 - {doc}`MCP <mcp>`: {term}`MCP` server package API
 - [Exceptions](exceptions.md): Exceptions raised by driver clients
 

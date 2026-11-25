@@ -2,12 +2,26 @@
 
 Jumpstarter driver for managing KubeVirt virtual machines on remote clusters.
 
+## Installation
+
+```{code-block} console
+:substitutions:
+$ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-kubevirt
+```
+
 ## Drivers
 
-- **KubevirtPower** — Start/stop VirtualMachines via KubeVirt API
-- **KubevirtConsole** — Serial console via WebSocket subresource
-- **KubevirtStorage** — Flash images via CDI DataVolumes
-- **Kubevirt** — Composite root driver
+- **KubevirtPower** - Start/stop VirtualMachines via KubeVirt API
+- **KubevirtConsole** - Serial console via WebSocket subresource
+- **KubevirtStorage** - Flash images via CDI DataVolumes
+- **Kubevirt** - Composite root driver
+
+The power, console and storage drivers take the VirtualMachine's `namespace`
+and `vm_name`, and `kubeconfig`, the path to a kubeconfig for the cluster that
+runs it. The console
+authenticates with the bearer token in that kubeconfig; client certificates in
+the kubeconfig are not used. The KubeVirt provisioner generates these drivers and their
+configuration as `power`, `console` and, for DataVolume storage, `storage`.
 
 `KubevirtStorage` supports local files and remote resources through the standard
 Jumpstarter resource adapter:
@@ -34,5 +48,5 @@ Flashing requires DataVolume-backed disks and an Immediate storage class.
 The implementation uses CDI's asynchronous upload endpoint and waits for the
 DataVolume's `Succeeded` phase before activation. See the
 [CDI upload protocol](https://github.com/kubevirt/containerized-data-importer/blob/main/doc/upload.md)
-and the [provisioner guide](https://jumpstarter.dev/main/getting-started/guides/kubevirt-provisioner.html)
+and the [virtual testing guide](https://jumpstarter.dev/main/getting-started/guides/integration-patterns/virtual-testing.html)
 for deployment requirements, storage configuration, and flashing behavior.

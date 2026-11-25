@@ -59,7 +59,7 @@ export:
 ### Using a pyXCP Config File
 
 For advanced configuration (seed & key, DAQ policies, etc.), provide a
-[pyXCP configuration file](https://pyxcp.readthedocs.io/en/latest/configuration.html):
+[pyXCP config file](https://pyxcp.readthedocs.io/en/latest/configuration.html):
 
 ```yaml
 export:

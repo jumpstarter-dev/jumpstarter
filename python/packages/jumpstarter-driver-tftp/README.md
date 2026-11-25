@@ -35,6 +35,11 @@ export:
 | port                    | Port number to listen on                                         | int  | no       | 69                  |
 | remove_created_on_close | Automatically remove created files/directories when driver closes| bool | no       | true                |
 
+If the server cannot listen on `host` and `port`, for example because a system
+TFTP server already holds the port, `start()` logs a warning and returns
+without starting it. That works as long as the server holding the port serves
+the same `root_dir`.
+
 ### File Management
 
 The TFTP server driver automatically tracks files and directories created during the session. By default, `remove_created_on_close` is set to `true` to clean up temporary boot files automatically. Set to `false` if you want to preserve boot files and firmware images that are reused across sessions.

@@ -49,7 +49,7 @@ export:
 | timeout       | SNMP timeout in seconds                             | float | no       | 5.0                               |
 
 Most PDUs use the default `1`/`0` for on/off. Some vendors use different
-command enums -- e.g. APC PowerNet outlet control uses `1`=on/`2`=off, where
+command enums - e.g. APC PowerNet outlet control uses `1`=on/`2`=off, where
 the default off value (`0`) is ignored by the PDU; set `off_value: 2` for
 those.
 
@@ -64,17 +64,20 @@ those.
 ### Examples
 
 Power cycling a device:
+
 ```python
 snmp_client.cycle(wait=3)
 ```
 
 Basic power control:
+
 ```python
 snmp_client.off()
 snmp_client.on()
 ```
 
 Using the CLI:
+
 ```shell
 j power on
 j power off

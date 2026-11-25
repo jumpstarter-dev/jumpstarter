@@ -25,6 +25,7 @@ export:
 ```
 
 Example configuration to send commands to a MCU with DTR/RTS controlling boot process over serial port, with --no-output (fire-and-forget mode):
+
 ```yaml
 export:
   serial:
@@ -39,6 +40,7 @@ export:
 Example configuration with power control: a power driver referenced as the
 `power` child of the serial device enables the Ctrl-] x3 power-cycle hotkey in
 `console` (the console stays attached while the board re-enumerates):
+
 ```yaml
 export:
   serial:
@@ -56,9 +58,9 @@ export:
       port: "1"
 ```
 
-Drivers that create their own console (qemu, renode, dutlink, corellium) wire
+Drivers that create their own console (QEMU, Renode, DUT Link, Corellium) wire
 their power driver into it automatically, so the hotkey works there without
-any configuration (qemu: except in sidecar mode).
+any configuration (QEMU: except in sidecar mode).
 
 ### Input during reconnection
 
@@ -70,7 +72,6 @@ during each outage logs a warning; input is not buffered or replayed.
 This also applies to pipe and pexpect writers, which can lose input without a
 send error.
 
-
 ### Config parameters
 
 | Parameter      | Description                                                                                                                                          | Type  | Required | Default |
@@ -80,7 +81,7 @@ send error.
 | check_present | Check if the serial port exists during exporter initialization, disable if you are connecting to a dynamically created port (i.e. USB from your DUT) | bool  | no       | True    |
 | cps            | Characters per second throttling limit. When set, data transmission will be throttled to simulate slow typing. Useful for devices that can't handle fast input | float | no       | None    |
 | disable_hupcl  | Disable HUPCL on POSIX systems to avoid toggling DTR/RTS on close (can prevent MCU reset on serial disconnect)                                       | bool  | no       | False   |
-| always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open for the lifetime of the exporter, which can be useful to avoid HUPCL-triggered resets between sessions | bool  | no       | False   |
+| always_on      | Keep the serial port open even when no clients are connected. When false (the default), the port is opened on first client attach and closed when the last client detaches, freeing it for other tools (e.g. esptool). When true, the port stays open from the first client attach until the lease ends, which can be useful to avoid HUPCL-triggered resets between client connections | bool  | no       | False   |
 
 ### NVDemuxSerial Driver
 
@@ -88,13 +89,17 @@ The `NVDemuxSerial` driver provides serial access to NVIDIA Tegra demultiplexed 
 
 The nv_tcu_demuxer tool can be obtained from the NVIDIA Jetson BSP, at this path: `Linux_for_Tegra/tools/demuxer/nv_tcu_demuxer`.
 
+`NVDemuxSerial` uses the same client as `PySerial`, so `console`, `pipe`,
+`--observe`, `release-console` and `console-status` described below work the
+same way. `release` and `acquire` are not supported.
+
 #### Multi-Instance Support
 
 Multiple driver instances can share a single demuxer process by specifying different target channels. This allows simultaneous access to multiple UART channels (CCPLEX, BPMP, SCE, etc.) from the same physical device.
 
 #### Configuration
 
-##### Single channel example:
+##### Single channel example
 
 ```yaml
 export:
@@ -106,7 +111,7 @@ export:
       # chip defaults to T264 (Thor), use T234 for Orin
 ```
 
-##### Multiple channels example:
+##### Multiple channels example
 
 ```yaml
 export:
@@ -169,7 +174,7 @@ When the target device restarts (e.g., power cycle), the serial device disappear
 3. Restarts the demuxer with the new device
 4. Discovers the new pts path (which changes on each restart)
 
-Active connections will receive errors when the device disconnects. Clients should reconnect, and the driver will wait for the device to be available again.
+Attached clients stay connected while the device restarts: input sent in the meantime is discarded, and a `[reconnected]` line marks where output from the new pts begins.
 
 #### Configuration Validation / Limitations
 
@@ -182,23 +187,23 @@ When using multiple driver instances, all instances must have compatible configu
 
 If these requirements are not met, the driver will raise a `ValueError` during initialization.
 
-
-
 ## Usage
 
-The pyserial driver provides two CLI commands for interacting with serial ports:
+The PySerial driver provides the following CLI commands for interacting with serial ports:
 
 ### console
 
 Start an interactive serial console with direct terminal access.
+`start-console` is still accepted as an alias.
 
 ```bash
 j serial console
 ```
 
 **Hotkeys:**
+
 - **CTRL+B x3**: Exit the console
-- **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above)
+- **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above; not with `--observe`)
 
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is
@@ -250,8 +255,11 @@ cat commands.txt | j serial pipe --no-output
 - `-a, --append`: Append to output file instead of overwriting
 - `--no-output`: Disable serial output handling (stdin -> serial only, exits at EOF)
 - `--observe`: Watch-only mode (read-only). Use when another session holds exclusive write access.
+- `--retry-count N`: Retry attaching this many times while another client holds the console (default: 0)
+- `--retry-interval SECONDS`: Seconds between attach attempts (default: 0.5)
 
 Notes:
+
 - `--no-output` cannot be combined with `--output` or `--append`.
 - `--no-output` requires stdin input (piped stdin or `--input`).
 - `--observe` cannot be combined with `--input` or `--no-output`.
@@ -289,7 +297,9 @@ client drives it.
 Access is coordinated by an exclusive **write token**:
 
 - The first client to open an interactive session (`console` or `pipe` with
-  input) acquires the write token and may write to the port.
+  input) acquires the write token and may write to the port. Taking the token
+  clears the scrollback, so the writer sees only live output and observers
+  that attach later replay only output from this session.
 - Additional clients attach as **observers**, receiving all serial output
   (including a replay of recent scrollback on attach) but unable to write. A
   client observes when it passes `--observe`, or when a `pipe` has no stdin to
@@ -337,12 +347,13 @@ reset some boards unless `disable_hupcl` is set.
 
 ```{eval-rst}
 .. autoclass:: jumpstarter_driver_pyserial.client.PySerialClient()
-    :members: pexpect, open, stream, open_stream, close
+    :members: pexpect, open, stream, open_stream, close, release, acquire, released
 ```
 
 ### Examples
 
 Using expect with a context manager
+
 ```{testcode}
 with pyserialclient.pexpect() as session:
     session.sendline("Hello, world!")
@@ -350,6 +361,7 @@ with pyserialclient.pexpect() as session:
 ```
 
 Using expect without a context manager
+
 ```{testcode}
 session = pyserialclient.open()
 session.sendline("Hello, world!")
@@ -358,6 +370,7 @@ pyserialclient.close()
 ```
 
 Using a simple BlockingStream with a context manager
+
 ```{testcode}
 with pyserialclient.stream() as stream:
     stream.send(b"Hello, world!")
@@ -365,6 +378,7 @@ with pyserialclient.stream() as stream:
 ```
 
 Using a simple BlockingStream without a context manager
+
 ```{testcode}
 stream = pyserialclient.open_stream()
 stream.send(b"Hello, world!")

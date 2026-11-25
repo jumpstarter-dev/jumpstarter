@@ -9,7 +9,7 @@ or iOS.
 Appium is Jumpstarter's default UI-automation framework: one WebDriver API for
 every platform it supports, an official Python client that installs with `pip`,
 and nothing to install on the client beyond that client library. See
-{doc}`../../../getting-started/guides/ui-automation` for the reasons in full and
+{doc}`../../../getting-started/guides/integration-patterns/ui-automation` for the reasons in full and
 for setting up an exporter.
 
 Target drivers add an `appium` child built on `AppiumDriver`. It runs an
@@ -27,7 +27,7 @@ The exporter needs Node.js, Appium and the Appium drivers for its targets, such
 as [UiAutomator2](https://github.com/appium/appium-uiautomator2-driver) or
 [XCUITest](https://github.com/appium/appium-xcuitest-driver).
 Containerized exporters usually pin them in their image; see
-{doc}`../../../getting-started/guides/ui-automation` for an example. Jumpstarter
+{doc}`../../../getting-started/guides/integration-patterns/ui-automation` for an example. Jumpstarter
 does not bundle, download or build Appium, its drivers or WebDriverAgent.
 
 To use the Python examples below, install
@@ -64,6 +64,11 @@ export:
 | `startup_timeout` | Seconds to wait for Appium to become ready | `60` |
 | `max_upload_bytes` | Largest application a client may upload | 4 GiB |
 
+A target driver's `appium` option accepts `executable`, `home`,
+`capabilities`, `env`, `startup_timeout` and `max_upload_bytes`; the target
+chooses the Appium driver itself and rejects `drivers` and `state_dir`. Some
+targets accept further options, described on their pages.
+
 ## Usage
 
 ```python
@@ -95,7 +100,8 @@ with env() as root, root.appium.serve() as target:
   Node's `NODE_EXTRA_CA_CERTS`, for tools written in other languages.
 
 Closing the block removes the listener. Appium keeps running until `stop()`,
-reset or the end of the lease.
+reset or the end of the lease; emulator and simulator targets also stop it at
+power off.
 
 ### Applications
 
@@ -141,7 +147,7 @@ from reaching beyond it:
 Appium runs as a child process of the exporter, in the exporter's container, so
 the rules above, not a container boundary, are what keep a lease to its device.
 Keep exporter images to what the targets need, and reset or re-provision devices
-between untrusted tenants. See {doc}`../../../getting-started/guides/ui-automation`
+between untrusted tenants. See {doc}`../../../getting-started/guides/integration-patterns/ui-automation`
 for an overview of every target.
 
 ## API Reference

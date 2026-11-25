@@ -28,6 +28,16 @@ Traceback (most recent call last):
 FileNotFoundError: failed to find sd-wire device...
 ```
 
+### Config parameters
+
+| Parameter               | Description                                                                                                                                                      | Type | Required | Default |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- | ------- |
+| `serial`                | Serial number of the SD Wire. Required for a factory-default FT200X (see below). When unset, the one programmed SD Wire attached is used; finding more than one is an error | str  | no       | unset   |
+| `storage_device`        | Block device of the SD card. Detected automatically when unset                                                                                                   | str  | no       | _auto_  |
+| `storage_timeout`       | Seconds to wait for the SD card block device to appear and become ready                                                                                          | int  | no       | `10`    |
+| `storage_leeway`        | Seconds to wait after a write has been flushed before returning                                                                                                  | int  | no       | `6`     |
+| `storage_fsync_timeout` | Seconds allowed for flushing a write to the SD card                                                                                                              | int  | no       | `900`   |
+
 ## Unprogrammed (factory-default) SD Wire devices
 
 SD Wires are normally initialized with `sd-mux-ctrl --init`, which rewrites the
@@ -47,7 +57,7 @@ is also supported, but with two requirements:
    > The FT200X's CBUS bitbang mode (used to switch the mux) requires `CBUS0` to
    > be configured as `GPIO`/`IOMODE` in the EEPROM. On an unprogrammed FT200X
    > `CBUS0` defaults to a fixed function (e.g. `TXLED`) and **completely ignores
-   > bitbang commands** — the green LED never lights and the mux never switches
+   > bitbang commands** - the green LED never lights and the mux never switches
    > to DUT.
 
    The driver does **not** reprogram the EEPROM; it only sends the runtime
@@ -64,7 +74,7 @@ is also supported, but with two requirements:
    ```
 
    After flashing, **unplug and replug** the SD Wire USB cable. If you run the
-   driver against an unprogrammed device that has *not* had this fix applied,
+   driver against an unprogrammed device that has _not_ had this fix applied,
    the device is found but `host()`/`dut()` silently fail to move the mux.
 
 ## macOS notes
@@ -79,9 +89,9 @@ On macOS (`Darwin`) the driver does extra work that is unnecessary on Linux:
 - **Power on the DUT immediately after `dut()` (< ~500 ms).** The mux has a
   protection circuit that reverts to HOST if it sees no SD activity on the DUT
   side shortly after switching.
-- **`host()` power-cycles the reader's hub port.** Because the prior `eject`
-  leaves the SMSC reader stopped, `host()` routes the card back and *then*
-  power-cycles port 1 of *this* SD Wire's internal hub to force a clean
+- **`host()` power cycles the reader's hub port.** Because the prior `eject`
+  leaves the SMSC reader stopped, `host()` routes the card back and _then_
+  power cycles port 1 of _this_ SD Wire's internal hub to force a clean
   re-enumeration (correlated by USB topology so other attached SD Wires are not
   disturbed).
 - **Storage discovery uses `system_profiler`** (pyudev is Linux-only) and may
@@ -90,10 +100,14 @@ On macOS (`Darwin`) the driver does extra work that is unnecessary on Linux:
 
 ## API Reference
 
-The SDWire driver implements the `StorageMuxClient` class, which is a generic
-storage class.
+The SDWire driver uses the `StorageMuxFlasherClient` class, a generic storage
+client that adds `flash` and `dump` to `StorageMuxClient`. `flash` connects the
+card to the host, writes the image and connects the card back to the DUT.
+Images written to the card that are compressed with gzip, xz, bz2 or zstd are
+detected from their file signature and decompressed on the exporter, so
+`compression` (`--compression`) does not need to be set.
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxClient()
-    :members:
+.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxFlasherClient()
+    :members: flash, dump, host, dut, off, write_local_file, read_local_file
 ```

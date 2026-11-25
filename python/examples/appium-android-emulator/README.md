@@ -42,8 +42,8 @@ jmp shell --exporter-config exporter.yaml -- pytest jumpstarter_example_appium_a
 ```
 
 Outside a `jmp shell`, `JumpstarterTest` leases an exporter labeled
-`example=appium-android-emulator` with your default client configuration
-instead.
+`example=appium-android-emulator` with the client config named
+`default` instead.
 
 ## What the Tests Demonstrate
 
@@ -69,5 +69,5 @@ session. Each test starts Settings from its home screen.
 
 `target.capabilities()` already pins the session to this emulator, so the
 tests add nothing device-specific. See the
-[Appium UI Automation guide](../../../docs/source/getting-started/guides/ui-automation.md)
+[UI Automation guide](../../../docs/source/getting-started/guides/integration-patterns/ui-automation.md)
 for how the shared Appium interface works across targets.

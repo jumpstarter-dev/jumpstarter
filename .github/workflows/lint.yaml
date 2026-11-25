@@ -216,3 +216,21 @@ jobs:
         uses: crate-ci/typos@00f422f3b19c57bc6338715ebfe3316d38768461 # v1.50.3
         with:
           config: ./typos.toml
+
+  lint-markdown:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - id: uv
+        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ steps.uv.outputs.version }}
+          python-version-file: .py-version
+
+      - name: Check Markdown formatting
+        run: make lint-markdown

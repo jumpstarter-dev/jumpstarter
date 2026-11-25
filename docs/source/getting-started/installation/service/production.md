@@ -7,16 +7,18 @@ cluster using the Jumpstarter {term}`operator`.
 
 - A Kubernetes or OpenShift cluster
 - `kubectl` (or `oc`) configured for your cluster
-- Cluster-admin permissions (required to install CRDs and {term}`operator` RBAC)
+- Cluster-admin permissions (required to install {term}`CRD`s and operator RBAC)
 - A DNS domain for Jumpstarter {term}`service` endpoints (for example,
   `jumpstarter.example.com`)
 - An ingress controller on Kubernetes, or Routes on OpenShift
+- cert-manager installed in the cluster when `spec.certManager.enabled` is
+  `true`, as in the examples below
 
 ```{note}
-`spec.baseDomain` creates these {term}`service` hostnames with
+`spec.baseDomain` creates these service hostnames with
 `jumpstarter.example.com`:
 - `grpc.jumpstarter.example.com`
-- `router.jumpstarter.example.com`
+- `router-0.jumpstarter.example.com`, one `router-<N>` name per {term}`router` replica
 - `login.jumpstarter.example.com`
 - `telemetry.jumpstarter.example.com` (when telemetry is enabled and a Route or
   Ingress API is available)
@@ -26,10 +28,10 @@ cluster using the Jumpstarter {term}`operator`.
 
 ### Install the Operator
 
-Apply the {term}`operator` installer from a release asset:
+Apply the operator installer from a release asset:
 
 ```{code-block} console
-$ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.8.1/operator-installer.yaml
+$ kubectl apply -f https://github.com/jumpstarter-dev/jumpstarter/releases/download/v0.9.0/operator-installer.yaml
 $ kubectl wait --namespace jumpstarter-operator-system \
     --for=condition=available deployment/jumpstarter-operator-controller-manager \
     --timeout=120s
@@ -70,8 +72,8 @@ $ kubectl create namespace jumpstarter-lab
 
 ### Create a Jumpstarter Custom Resource
 
-The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments,
-Services, and networking resources for {term}`controller`/{term}`router`/login
+The operator reconciles the `Jumpstarter` {term}`CR` and creates Deployments,
+Services, and networking resources for {term}`controller`/router/login
 endpoints.
 
 ````{tab} Kubernetes
@@ -86,7 +88,7 @@ spec:
   certManager:
     enabled: true
   controller:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -102,7 +104,7 @@ spec:
             enabled: true
             class: nginx
   routers:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -126,7 +128,7 @@ spec:
   certManager:
     enabled: true
   controller:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -140,7 +142,7 @@ spec:
           route:
             enabled: true
   routers:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
+    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.9.0
     imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
@@ -150,6 +152,10 @@ spec:
             enabled: true
 ```
 ````
+
+Use controller and router images from the same release as the operator:
+it starts the routers with a `-config-file` option that router images from
+earlier releases do not accept.
 
 ```{code-block} console
 $ kubectl apply -f jumpstarter.yaml
@@ -178,8 +184,8 @@ Ensure DNS is configured so route hostnames resolve correctly.
 ### TLS and gRPC
 
 Jumpstarter uses {term}`gRPC` for communication, which requires HTTP/2 support.
-The {term}`operator` configures TLS passthrough at the ingress or route for
-{term}`gRPC` endpoints and edge TLS termination for login endpoints.
+The operator configures TLS passthrough at the ingress or route for
+gRPC endpoints and edge TLS termination for login endpoints.
 
 ```{note}
 When using ingress-nginx, enable
@@ -190,18 +196,21 @@ on the ingress controller.
 ### OAuth and OIDC
 
 Configure through `spec.authentication.jwt` in the `Jumpstarter` CR. The
-{term}`operator` applies this to {term}`controller` runtime settings but does
-not install your identity provider. See
+operator applies this to controller runtime settings but does
+not install your {term}`OIDC` provider. See
 [Authentication](../../configuration/authentication.md) for examples.
 
 ### Telemetry endpoints
 
-Exporters and `jmp shell` connect **directly** to the telemetry gRPC endpoint
+{term}`Exporter`s and `jmp shell` connect **directly** to the telemetry gRPC endpoint
 returned by the controller's `GetServiceEndpoints` RPC. They do not tunnel
 telemetry through the controller or router, so its DNS name and port must be
-reachable from both clients and exporters, including those outside Kubernetes.
+reachable from both {term}`client`s and exporters, including those outside Kubernetes.
 
-Enable telemetry with `spec.telemetry.enabled: true`. With `spec.baseDomain` set
+Enable telemetry with `spec.telemetry.enabled: true`, and set
+`spec.telemetry.image` to the image and tag of `spec.controller.image`: the
+default telemetry image is not published, and the controller image contains the
+`/telemetry` binary. With `spec.baseDomain` set
 and a Route or Ingress API available, the operator generates `telemetry.<baseDomain>`
 and selects a Route on OpenShift or an Ingress on Kubernetes. Otherwise configure
 explicit reachable endpoints, for example NodePort or LoadBalancer; there is no
@@ -270,7 +279,7 @@ operator; disabling telemetry removes its exposure resources too.
 
 ### cert-manager
 
-Set `spec.certManager.enabled: true` for {term}`operator`-managed certificates.
+Set `spec.certManager.enabled: true` for operator-managed certificates.
 
 ````{tab} Self-signed
 ```{code-block} yaml
@@ -283,7 +292,8 @@ spec:
 ```
 
 Creates: `<name>-selfsigned-issuer`, `<name>-ca`, `<name>-ca-issuer`,
-`<name>-controller-tls`, `<name>-router-<replica>-tls`.
+`<name>-controller-tls`, `<name>-router-<replica>-tls`, and
+`<name>-telemetry-tls` when telemetry is enabled.
 ````
 
 ````{tab} External issuer
@@ -315,23 +325,41 @@ spec:
 
 ### GitOps
 
-Use the {term}`operator` installer and manage your `Jumpstarter` CR
+Use the operator installer and manage your `Jumpstarter` CR
 declaratively in GitOps flows.
+
+`jmp admin apply -f <file>` sends manifests of Jumpstarter resources, such as
+clients, exporters, and {term}`ExporterSet`s, to the cluster with a server-side apply,
+so applying the same file again updates them in place.
 
 ### Operator Behavior
 
-- If `spec.baseDomain` is empty on OpenShift, the {term}`operator` auto-detects
+- If `spec.baseDomain` is empty on OpenShift, the operator auto-detects
   the cluster domain.
-- If no endpoint service type is enabled, the {term}`operator` auto-selects:
+- If no endpoint service type is enabled, the operator auto-selects:
   route, then ingress, then clusterIP.
-- {term}`Controller` and {term}`router` auth secrets persist across CR
+- Controller and router auth secrets persist across CR
   deletion/recreation.
-- {term}`Router` replicas are one Deployment per replica; `$(replica)`
+- Router replicas are one Deployment per replica; `$(replica)`
   placeholders are substituted per replica.
-- {term}`Router` pods run as the `<name>-router` ServiceAccount, which has no
+- Router pods run as the `<name>-router` ServiceAccount, which has no
   Role bound to it, and get no Kubernetes API token: they read their settings
   from the `jumpstarter-controller` ConfigMap, mounted as a file. Attach any
   image pull secret the router image needs to this ServiceAccount.
+- `spec.controller.replicas` values above 1 are clamped to 1, with a
+  `ReplicasClamped` warning event: the controller does not support
+  high availability yet.
+- `replicas: 0` on the controller, the routers, or telemetry
+  suspends that component: its Deployments scale to zero pods, and its Services
+  and certificates are kept. Suspended routers and telemetry are also removed
+  from the controller configuration, so connections through the routers,
+  or exporter metric streams, fail until the component is resumed.
+- The controller, router, and telemetry Deployments are created
+  once their TLS Secret exists; until then the operator emits a
+  `WaitingForTLSSecret` event.
+- A renewed TLS certificate triggers a rolling restart of the Deployments that
+  use it, and a change to the controller configuration restarts the
+  controller.
 
 For the full `Jumpstarter` CRD field reference, see the
 [CRDs](../../../reference/crds/index.md).

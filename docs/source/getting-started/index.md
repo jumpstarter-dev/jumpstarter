@@ -5,7 +5,7 @@ environment. The guides cover:
 
 - [Installation](installation/index.md): Setting up Jumpstarter packages and
   services
-- [Configuration](configuration/index.md): Configuring clients, exporters, and
+- [Configuration](configuration/index.md): Configuring {term}`client`s, {term}`exporter`s, and
   authentication
 - [Guides](guides/index.md): Running your first tests and integrating with your
   development workflow

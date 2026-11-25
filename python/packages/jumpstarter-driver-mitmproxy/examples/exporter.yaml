@@ -9,8 +9,9 @@
 #   - mitmproxy for HTTP(S) interception and backend mocking
 #
 # Usage:
-#   jmp exporter start my-bench
-#   jmp shell --exporter my-bench
+#   jmp shell --exporter my-bench   # run it locally and open a shell
+#   jmp run --exporter my-bench     # or serve it through a controller
+#                                   # (add the endpoint and token first)
 #
 # CLI commands available during a shell session (j proxy <command>):
 #   j proxy start [-m mock] [-w]       # start the proxy
@@ -26,12 +27,18 @@
 #   j proxy web [--port 9090]           # forward mitmweb UI
 #   j proxy cert [output.pem]           # download CA certificate
 
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: my-bench
 export:
   # - Hardware interfaces ---------------------------------------------------
 
   dutlink:
     type: jumpstarter_driver_dutlink.driver.Dutlink
-    config: {}
+    config:
+      storage_device: "/dev/null" # TODO: replace with the storage mux's /dev/disk/by-id/ path
 
   serial:
     type: jumpstarter_driver_pyserial.driver.PySerial

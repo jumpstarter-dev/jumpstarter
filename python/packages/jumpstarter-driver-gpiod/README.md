@@ -5,7 +5,6 @@ gpiod GPIO pins for digital input/output operations.
 
 This requires the /dev/gpiochip[0..N] device available on the system, and you can use the `gpioinfo` gpiod tool to list the available GPIO lines.
 
-
 ## Installation
 
 ```{code-block} console
@@ -82,7 +81,7 @@ what doesn't.
 
 | Parameter      | Description                                                                                                                                          | Type | Required | Default | Driver Types |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | -------- | ------- | ------------ |
-| device         | The GPIO device to use (can be integer or string like "/dev/gpiochip0")                                                                            | str | no | "/dev/gpiochip0" | All |
+| device         | Path of the GPIO character device to use, like "/dev/gpiochip0"                                                                                    | str | no | "/dev/gpiochip0" | All |
 | line            | The GPIO line number to use                                                                              | int | yes | | All |
 | drive          | The drive mode for the GPIO line. Options: "push_pull", "open_drain", "open_source". Unset means "push_pull"                                      | str | no | null | DigitalOutput, PowerSwitch |
 | active_low     | Whether the pin is active low (True) or active high (False)                                                                                         | bool | no | False | All |
@@ -94,7 +93,8 @@ what doesn't.
 ### Digital Output Examples
 
 Basic LED control:
-```
+
+```python
 # Turn LED on
 led_output.on()
 
@@ -109,7 +109,8 @@ print(f"LED state: {state}")
 ### Digital Input Examples
 
 Button input with edge detection:
-```
+
+```python
 # Read current input state
 state = button_input.read()
 print(f"Button state: {state}")
@@ -127,11 +128,11 @@ button_input.wait_for_edge("rising", timeout=10.0)
 button_input.wait_for_edge("falling", timeout=10.0)
 ```
 
-
 ### Power Switch Examples
 
 Power control for devices:
-```
+
+```python
 # Turn power on
 power_switch.on()
 
@@ -188,7 +189,7 @@ driver types.
 On an input, the pull sets the level when nothing drives the line (a button
 wired to ground needs `pull_up`). On an `open_drain` or `open_source` output, it
 can supply the released level when the far side has no pull of its own. Internal
-pulls are weak (tens of kΩ on a Raspberry Pi), so use an external resistor for
+pulls are weak (tens of kOhm on a Raspberry Pi), so use an external resistor for
 long wires or fast edges.
 
 #### Active Low vs Active High
@@ -199,13 +200,15 @@ long wires or fast edges.
 #### Initial Values
 
 For output pins, you can set the initial state:
+
 - **"inactive"** or **"off"** or **False**: Start inactive
 - **"active"** or **"on"** or **True**: Start active
 - **"preserve"**: Keep whatever level the line is already at
 
 `active_low` is applied first, so "active" means the pin is LOW when `active_low`
 is set. Any value other than `preserve` drives the line every time the exporter
-starts.
+starts and again at the start of every lease, because the exporter creates its
+drivers anew for each lease.
 
 #### Status
 
@@ -232,8 +235,8 @@ host, not by this driver:
 
 | Event                                        | Relay                                  | `status` afterwards           |
 | -------------------------------------------- | -------------------------------------- | ----------------------------- |
-| Exporter restart, with `initial_value: preserve` | Unchanged                          | The level it was left at      |
-| Exporter restart, with any other `initial_value` | Driven to that value               | That value                    |
+| Exporter restart or new lease, with `initial_value: preserve` | Unchanged             | The level it was left at      |
+| Exporter restart or new lease, with any other `initial_value` | Driven to that value  | That value                    |
 | Host reboot                                  | **De-energizes** for the whole boot    | The level found at start      |
 | Host power loss                              | De-energizes                           | The level found at start      |
 
@@ -242,7 +245,8 @@ host, not by this driver:
   a Raspberry Pi 4, including after SIGKILL, with no glitch on the line).
   `preserve` reads that level back and keeps driving it, so the relay doesn't move.
   The kernel doesn't guarantee this for every controller, so check yours if it
-  matters.
+  matters. The same happens between leases: the exporter closes its drivers, and
+  so releases the line, when a lease ends, and claims it again for the next one.
 - **Host reboot.** A reboot resets the SoC, which returns every GPIO to an input.
   The board's pull then de-energizes the relay until something claims the line
   again, and the previous level is gone. No software setting prevents this: on a
@@ -287,4 +291,6 @@ confirm it.
     :members: wait_for_active, wait_for_inactive, wait_for_edge, read
 ```
 
-- Timeout conditions for input operations
+`wait_for_active`, `wait_for_inactive` and `wait_for_edge` take an optional
+`timeout` in seconds and raise `jumpstarter.client.core.DriverError` when it
+passes first. Without a timeout they wait indefinitely.

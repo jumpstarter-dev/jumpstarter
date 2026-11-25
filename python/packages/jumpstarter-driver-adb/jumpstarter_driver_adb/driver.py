@@ -56,7 +56,7 @@ def _resolve_adb_path(adb_path: str, connect_timeout: float) -> str:
 
     Normalized through ``realpath`` so that ``adb``, ``/usr/bin/adb`` and a symlink
     into a versioned SDK directory are one string. Two drivers naming the same binary
-    differently must not look like two binaries — see ``_acquire_server``.
+    differently must not look like two binaries - see ``_acquire_server``.
 
     Bounded like every other adb call here. This one runs from ``__post_init__`` of both
     drivers, so an adb that never returns would hang exporter startup with nothing to
@@ -111,7 +111,7 @@ class _SharedServer:
     (it is silent and exits 0 whether it started a server or found one). Sharing is
     therefore a correctness requirement, not an optimization.
 
-    Reference-counted so the last user tears it down, and only if *we* started it —
+    Reference-counted so the last user tears it down, and only if *we* started it -
     killing a server we merely adopted would drop the device claims of everything else
     on the host.
     """
@@ -137,7 +137,7 @@ class _SharedServer:
         we connect first, then ask the peer something only a server can answer.
 
         That question has to be `devices`, not `version`: `adb version` reports the
-        local client's own version without contacting the server at all (verified — it
+        local client's own version without contacting the server at all (verified - it
         exits 0 with zero connections to the port), so it would accept any listener.
         `devices` does contact the server, which answers it immediately, while a
         non-ADB listener leaves it to hit the timeout below.
@@ -267,7 +267,7 @@ def _acquire_server(
     The first acquirer's ``adb_path`` is the one the server runs as; a later caller
     naming a different binary shares it rather than starting a second, and is warned,
     because an adb client whose version differs from the running server kills and
-    restarts it on its first command — which would drop every device claim on the port.
+    restarts it on its first command - which would drop every device claim on the port.
     """
     with _SERVERS_LOCK:
         entry = _SERVERS.get(port)
@@ -338,8 +338,8 @@ class AdbServer(TcpNetwork):
     """An ADB server on the exporter, tunneled to the client.
 
     Point client tooling at *this* server with ``forward_adb``/``j adb serve``: the
-    client then sees the exporter's devices instead of its own. That is exclusive —
-    the client must own its ADB server — so for adding a single remote device to an
+    client then sees the exporter's devices instead of its own. That is exclusive -
+    the client must own its ADB server - so for adding a single remote device to an
     ADB server the client already runs (Android Studio's, say), declare an
     :class:`AdbDevice` instead.
 
@@ -407,7 +407,7 @@ class AdbServer(TcpNetwork):
         Operates on the shared registry entry rather than a throwaway one, so ownership
         stays accurate: `adb start-server` is silent and exits 0 whether it started a
         server or found one, so it cannot tell us. We probe instead, and only claim
-        ownership of a server we actually started — otherwise `close()` would kill a
+        ownership of a server we actually started - otherwise `close()` would kill a
         server adopted from another process.
         """
         with _SERVERS_LOCK:
@@ -533,7 +533,7 @@ class AdbDevice(Driver):
     Declared rather than discovered, which is what makes it composable: a DUT is a
     composite of its power relay, its console and this, so leasing the DUT leases the
     right device. It also means a device that is currently powered off is still
-    *described* — startup does not require it to be present.
+    *described* - startup does not require it to be present.
 
     Identity for a USB device is the **bench port** (``usb_port``), not the device's
     serial, so hardware can be swapped between benches without a config change. The
@@ -632,7 +632,7 @@ class AdbDevice(Driver):
     def _normalize_usb_port(usb_port: str) -> str:
         """Return *usb_port* in the exact form ``adb devices -l`` reports.
 
-        adb prints the devpath as ``usb:<path>`` — on Linux the sysfs bus-port name
+        adb prints the devpath as ``usb:<path>`` - on Linux the sysfs bus-port name
         (``usb:1-4.2``), on the macOS native backend the IOKit location ID **in decimal
         with a literal ``X`` suffix** (``usb:538116096X``, verified against adb 1.0.41 on
         macOS). The ``X`` reads like a hex marker but is not one: usb_osx.cpp formats it
@@ -701,7 +701,7 @@ class AdbDevice(Driver):
 
         For a ``usb_port``-configured device the serial is looked up from
         ``adb devices -l``, so a power cycle that re-enumerates the device (and can
-        change its serial) is picked up automatically — the bench port is what stays
+        change its serial) is picked up automatically - the bench port is what stays
         constant. Using the serial rather than ``-s usb:<path>`` also keeps us on
         adb's documented ``-s SERIAL`` contract.
         """
@@ -753,7 +753,7 @@ class AdbDevice(Driver):
         whichever server finds it first, so devices visible *there* while we see none is
         decisive about a split claim. Empty when there is nothing to learn.
 
-        Connects before asking, and never asks at all when nothing is listening — an
+        Connects before asking, and never asks at all when nothing is listening - an
         ``adb devices`` against a free port would *start a server there*, and a
         diagnostic that creates the thing it is diagnosing is worse than silence.
         """
@@ -795,7 +795,7 @@ class AdbDevice(Driver):
         listener and is the single source of truth: forwards live in the ADB server, and
         they vanish with the device. That is what makes a stale memoized port detectable.
 
-        A **set**, because one device can hold several forwards to the same adbd port —
+        A **set**, because one device can hold several forwards to the same adbd port -
         listeners are keyed by their local spec, so ours and a colleague's `adb forward
         tcp:9000 tcp:5555` coexist, and adb lists both. Anything asking "is *this* port
         still forwarded" must therefore test membership; picking one port and comparing
@@ -990,8 +990,8 @@ class AdbDevice(Driver):
         """Describe this device: its transport, selector, and whether it is present.
 
         Takes a reference to the shared server first, like every other path that runs adb.
-        Skipping it does not avoid starting a server — the adb *client* silently starts one
-        when nothing answers the port — it only means the driver does not know it caused
+        Skipping it does not avoid starting a server - the adb *client* silently starts one
+        when nothing answers the port - it only means the driver does not know it caused
         that server, adopts it on the next acquire, and then leaves it running at teardown
         because adopted servers are never killed. Observed against real hardware: `info()`
         alone left an ADB server behind after `close()`.
@@ -1020,7 +1020,7 @@ class AdbDevice(Driver):
 
         Teardown only undoes this driver's own side effects. A forward or connection that
         was already in the shared ADB server belongs to whoever made it, and removing it
-        would break them — silently, since adb reports nothing.
+        would break them - silently, since adb reports nothing.
         """
         appium = self.children.get("appium")
         if appium is not None:
@@ -1078,7 +1078,7 @@ class AdbDevice(Driver):
 
         Endpoints are otherwise resolved per stream, which is what makes re-enumeration
         self-healing. A parent driver that wants the device in the shared server *before*
-        any client connects — to poll for boot, say — calls this instead.
+        any client connects - to poll for boot, say - calls this instead.
 
         For ``transport: tcp`` this runs the validated ``adb connect``; for ``usb`` it
         resolves the serial and its forward. Safe to call repeatedly.
@@ -1103,19 +1103,19 @@ class AdbDevice(Driver):
 
         Removal cannot be scoped to a device, so confirm before removing. `adb forward
         --remove` maps to the ``killforward`` host service, which passes its transport to
-        ``remove_listener`` — and that matches on the local spec alone and ignores the
+        ``remove_listener`` - and that matches on the local spec alone and ignores the
         transport entirely (AOSP ``adb_listeners.cpp``). So ``-s <serial>`` does not
         narrow the removal, and adding it makes teardown *worse*: ``killforward`` acquires
         the transport up front, and ``acquire_one_transport`` rejects any state that is not
-        ``device`` — so a DUT that is merely **offline**, which is where a relay leaves it
+        ``device`` - so a DUT that is merely **offline**, which is where a relay leaves it
         mid power-cycle, refuses the removal while its listener is still there to remove.
         (A device that is truly gone is moot: its listener was already erased with its
         transport.)
 
         A re-check does narrow it, and there are two ways our port stops being ours.
         ``install_listener`` matches on the local spec too, and on a hit it **repurposes
-        the existing listener in place** — new ``connect_to``, new transport, exit 0,
-        silently — unless the caller passed ``--no-rebind``. So one
+        the existing listener in place** - new ``connect_to``, new transport, exit 0,
+        silently - unless the caller passed ``--no-rebind``. So one
         ``adb -s OTHER forward tcp:<our port> tcp:5555`` from a person or another exporter
         moves our port to a different device without freeing anything. Less likely, each
         listener also registers a transport-disconnect hook, so a device going away drops
@@ -1124,7 +1124,7 @@ class AdbDevice(Driver):
 
         We cannot prevent the theft: ``--no-rebind`` on our own ``tcp:0`` is a no-op,
         because the listener is renamed to its resolved port and nothing ever matches the
-        literal ``tcp:0`` again. A listing we cannot get is treated as "not ours" — the
+        literal ``tcp:0`` again. A listing we cannot get is treated as "not ours" - the
         server is unreachable, so there is nothing to remove that a blind attempt would
         not risk taking from someone else.
         """

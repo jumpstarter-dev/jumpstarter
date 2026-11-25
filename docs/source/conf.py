@@ -17,6 +17,7 @@ from jumpstarter_kubernetes.controller import get_latest_compatible_controller_v
 os.environ["TERM"] = "dumb"
 
 sys.path.insert(0, os.path.abspath("../python"))
+sys.path.insert(0, os.path.abspath("_ext"))
 
 project = "jumpstarter"
 copyright = "2026, Jumpstarter Contributors"
@@ -35,9 +36,23 @@ extensions = [
     "sphinx_substitution_extensions",
     "sphinx_copybutton",
     "sphinx_inline_tabs",
+    "typography",
+    "driver_index",
 ]
 
 templates_path = ["_templates"]
+
+smartquotes = False
+
+JMP_SHELL_PROMPT_GLYPHS = "\u26a1\u27a4"
+README_HIGHLIGHT_ICONS = "\U0001f9ea\U0001f50c\U0001f40d\U0001f310\u2699\U0001f512\u2638\U0001f4bb\ufe0f"
+SPANISH_KEYBOARD_EXAMPLE = "\u00f1"
+typography_allowed = JMP_SHELL_PROMPT_GLYPHS
+typography_allowed_per_document = {
+    "index": README_HIGHLIGHT_ICONS,
+    "reference/package-apis/drivers/nanokvm-usb": SPANISH_KEYBOARD_EXAMPLE,
+}
+
 exclude_patterns = []
 
 mermaid_version = "10.9.1"

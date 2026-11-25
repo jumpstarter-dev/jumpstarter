@@ -345,7 +345,7 @@ type TelemetryConfig struct {
 
 // TelemetryLokiConfig configures Loki HTTP push from the telemetry service.
 type TelemetryLokiConfig struct {
-	// Loki push endpoint (http:// or https://). Optional — telemetry can run
+	// Loki push endpoint (http:// or https://). Optional - telemetry can run
 	// metrics-only without Loki. grpc:// is reserved but not implemented yet.
 	URL string `json:"url,omitempty"`
 

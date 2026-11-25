@@ -1,0 +1,16 @@
+# Markdown lint configuration for pymarkdownlnt, run by `make lint-markdown`.
+extensions:
+  front-matter:
+    enabled: true
+plugins:
+  # Lines are wrapped by hand where it helps; tables, links and commands stay long.
+  md013:
+    enabled: false
+  # Command examples keep their `$ ` prompt; the docs copy button strips it.
+  md014:
+    enabled: false
+  # Bold labels such as "**Controller actions:**" introduce lists; they are not headings.
+  md036:
+    enabled: false
+  md024:
+    siblings_only: true

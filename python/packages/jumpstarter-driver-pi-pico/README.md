@@ -2,6 +2,10 @@
 
 `jumpstarter-driver-pi-pico` flashes Raspberry Pi **Pico** (RP2040), **Pico W**, and **Pico 2** (RP2350) by copying a UF2 file onto the **BOOTSEL** USB mass-storage volume.
 
+The BOOTSEL volume must be mounted on the exporter host; the driver does not
+mount it. It looks for a mounted filesystem with `INFO_UF2.TXT` or `INDEX.HTM`
+at its root and fails if it finds none, or more than one.
+
 The driver supports two methods for entering BOOTSEL mode programmatically:
 
 1. **GPIO reset** - wire the Pico's BOOTSEL pad and RUN pin to host GPIO
