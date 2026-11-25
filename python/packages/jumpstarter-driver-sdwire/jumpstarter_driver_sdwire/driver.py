@@ -321,7 +321,7 @@ class SDWire(StorageMuxFlasherInterface, Driver):
 
     @export
     async def write(self, src: str):
-        self.host()
+        await anyio.to_thread.run_sync(self.host)
         storage = await self._await_storage_device(self.storage_timeout)
         if storage is None:
             raise RuntimeError("SD card disk did not become available on host within storage_timeout")
@@ -337,7 +337,7 @@ class SDWire(StorageMuxFlasherInterface, Driver):
 
     @export
     async def read(self, dst: str):
-        self.host()
+        await anyio.to_thread.run_sync(self.host)
         storage = await self._await_storage_device(self.storage_timeout)
         if storage is None:
             raise RuntimeError("SD card disk did not become available on host within storage_timeout")
