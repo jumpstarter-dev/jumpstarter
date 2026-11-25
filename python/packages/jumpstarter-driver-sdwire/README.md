@@ -90,10 +90,10 @@ On macOS (`Darwin`) the driver does extra work that is unnecessary on Linux:
 
 ## API Reference
 
-The SDWire driver implements the `StorageMuxClient` class, which is a generic
-storage class.
+The SDWire driver implements the `StorageMuxFlasherClient` class, which is a
+generic storage class with flashing support.
 
 ```{eval-rst}
-.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxClient()
-    :members:
+.. autoclass:: jumpstarter_driver_opendal.client.StorageMuxFlasherClient()
+    :members: flash, dump, host, dut, off, write_local_file, read_local_file
 ```
