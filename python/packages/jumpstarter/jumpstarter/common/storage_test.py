@@ -45,6 +45,25 @@ async def test_write_to_storage_device_auto_decompress(tmp_path, compress):
     assert device.read_bytes() == original
 
 
+async def test_write_to_storage_device_fsyncs_the_whole_image(tmp_path, monkeypatch):
+    original = b"jumpstarter" * 1024
+    device = tmp_path / "device"
+    device.write_bytes(b"\0" * len(original))
+
+    at_fsync = []
+    real_fsync = os.fsync
+
+    def recording_fsync(fd):
+        at_fsync.append(device.read_bytes())
+        return real_fsync(fd)
+
+    monkeypatch.setattr(os, "fsync", recording_fsync)
+
+    await write_to_storage_device(device, _chunks(original), leeway=0)
+
+    assert at_fsync == [original]
+
+
 async def test_write_to_storage_device_fsyncs_off_the_event_loop(tmp_path, monkeypatch):
     # A blocking fsync holds the event loop for the whole flush. On an
     # exporter that stalls keepalives and status polls, so a client flashing
