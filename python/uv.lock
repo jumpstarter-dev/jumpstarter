@@ -38,6 +38,7 @@ members = [
     "jumpstarter-driver-androidemulator",
     "jumpstarter-driver-appium",
     "jumpstarter-driver-ble",
+    "jumpstarter-driver-bluetooth",
     "jumpstarter-driver-bt-peer",
     "jumpstarter-driver-can",
     "jumpstarter-driver-composite",
@@ -2214,6 +2215,40 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "jumpstarter-testing", editable = "packages/jumpstarter-testing" },
+    { name = "pytest", specifier = ">=8.4" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+]
+
+[[package]]
+name = "jumpstarter-driver-bluetooth"
+source = { editable = "packages/jumpstarter-driver-bluetooth" }
+dependencies = [
+    { name = "anyio" },
+    { name = "bumble" },
+    { name = "click" },
+    { name = "jumpstarter" },
+    { name = "jumpstarter-driver-composite" },
+    { name = "pydantic" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anyio", specifier = ">=4.10.0" },
+    { name = "bumble", specifier = ">=0.0.233" },
+    { name = "click", specifier = ">=8.0.0" },
+    { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
+    { name = "pydantic", specifier = ">=2.8.2" },
+]
+
+[package.metadata.requires-dev]
+dev = [
     { name = "pytest", specifier = ">=8.4" },
     { name = "pytest-cov", specifier = ">=6.0.0" },
 ]

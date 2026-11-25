@@ -1,0 +1,45 @@
+[project]
+name = "jumpstarter-driver-bluetooth"
+dynamic = ["version", "urls"]
+description = "A device's Bluetooth, virtual or real: its link to another device of a lease, and the device's own stack"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "Kirk Brauer" }]
+requires-python = ">=3.11"
+dependencies = [
+    "anyio>=4.10.0",
+    "bumble>=0.0.233",
+    "click>=8.0.0",
+    "jumpstarter",
+    "jumpstarter-driver-composite",
+    "pydantic>=2.8.2",
+]
+
+[project.entry-points."jumpstarter.drivers"]
+BluetoothBridge = "jumpstarter_driver_bluetooth.driver:BluetoothBridge"
+MockBluetooth = "jumpstarter_driver_bluetooth.driver:MockBluetooth"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { 'root' = '../../../' }
+
+[tool.hatch.metadata.hooks.vcs.urls]
+Homepage = "https://jumpstarter.dev"
+source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
+
+[tool.pytest.ini_options]
+addopts = "--cov=jumpstarter_driver_bluetooth --cov-report=html --cov-report=xml"
+testpaths = ["jumpstarter_driver_bluetooth"]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs", "hatch-pin-jumpstarter"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.0.0",
+    "pytest>=8.4",
+]
+
+[tool.hatch.build.hooks.pin_jumpstarter]
+name = "pin_jumpstarter"
