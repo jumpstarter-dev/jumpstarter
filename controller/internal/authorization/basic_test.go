@@ -7,6 +7,7 @@ import (
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"google.golang.org/grpc/metadata"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -14,13 +15,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func newFakeClient(t *testing.T) client.Client {
+func newFakeClient(t *testing.T, objects ...client.Object) client.Client {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	return fake.NewClientBuilder().WithScheme(scheme).Build()
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
 }
 
 // authorizeClient sends a request for the Client called name through both
@@ -97,6 +98,40 @@ func TestBasicAuthorizer_DoesNotProvisionForInternalOrServiceAccountUsernames(t 
 			}
 			if _, ok := getClient(t, kc, tc.derivedName); ok {
 				t.Errorf("provisioned %s for %s", tc.derivedName, tc.username)
+			}
+		})
+	}
+}
+
+func TestPreCreatedObjectIsUsableUnderItsOwnName(t *testing.T) {
+	username := "keycloak:developer-1"
+	getter := NewMetadataAttributesGetter(MetadataAttributesGetterConfig{
+		NamespaceKey: "jumpstarter-namespace", ResourceKey: "jumpstarter-kind", NameKey: "jumpstarter-name",
+	})
+	for _, tc := range []struct {
+		kind string
+		obj  client.Object
+	}{
+		{"Client", &jumpstarterdevv1alpha1.Client{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "lab", Name: "test-client"},
+			Spec:       jumpstarterdevv1alpha1.ClientSpec{Username: &username},
+		}},
+		{"Exporter", &jumpstarterdevv1alpha1.Exporter{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "lab", Name: "test-exporter"},
+			Spec:       jumpstarterdevv1alpha1.ExporterSpec{Username: &username},
+		}},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
+				"jumpstarter-namespace", "lab", "jumpstarter-kind", tc.kind, "jumpstarter-name", tc.obj.GetName()))
+
+			attrs, err := getter.ContextAttributes(ctx, &user.DefaultInfo{Name: username})
+			if err != nil {
+				t.Fatal(err)
+			}
+			decision, _, err := NewBasicAuthorizer(newFakeClient(t, tc.obj), "internal:", false).Authorize(ctx, attrs)
+			if err != nil || decision != authorizer.DecisionAllow || attrs.GetName() != tc.obj.GetName() {
+				t.Errorf("decision=%v name=%q err=%v", decision, attrs.GetName(), err)
 			}
 		})
 	}

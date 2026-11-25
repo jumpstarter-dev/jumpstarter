@@ -117,35 +117,24 @@ func TestContextAttributes_ExternalOIDC(t *testing.T) {
 		userInfo := &user.DefaultInfo{Name: testUsername}
 
 		testcases := []struct {
-			name          string
-			providedName  string
-			expectError   bool
-			errorContains string
-			errorCode     codes.Code
+			name         string
+			providedName string
+			resourceName string
 		}{
 			{
 				name:         "empty name - should use OIDC-derived",
 				providedName: "",
-				expectError:  false,
+				resourceName: expectedName,
 			},
 			{
 				name:         "matching name - should accept",
 				providedName: expectedName,
-				expectError:  false,
+				resourceName: expectedName,
 			},
 			{
-				name:          "mismatched name - should reject",
-				providedName:  "arbitrary-name",
-				expectError:   true,
-				errorContains: "resource name mismatch",
-				errorCode:     codes.InvalidArgument,
-			},
-			{
-				name:          "partial match - should reject",
-				providedName:  "oidc-test-user",
-				expectError:   true,
-				errorContains: "resource name mismatch",
-				errorCode:     codes.InvalidArgument,
+				name:         "other name - should be left to authorization",
+				providedName: "arbitrary-name",
+				resourceName: "arbitrary-name",
 			},
 		}
 
@@ -164,44 +153,19 @@ func TestContextAttributes_ExternalOIDC(t *testing.T) {
 				// Call ContextAttributes
 				attrs, err := getter.ContextAttributes(ctx, userInfo)
 
-				if tc.expectError {
-					if err == nil {
-						t.Errorf("expected error but got none")
-						return
-					}
-					st, ok := status.FromError(err)
-					if !ok {
-						t.Errorf("expected gRPC status error but got: %v", err)
-						return
-					}
-					if st.Code() != tc.errorCode {
-						t.Errorf("expected error code %v but got %v", tc.errorCode, st.Code())
-					}
-					if !strings.Contains(st.Message(), tc.errorContains) {
-						t.Errorf("expected error to contain %q but got: %s", tc.errorContains, st.Message())
-					}
-					// Verify error message includes both provided and expected names
-					if tc.providedName != "" && !strings.Contains(st.Message(), tc.providedName) {
-						t.Errorf("error message should include provided name %q: %s", tc.providedName, st.Message())
-					}
-					if !strings.Contains(st.Message(), expectedName) {
-						t.Errorf("error message should include expected name %q: %s", expectedName, st.Message())
-					}
-				} else {
-					if err != nil {
-						t.Errorf("expected no error but got: %v", err)
-						return
-					}
-					if attrs == nil {
-						t.Errorf("expected attrs but got nil")
-						return
-					}
-					if attrs.GetName() != expectedName {
-						t.Errorf("expected name %q but got %q", expectedName, attrs.GetName())
-					}
-					if attrs.GetUser().GetName() != testUsername {
-						t.Errorf("expected username %q but got %q", testUsername, attrs.GetUser().GetName())
-					}
+				if err != nil {
+					t.Errorf("expected no error but got: %v", err)
+					return
+				}
+				if attrs == nil {
+					t.Errorf("expected attrs but got nil")
+					return
+				}
+				if attrs.GetName() != tc.resourceName {
+					t.Errorf("expected name %q but got %q", tc.resourceName, attrs.GetName())
+				}
+				if attrs.GetUser().GetName() != testUsername {
+					t.Errorf("expected username %q but got %q", testUsername, attrs.GetUser().GetName())
 				}
 			})
 		}
