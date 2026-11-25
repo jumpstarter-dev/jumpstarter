@@ -75,20 +75,20 @@ that connection uses plain TCP.
 | Parameter | Description | Type | Required | Default |
 | --- | --- | --- | --- | --- |
 | `transport` | Local USB daemon or remote usbmux daemon: `usb` or `network` | str | no | `usb` |
-| `usb_port` | Linux USB topology name, for example `1-4.2` | str | one USB selector | — |
-| `udid` | Device identifier | str | one USB selector; required for network | — |
+| `usb_port` | Linux USB topology name, for example `1-4.2` | str | one USB selector | - |
+| `udid` | Device identifier | str | one USB selector; required for network | - |
 | `usbmux_socket` | Local usbmux daemon socket | str | no | `/var/run/usbmuxd` |
-| `usbmux_host` | Remote usbmux daemon host | str | for network | — |
+| `usbmux_host` | Remote usbmux daemon host | str | for network | - |
 | `usbmux_port` | Remote usbmux daemon port | int | no | `27015` |
 | `trust_mode` | `exporter` or explicit credential-sharing `passthrough` | str | no | `exporter` |
 | `forward_ports` | Device ports available as raw TCP forwards | list[int] | no | `[]` |
-| `http_port` | Device HTTP service to expose through verified HTTPS | int | no | — |
+| `http_port` | Device HTTP service to expose through verified HTTPS | int | no | - |
 | `connect_timeout` | Discovery and connection timeout, in seconds | float | no | `10.0` |
 | `kind` | Target label: `physical` or `corellium`; does not provision devices | str | no | `physical` |
 | `devicehub` | Let macOS clients show the device in Xcode's Device Hub | bool | no | `false` |
-| `devicehub_state` | File that keeps the Device Hub identity and paired Macs | str | no | — |
+| `devicehub_state` | File that keeps the Device Hub identity and paired Macs | str | no | - |
 | `devicehub_udid` | UDID the device presents in Device Hub | str | no | the device's UDID |
-| `appium` | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | — |
+| `appium` | Run Appium on the exporter for this device; see [Appium](#appium) | dict | no | - |
 
 `http_port` and `devicehub` require exporter trust mode. `http_port` must not
 also appear in `forward_ports`. The operator starts the HTTP service. Lockdown port 62078
@@ -144,10 +144,10 @@ Inside a lease:
 j ios devicehub
 ```
 
-The first time a Mac uses a device, choose File > Pair Nearby Device… in
+The first time a Mac uses a device, choose File > Pair Nearby Device... in
 Device Hub and type the code it shows when the command asks. Later leases show
 the device without a code. If the device is not listed in Device Hub, for
-example after Unpair, choose File > Pair Nearby Device… while the command runs:
+example after Unpair, choose File > Pair Nearby Device... while the command runs:
 it asks for the new code. `--pair` asks for a code straight away. When the
 command stops, the device stays paired and moves to Device Hub's Unavailable
 section until the next lease.

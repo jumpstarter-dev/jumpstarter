@@ -11,10 +11,10 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-kubevirt
 
 ## Drivers
 
-- **KubevirtPower** — Start/stop VirtualMachines via KubeVirt API
-- **KubevirtConsole** — Serial console via WebSocket subresource
-- **KubevirtStorage** — Flash images via CDI DataVolumes
-- **Kubevirt** — Composite root driver
+- **KubevirtPower** - Start/stop VirtualMachines via KubeVirt API
+- **KubevirtConsole** - Serial console via WebSocket subresource
+- **KubevirtStorage** - Flash images via CDI DataVolumes
+- **Kubevirt** - Composite root driver
 
 The power, console and storage drivers take the VirtualMachine's `namespace`
 and `vm_name`, and `kubeconfig`, the path to a kubeconfig for the cluster that

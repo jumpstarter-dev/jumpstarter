@@ -57,7 +57,7 @@ is also supported, but with two requirements:
    > The FT200X's CBUS bitbang mode (used to switch the mux) requires `CBUS0` to
    > be configured as `GPIO`/`IOMODE` in the EEPROM. On an unprogrammed FT200X
    > `CBUS0` defaults to a fixed function (e.g. `TXLED`) and **completely ignores
-   > bitbang commands** — the green LED never lights and the mux never switches
+   > bitbang commands** - the green LED never lights and the mux never switches
    > to DUT.
 
    The driver does **not** reprogram the EEPROM; it only sends the runtime

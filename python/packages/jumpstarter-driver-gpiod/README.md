@@ -188,7 +188,7 @@ driver types.
 On an input, the pull sets the level when nothing drives the line (a button
 wired to ground needs `pull_up`). On an `open_drain` or `open_source` output, it
 can supply the released level when the far side has no pull of its own. Internal
-pulls are weak (tens of kΩ on a Raspberry Pi), so use an external resistor for
+pulls are weak (tens of kOhm on a Raspberry Pi), so use an external resistor for
 long wires or fast edges.
 
 #### Active Low vs Active High

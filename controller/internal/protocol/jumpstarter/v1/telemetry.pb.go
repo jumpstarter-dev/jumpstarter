@@ -83,7 +83,7 @@ func (MetricsType) EnumDescriptor() ([]byte, []int) {
 	return file_jumpstarter_v1_telemetry_proto_rawDescGZIP(), []int{0}
 }
 
-// Exporter → Telemetry
+// Exporter -> Telemetry
 type MetricsStreamRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Msg:
@@ -328,7 +328,7 @@ func (x *MetricsLabel) GetValue() string {
 // OpenMetrics exemplar attached to a sample (JEP-0013 allowlist applied on the hub).
 type MetricsExemplar struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Labels        []*MetricsLabel        `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`       // Exemplar labels (client, lease_id, …).
+	Labels        []*MetricsLabel        `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels,omitempty"`       // Exemplar labels (client, lease_id, ...).
 	Value         float64                `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`       // Exemplar observation value.
 	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"` // Optional exemplar timestamp.
 	unknownFields protoimpl.UnknownFields
@@ -524,7 +524,7 @@ func (x *MetricsFamily) GetSamples() []*MetricsSample {
 	return nil
 }
 
-// Telemetry → Exporter
+// Telemetry -> Exporter
 type MetricsStreamResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Msg:

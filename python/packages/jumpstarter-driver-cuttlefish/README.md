@@ -31,7 +31,7 @@ $ pip3 install --extra-index-url {{index_url}} jumpstarter-driver-cuttlefish
 
 A `cvd-images` named volume mounted at `/home/vsoc-01/fetch` persists
 fetched AOSP images across container restarts. Instance state (`/var/tmp/cvd`)
-is deliberately kept ephemeral — restarting the container gives you a clean
+is deliberately kept ephemeral - restarting the container gives you a clean
 slate with no orphaned instance directories.
 
 ```bash
@@ -48,7 +48,7 @@ podman volume create cvd-images
 #
 #    Security note: --privileged + --network=host gives the container full
 #    access to the VM's network stack. HO, netsim, and rootcanal have no
-#    auth — only deploy on dedicated, non-public hosts.
+#    auth - only deploy on dedicated, non-public hosts.
 podman run -d \
   --name cuttlefish-orchestrator \
   --restart=always \
@@ -182,15 +182,15 @@ export:
 
 This is a **composite driver** with three core children and two optional display children:
 
-- **power** — `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
-- **storage** — `FlasherInterface`: not yet implemented (planned: HO artifact upload API)
-- **adb** — ADB server for device communication
-- **webui** — TCP endpoint for the WebRTC client page, when provisioned
-- **turn** — TCP endpoint for the TURN relay, when provisioned
+- **power** - `VirtualPowerInterface`: `j power on`, `j power off [--destroy]`, `j power cycle`
+- **storage** - `FlasherInterface`: not yet implemented (planned: HO artifact upload API)
+- **adb** - ADB server for device communication
+- **webui** - TCP endpoint for the WebRTC client page, when provisioned
+- **turn** - TCP endpoint for the TURN relay, when provisioned
 
 The exporter config also typically includes sibling drivers:
-- **netsim** (`jumpstarter-driver-netsim`) — virtual radio control (BLE, Wi-Fi, UWB) via netsim REST API
-- **bt_peer** (`jumpstarter-driver-bt-peer`) — Bluetooth peer device via bumble + RootCanal HCI
+- **netsim** (`jumpstarter-driver-netsim`) - virtual radio control (BLE, Wi-Fi, UWB) via netsim REST API
+- **bt_peer** (`jumpstarter-driver-bt-peer`) - Bluetooth peer device via bumble + RootCanal HCI
 
 Use `ref:` entries in the exporter config to expose children at the top level.
 
@@ -323,22 +323,22 @@ with serve(driver) as client:
 ## Architecture
 
 ```text
-┌────────────┐     gRPC      ┌────────────────┐    HTTP     ┌──────────────────┐
-│ jmp shell  │──────────────►│ Exporter       │────────────►│ Host             │
-│ (client)   │               │  ├─ cuttlefish │  :2080      │ Orchestrator     │
-│            │               │  │  ├─ power   │             │                  │
-│            │               │  │  ├─ storage │             │  cvd create/     │
-│            │               │  │  └─ adb     │             │  start/stop      │
-│            │               │  ├─ netsim ────│── :7681 ──►│  netsim REST     │
-│            │               │  └─ bt_peer ───│── :7300 ──►│  rootcanal HCI   │
-└────────────┘               └────────────────┘             └────────┬─────────┘
-                                                                     │
-                                                                     ▼
-                                                            ┌──────────────────┐
-                                                            │ Cuttlefish VM    │
-                                                            │ (Android guest)  │
-                                                            │  ADB :6520       │
-                                                            └──────────────────┘
++------------+     gRPC      +----------------+    HTTP     +------------------+
+| jmp shell  |-------------->| Exporter       |------------>| Host             |
+| (client)   |               |  +- cuttlefish |  :2080      | Orchestrator     |
+|            |               |  |  +- power   |             |                  |
+|            |               |  |  +- storage |             |  cvd create/     |
+|            |               |  |  +- adb     |             |  start/stop      |
+|            |               |  +- netsim ----|-- :7681 -->|  netsim REST     |
+|            |               |  +- bt_peer ---|-- :7300 -->|  rootcanal HCI   |
++------------+               +----------------+             +--------+---------+
+                                                                     |
+                                                                     v
+                                                            +------------------+
+                                                            | Cuttlefish VM    |
+                                                            | (Android guest)  |
+                                                            |  ADB :6520       |
+                                                            +------------------+
 ```
 
 With the Host Orchestrator backend, the driver is a thin REST client that

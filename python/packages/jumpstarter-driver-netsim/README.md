@@ -155,21 +155,21 @@ with serve(driver) as client:
 ## Architecture
 
 ```text
-┌────────────┐     gRPC      ┌────────────────┐    HTTP     ┌──────────────────┐
-│ jmp shell  │──────────────►│ Netsim         │────────────►│ netsim           │
-│ (client)   │               │ Driver         │  port 7681  │ (netsimd)        │
-└────────────┘               └────────────────┘             └────────┬─────────┘
-                                                                     │
-                                                              ┌──────┴──────┐
-                                                              │  rootcanal  │
-                                                              │  (BT HCI)  │
-                                                              └──────┬──────┘
-                                                                     │
-                                                            ┌────────┴────────┐
-                                                            │ CVD-1    CVD-2  │
-                                                            │ (virtual BT/    │
-                                                            │  WiFi/UWB)      │
-                                                            └─────────────────┘
++------------+     gRPC      +----------------+    HTTP     +------------------+
+| jmp shell  |-------------->| Netsim         |------------>| netsim           |
+| (client)   |               | Driver         |  port 7681  | (netsimd)        |
++------------+               +----------------+             +--------+---------+
+                                                                     |
+                                                              +------+------+
+                                                              |  rootcanal  |
+                                                              |  (BT HCI)  |
+                                                              +------+------+
+                                                                     |
+                                                            +--------+--------+
+                                                            | CVD-1    CVD-2  |
+                                                            | (virtual BT/    |
+                                                            |  WiFi/UWB)      |
+                                                            +-----------------+
 ```
 
 The driver is a thin REST client that translates Jumpstarter driver calls into

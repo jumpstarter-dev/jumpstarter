@@ -162,7 +162,7 @@ power_client.cycle(wait=5)  # Wait 5 seconds between off/on
 
 ## QDL platform flashing (`QualcommFlasher`)
 
-Manifest-driven QDL/fastboot flashing for vendor firmware packages (ES13, ES21, ES22, CS4, CS5, CS6, …).
+Manifest-driven QDL/fastboot flashing for vendor firmware packages (ES13, ES21, ES22, CS4, CS5, CS6, ...).
 See `examples/exporter-platform.yaml` and reference manifests in
 `jumpstarter_driver_ridesx/qdl/examples/manifests/`.
 
@@ -215,15 +215,15 @@ export:
 
 ### Config parameters
 
-| Parameter            | Description                                          | Type  | Required | Default                        |
-| -------------------- | ---------------------------------------------------- | ----- | -------- | ------------------------------ |
-| soc_type             | SoC profile (`sa8775p`, `sa8650p`, `sa8540p1`, `sa8540p2`) | str   | no       | sa8775p                        |
-| work_dir             | Base directory for firmware extraction                | str   | no       | /var/lib/jumpstarter/qualcomm  |
-| board_revision       | Board revision for CDT image selection (`v1`–`v4`)   | str   | no       |                                |
-| qdl_timeout          | Timeout for QDL subprocess steps (seconds)           | int   | no       | 1800                           |
-| fastboot_timeout     | Timeout for fastboot subprocess steps (seconds)      | int   | no       | 600                            |
-| power_cycle_delay    | Delay between power off/on (seconds)                 | float | no       | 2.0                            |
-| tac_command_timeout  | Timeout for TAC command acknowledgement (seconds)    | float | no       | 10.0                           |
+| Parameter           | Description                                                | Type  | Required | Default                       |
+| ------------------- | ---------------------------------------------------------- | ----- | -------- | ----------------------------- |
+| soc_type            | SoC profile (`sa8775p`, `sa8650p`, `sa8540p1`, `sa8540p2`) | str   | no       | sa8775p                       |
+| work_dir            | Base directory for firmware extraction                     | str   | no       | /var/lib/jumpstarter/qualcomm |
+| board_revision      | Board revision for CDT image selection (`v1` to `v4`)      | str   | no       |                               |
+| qdl_timeout         | Timeout for QDL subprocess steps (seconds)                 | int   | no       | 1800                          |
+| fastboot_timeout    | Timeout for fastboot subprocess steps (seconds)            | int   | no       | 600                           |
+| power_cycle_delay   | Delay between power off/on (seconds)                       | float | no       | 2.0                           |
+| tac_command_timeout | Timeout for TAC command acknowledgement (seconds)          | float | no       | 10.0                          |
 
 ### Required children
 
@@ -350,7 +350,7 @@ steps:
       continue: true
 ```
 
-The `revision` field on flash operations filters by board revision — only the matching
+The `revision` field on flash operations filters by board revision - only the matching
 entry is flashed, the rest are skipped. The `continue: true` on the last fastboot step
 tells the device to boot after flashing.
 

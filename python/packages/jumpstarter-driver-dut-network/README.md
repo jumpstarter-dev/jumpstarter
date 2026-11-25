@@ -156,7 +156,7 @@ export:
 ```
 
 Linux interface names are limited to 15 characters, so
-`<upstream>.<vlan_id>` must fit that limit.  VLAN IDs 253–255 cannot be used
+`<upstream>.<vlan_id>` must fit that limit.  VLAN IDs 253-255 cannot be used
 with `public_gateway` because those routing-table IDs are reserved by the kernel.
 
 All address entries that share the same `vlan_id` share a single policy
@@ -220,7 +220,7 @@ cannot be bypassed by MAC or IP spoofing.  Traffic from the DUT to the
 exporter host itself is not filtered.  The filter is installed together with
 the NAT rules, so it has no effect when `nat_mode` is `disabled` or `none`.
 
-**Egress allowlist** — block everything except specific destinations:
+**Egress allowlist** - block everything except specific destinations:
 
 ```yaml
 export:
@@ -241,7 +241,7 @@ export:
               protocol: tcp
 ```
 
-**Egress denylist** — allow everything except specific destinations:
+**Egress denylist** - allow everything except specific destinations:
 
 ```yaml
       filter:
@@ -254,7 +254,7 @@ export:
               destination: "172.16.0.0/12"
 ```
 
-**Ingress filtering** — restrict inbound connections (new connections only;
+**Ingress filtering** - restrict inbound connections (new connections only;
 return traffic for DUT-initiated connections is always allowed via conntrack):
 
 ```yaml
@@ -316,7 +316,7 @@ is set by the exporter admin and is not modifiable by the DUT user at runtime.
 | `mac` | no | MAC address of the DUT. Required for DHCP static lease; omit for 1:1 NAT-only entries |
 | `hostname` | no | Hostname for DHCP |
 | `public_ip` | no | Public IP for 1:1 NAT (per-entry). At least one entry must have `public_ip` when `nat_mode=1to1`. Also assigned to the VLAN sub-interface when `vlan_id` is set |
-| `vlan_id` | no | 802.1Q VLAN ID (1–4094). When set, NAT uses `<upstream>.<vlan_id>` instead of the untagged upstream. Omit for untagged behavior |
+| `vlan_id` | no | 802.1Q VLAN ID (1-4094). When set, NAT uses `<upstream>.<vlan_id>` instead of the untagged upstream. Omit for untagged behavior |
 | `public_gateway` | no | Gateway for policy-based routing. With `vlan_id`, DUT traffic exits via the VLAN (table ID = VLAN ID). Without `vlan_id`, traffic exits via the untagged upstream (table ID = DUT private IPv4 as an integer) |
 
 ## Usage
@@ -417,39 +417,39 @@ When NetworkManager is detected, the driver marks managed interfaces as `unmanag
 
 ```text
                      Exporter Host
- ┌─────────┐        ┌──────────────────────────────────────┐          ┌─────────┐
- │   DUT   │        │                                      │          │   LAN   │
- │         │  eth   │  eth2               ┌──────────┐     │          │         │
- │  DHCP   │◄──────►│  192.168.100.1/24   │ dnsmasq  │     │          │         │
- │  client │        │  (gateway)          │ DHCP+DNS │     │          │         │
- │         │        │       │             └──────────┘     │          │         │
- │ 192.168.│        │       │  forwarding                  │  eth     │         │
- │ 100.10  │        │       ▼             ┌──────────┐     │          │         │
- │         │        │  ┌─────────┐        │ nftables │     │ enp2s0   │ 10.26.  │
- └─────────┘        │  │ ip_fwd  │───────►│ NAT      │────►│◄──────►  │ 28.0/24 │
-                    │  └─────────┘        │          │     │(upstream)│         │
-                    │                     │masq/1:1  │     │          └─────────┘
-                    │                     └──────────┘     │
-                    └──────────────────────────────────────┘
+ +---------+        +--------------------------------------+          +---------+
+ |   DUT   |        |                                      |          |   LAN   |
+ |         |  eth   |  eth2               +----------+     |          |         |
+ |  DHCP   |<------>|  192.168.100.1/24   | dnsmasq  |     |          |         |
+ |  client |        |  (gateway)          | DHCP+DNS |     |          |         |
+ |         |        |       |             +----------+     |          |         |
+ | 192.168.|        |       |  forwarding                  |  eth     |         |
+ | 100.10  |        |       v             +----------+     |          |         |
+ |         |        |  +---------+        | nftables |     | enp2s0   | 10.26.  |
+ +---------+        |  | ip_fwd  |------->| NAT      |---->|<------>  | 28.0/24 |
+                    |  +---------+        |          |     |(upstream)|         |
+                    |                     |masq/1:1  |     |          +---------+
+                    |                     +----------+     |
+                    +--------------------------------------+
 
-  ─── Masquerade: DUT traffic appears as exporter's upstream IP
-  ─── 1:1 NAT:    DUT gets a dedicated public IP on the upstream interface
+  --- Masquerade: DUT traffic appears as exporter's upstream IP
+  --- 1:1 NAT:    DUT gets a dedicated public IP on the upstream interface
 ```
 
 ### Disabled NAT (DHCP-only isolation)
 
 ```text
                      Exporter Host
- ┌─────────┐        ┌──────────────────────────────┐
- │   DUT   │        │                              │
- │         │  eth   │  eth2          ┌──────────┐  │
- │  DHCP   │◄──────►│  192.168.100.1 │ dnsmasq  │  │
- │  client │        │  (gateway)     │ DHCP+DNS │  │
- │         │        │                └──────────┘  │
- │ 192.168.│        │                              │
- │ 100.10  │        │  No forwarding, no NAT.      │
- │         │        │  L2-isolated network only.   │
- └─────────┘        └──────────────────────────────┘
+ +---------+        +------------------------------+
+ |   DUT   |        |                              |
+ |         |  eth   |  eth2          +----------+  |
+ |  DHCP   |<------>|  192.168.100.1 | dnsmasq  |  |
+ |  client |        |  (gateway)     | DHCP+DNS |  |
+ |         |        |                +----------+  |
+ | 192.168.|        |                              |
+ | 100.10  |        |  No forwarding, no NAT.      |
+ |         |        |  L2-isolated network only.   |
+ +---------+        +------------------------------+
 
   The DUT can reach the exporter on 192.168.100.1 but has
   no route to the LAN or internet. Useful for pure L2
@@ -483,7 +483,7 @@ multi-purpose machines. The limitations below stem from that assumption.
 
 - **Cleanup is unconditional, not ownership-tracked.** On shutdown, the
   driver deletes every VLAN sub-interface, PBR rule, and nftables rule it is
-  *configured* for — even if that resource already existed before the
+  *configured* for - even if that resource already existed before the
   driver started (e.g. created by another tool or a previous unclean exit).
   This is intentional: it guarantees idempotent recreation after a crash,
   but it means the driver should not be pointed at interfaces or routing
@@ -544,25 +544,25 @@ The driver creates and removes several types of host-level networking
 resources. Under normal operation these are cleaned up when the exporter
 shuts down, but an unclean exit (crash, `kill -9`, power loss) will leave
 them behind. Re-starting the exporter recreates the resources from
-scratch, so orphaned state from a previous run is overwritten — but if
+scratch, so orphaned state from a previous run is overwritten - but if
 the exporter is never restarted, manual cleanup may be necessary.
 
 ### What the driver creates on the host
 
 | Resource | Created when | Cleaned up on shutdown | Survives a crash |
 |----------|-------------|----------------------|------------------|
-| **VLAN sub-interfaces** (e.g. `eth0.905`) | Address entry has `vlan_id` | Yes — deleted by `cleanup()` | Yes |
-| **nftables table** (`jumpstarter_<iface>`) | NAT mode is not `disabled` | Yes — flushed on cleanup | Yes |
+| **VLAN sub-interfaces** (e.g. `eth0.905`) | Address entry has `vlan_id` | Yes - deleted by `cleanup()` | Yes |
+| **nftables table** (`jumpstarter_<iface>`) | NAT mode is not `disabled` | Yes - flushed on cleanup | Yes |
 | **NTP redirect table** (`jumpstarter_<iface>_ntp`) | `local_ntp` is `true` | Yes - deleted on cleanup | Yes |
-| **FORWARD chain accept rules** (in `ip filter`) | Docker sets FORWARD policy to `drop` | Yes — removed by handle | Yes |
-| **IP forwarding sysctls** (`net.ipv4.conf.<iface>.forwarding`) | NAT mode is not `disabled` | Yes — restored to previous value | Yes |
-| **IP aliases** (e.g. `203.0.113.1/24` on upstream) | 1:1 NAT with `public_ip` | Yes — removed on cleanup | Yes |
-| **Policy routes and IP rules** | `public_gateway` is set | Yes — flushed on cleanup | Yes |
-| **dnsmasq process** | DHCP is enabled | Yes — stopped on cleanup | Yes (orphan process) |
+| **FORWARD chain accept rules** (in `ip filter`) | Docker sets FORWARD policy to `drop` | Yes - removed by handle | Yes |
+| **IP forwarding sysctls** (`net.ipv4.conf.<iface>.forwarding`) | NAT mode is not `disabled` | Yes - restored to previous value | Yes |
+| **IP aliases** (e.g. `203.0.113.1/24` on upstream) | 1:1 NAT with `public_ip` | Yes - removed on cleanup | Yes |
+| **Policy routes and IP rules** | `public_gateway` is set | Yes - flushed on cleanup | Yes |
+| **dnsmasq process** | DHCP is enabled | Yes - stopped on cleanup | Yes (orphan process) |
 
 ### Cleaning up after a crash
 
-If the exporter crashes, the simplest recovery is to restart it — the
+If the exporter crashes, the simplest recovery is to restart it - the
 driver recreates all resources idempotently. To clean up manually:
 
 ```shell

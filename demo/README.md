@@ -13,15 +13,15 @@ as a lab smoke test.
 
 | Step | What it shows |
 | --- | --- |
-| 1 | `jmp get exporters -l board-type=…` — the boards of one type, and which are free |
-| 2 | `jmp get leases`, `jmp create lease` — taking a board for a fixed duration |
-| 3 | `j storage flash oci://…` — flashing a disk image from a registry |
-| 4 | `j power cycle` — rebooting into the image that was just written |
-| 5 | `j ssh -- cat /etc/os-release` — proving the new image is what booted |
-| 6 | `j ssh -- systemd-analyze time` — how long the cold boot took |
-| 7 | `j mount /tmp/dut -r /` — mounting the board's filesystem so a small program can be copied onto it with plain `cp` |
-| 8 | `pytest demo/tests -v --no-header` — testing the board through the Python driver API, over the same lease |
-| 9 | `jmp delete lease` — giving the board back |
+| 1 | `jmp get exporters -l board-type=...` - the boards of one type, and which are free |
+| 2 | `jmp get leases`, `jmp create lease` - taking a board for a fixed duration |
+| 3 | `j storage flash oci://...` - flashing a disk image from a registry |
+| 4 | `j power cycle` - rebooting into the image that was just written |
+| 5 | `j ssh -- cat /etc/os-release` - proving the new image is what booted |
+| 6 | `j ssh -- systemd-analyze time` - how long the cold boot took |
+| 7 | `j mount /tmp/dut -r /` - mounting the board's filesystem so a small program can be copied onto it with plain `cp` |
+| 8 | `pytest demo/tests -v --no-header` - testing the board through the Python driver API, over the same lease |
+| 9 | `jmp delete lease` - giving the board back |
 
 Step 8 is the one that shows what Jumpstarter is for. `demo/tests/test_board.py`
 subclasses `JumpstarterTest`, whose `client` fixture picks up
@@ -33,7 +33,7 @@ a team would gate a build on rather than a smoke test:
 | --- | --- |
 | `test_booted_the_image_we_flashed` | `bootc` reports the image the demo flashed |
 | `test_system_came_up_clean` | no systemd units failed during boot |
-| `test_cold_boot_is_within_budget` | cold boot ≤ `DEMO_BOOT_BUDGET`, reporting the slowest units if not |
+| `test_cold_boot_is_within_budget` | cold boot within `DEMO_BOOT_BUDGET`, reporting the slowest units if not |
 | `test_workload_was_deployed` | `j mount` really wrote the program to the board |
 | `test_workload_runs` | it executes and records the boot it ran under |
 | `test_stays_healthy_under_load` | `stress-ng` on every core plus memory: no failures, no OOM kills, no failed units, workload still good |
@@ -94,7 +94,7 @@ variables count as unset, so CI can pass them through unconditionally.
 `--registry-creds` points at a JSON file with a `token` field, for an image
 the registry will not serve anonymously. The token is put into the recorded
 shell's environment and the flash step then types
-`j storage flash --bearer "$REGISTRY_TOKEN" oci://…`, so the recording shows
+`j storage flash --bearer "$REGISTRY_TOKEN" oci://...`, so the recording shows
 that the pull is authenticated without showing the credential.
 
 The test suite reads three more, which have no flags because only the tests

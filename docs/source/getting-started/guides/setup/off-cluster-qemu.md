@@ -76,7 +76,7 @@ VirtualTargetClass or ExporterSet parameters (not in the Secret).
 
 ## Step 3: Create a VirtualTargetClass
 
-The `VirtualTargetClass` defines the pool profile — which host to use, SSH
+The `VirtualTargetClass` defines the pool profile - which host to use, SSH
 configuration, and default resource allocations:
 
 ```yaml
@@ -170,7 +170,7 @@ When the ExporterSet scales up:
 
 1. The controller creates an `Exporter` CR (cluster-side)
 2. Once credentials are ready, it records the host assignment (and the
-   credentials Secret name) on the Exporter CR — before touching the remote
+   credentials Secret name) on the Exporter CR - before touching the remote
    host, so cleanup can always find the instance
 3. Connects to the remote host via SSH
 4. Writes the exporter config YAML to `/etc/jumpstarter/exporters/`
@@ -186,7 +186,7 @@ With `recycleStrategy: ExitAndReplace`, an instance whose containers start but
 which never registers is recycled once the startup deadline (10 minutes) has
 passed since its deployment completed, so an exporter that cannot reach the
 controller cannot hold a pool slot indefinitely. A deployment that fails
-outright — for example a quadlet that `systemctl start` rejects — never counts
+outright - for example a quadlet that `systemctl start` rejects - never counts
 as deployed: it is retried on the next reconcile and keeps its slot until it
 succeeds.
 
@@ -206,10 +206,10 @@ goes away: delete the ExporterSet before its VirtualTargetClass.
 It also reads the private key from the credentials Secret recorded on the
 Exporter when it was deployed, so keep that Secret as well. If the Secret is
 missing or SSH to the host fails, cleanup skips the remote teardown and lets
-the finalizer clear — but the remote containers and volume are orphaned on the
+the finalizer clear - but the remote containers and volume are orphaned on the
 host. Delete the class and the Secret only after the ExporterSet is gone.
 If remote resources were orphaned (missing Secret, unreachable host), remove
-them by hand on the host. The full teardown order matters — the runtime quadlet
+them by hand on the host. The full teardown order matters - the runtime quadlet
 sets `Restart=always` and the exporter quadlet `Restart=on-failure`, so removing
 a container without stopping its service first will just restart it:
 
@@ -248,7 +248,7 @@ Both containers communicate via Unix sockets on the shared Podman volume
 
 ## Leasing targets
 
-Users lease off-cluster targets the same way as any other target — the
+Users lease off-cluster targets the same way as any other target - the
 placement is transparent:
 
 ```bash

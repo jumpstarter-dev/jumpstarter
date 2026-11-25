@@ -162,7 +162,7 @@ with env() as client:
 
 ### Server / Provider (act as an ECU)
 
-The same driver can also *provide* SOME/IP services — offer them via Service
+The same driver can also *provide* SOME/IP services - offer them via Service
 Discovery, answer RPC requests with canned responses, and publish events. This
 turns a Jumpstarter exporter into a simulated ECU, useful for exercising a
 device-under-test that is a SOME/IP *client* of another ECU.

@@ -58,7 +58,7 @@ Global___MetricsType: typing_extensions.TypeAlias = MetricsType
 
 @typing.final
 class MetricsStreamRequest(google.protobuf.message.Message):
-    """Exporter → Telemetry"""
+    """Exporter -> Telemetry"""
 
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 
@@ -166,7 +166,7 @@ class MetricsExemplar(google.protobuf.message.Message):
     """Exemplar observation value."""
     @property
     def labels(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsLabel]:
-        """Exemplar labels (client, lease_id, …)."""
+        """Exemplar labels (client, lease_id, ...)."""
 
     @property
     def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
@@ -253,7 +253,7 @@ Global___MetricsFamily: typing_extensions.TypeAlias = MetricsFamily
 
 @typing.final
 class MetricsStreamResponse(google.protobuf.message.Message):
-    """Telemetry → Exporter"""
+    """Telemetry -> Exporter"""
 
     DESCRIPTOR: google.protobuf.descriptor.Descriptor
 

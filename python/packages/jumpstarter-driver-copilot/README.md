@@ -68,7 +68,7 @@ The field is `hats`, a list of mappings, each with a `type`:
 
 | `type` | Parameters | Effect |
 |--------|------------|--------|
-| `triple-relay` | `relay_lines`: three distinct integer GPIO offsets, all in `managed_lines` | Maps relay channels 1–3 to GPIOs and enables the relay commands. At most one such entry is supported. |
+| `triple-relay` | `relay_lines`: three distinct integer GPIO offsets, all in `managed_lines` | Maps relay channels 1-3 to GPIOs and enables the relay commands. At most one such entry is supported. |
 | `usb-extension` | Optional `ports`: a positive integer; optional `usb_lines`: distinct GPIO offsets in port order, all in `managed_lines` | With `usb_lines`, enables per-port control through `CoPilotUSB`. Without it, inventory metadata only. |
 | `custom` | No driver-defined control parameters | Inventory metadata for another accessory; does not implement an accessory protocol. |
 

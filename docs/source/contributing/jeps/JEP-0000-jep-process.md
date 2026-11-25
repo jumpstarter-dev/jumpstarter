@@ -185,8 +185,8 @@ status clearly set in the metadata.
 Once accepted, the author (or any willing contributor) implements the feature.
 Implementation PRs should reference the JEP (e.g., `Implements JEP-0400`).
 The JEP's **Implementation History** section should be updated with links
-to relevant PRs as they are merged. The JEP moves through Implementing →
-Implemented → Final as work progresses.
+to relevant PRs as they are merged. The JEP moves through Implementing ->
+Implemented -> Final as work progresses.
 
 ## Roles
 

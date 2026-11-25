@@ -25,7 +25,7 @@ cluster created before that mapping existed must be recreated with
 `jumpstarter-lab`, service accounts `test-client-sa`/`test-exporter-sa`,
 `/etc/jumpstarter/exporters` dir, endpoint/login-endpoint env written to
 `.e2e-setup-complete`, QEMU guest image prefetched. Tests run via `make e2e-run`
-→ `e2e/run-e2e.sh` (`go run ginkgo`) with `JUMPSTARTER_GRPC_INSECURE=1`.
+-> `e2e/run-e2e.sh` (`go run ginkgo`) with `JUMPSTARTER_GRPC_INSECURE=1`.
 
 No `.svc` host alias is needed for telemetry.
 
@@ -38,8 +38,8 @@ Prereq (all): Dex + controller/operator running, namespace `jumpstarter-lab` cre
 | Test Name | Prerequisite | Steps | Pass Check |
 |---|---|---|---|
 | serves landing page | login endpoint up | `curl` login endpoint | body contains "Jumpstarter" and "jmp login" |
-| can create clients with admin cli | — | `jmp admin create client` for oidc/sa/legacy variants | no error; `jmp config client list` shows `test-client-legacy` |
-| can create exporters with admin cli | — | `jmp admin create exporter` for oidc/sa/legacy, merge driver overlay | no error; `jmp config exporter list` shows `test-exporter-legacy` |
+| can create clients with admin cli | - | `jmp admin create client` for oidc/sa/legacy variants | no error; `jmp config client list` shows `test-client-legacy` |
+| can create exporters with admin cli | - | `jmp admin create exporter` for oidc/sa/legacy, merge driver overlay | no error; `jmp config exporter list` shows `test-exporter-legacy` |
 | can login with oidc test-client-oidc | client created | `jmp login` via dex username/password | no error; client listed |
 | can login with oidc test-client-oidc-provisioning | dex issuer up | `jmp login` with empty `--name` (auto-provision) | client `test-client-oidc-provisioning-example-com` listed |
 | can login with oidc test-client-sa | SA `test-client-sa` exists | create k8s token, `jmp login --connector-id kubernetes` | client `test-client-sa` listed |
@@ -51,7 +51,7 @@ Prereq (all): Dex + controller/operator running, namespace `jumpstarter-lab` cre
 | client can self-rotate token via auth rotate | legacy client config | `jmp auth rotate --client test-client-legacy` | output contains "rotated"; token changed |
 | auth status shows valid token after rotation | rotated token | `jmp auth status --client test-client-legacy` | output contains "Valid" |
 | double rotation produces distinct tokens | legacy client | rotate twice with `--save` | two tokens differ |
-| admin rotate fails for non-existent client | — | rotate `does-not-exist` | command errors |
+| admin rotate fails for non-existent client | - | rotate `does-not-exist` | command errors |
 | rotated token works for listing exporters | rotated token | `jmp get exporters --client test-client-legacy` | no error |
 | can run exporters | clients+exporters logged in | start oidc/sa/legacy exporter processes | `WaitForExporters` reaches Available |
 | can specify client config only using environment variables | exporters running | fetch endpoint/token via kubectl, run `jmp shell` with `JMP_*` env vars only | no error |
@@ -60,13 +60,13 @@ Prereq (all): Dex + controller/operator running, namespace `jumpstarter-lab` cre
 | can create a lease with context metadata | exporters running | `create lease --context k=v` x2, fetch yaml | CRD-persisted context keys/values present in output |
 | paginated lease listing returns all leases | exporters running | create 10 unmatched leases labeled `pagination=true`, `get leases --all --selector pagination=true --page-size 5 -o name` | exactly 10 lines returned across pages (ended/unsatisfiable included) |
 | paginated exporter listing returns all exporters | exporters running | create 10 exporters w/ shared label, list with `--page-size 5` | exactly 10 names returned |
-| cycles leases on one exporter without sticking at LeaseReady | exporters running; `lease-churn` (excluded from `make e2e-run` / CI) | create+delete lease on `test-exporter-oidc` ×20, wait `Available\|` after each release | exporter returns to `Available\|` after every cycle |
+| cycles leases on one exporter without sticking at LeaseReady | exporters running; `lease-churn` (excluded from `make e2e-run` / CI) | create+delete lease on `test-exporter-oidc` 20 times, wait `Available\|` after each release | exporter returns to `Available\|` after every cycle |
 | lease listing shows expires at and remaining columns | exporters running | create lease, `get leases` with wide COLUMNS | output has "EXPIRES AT" and "REMAINING" |
 | can transfer lease to another client | exporters running | create lease, wait Ready, `update lease --to-client test-client-legacy` | updated lease yaml shows new client |
 | can lease and connect to exporters | exporters running | `jmp shell --selector ... j power on` for oidc/sa/legacy/provisioning clients | all shells succeed |
 | can lease and connect to exporters by name | exporters running | `jmp shell --name <exporter>` (+ combined `--name`+`--selector`) | all succeed |
 | fails fast when requesting non-existent exporter by name | exporters running | `timeout 20s jmp shell --name test-exporter-does-not-exist` | errors (not a 124 timeout); message contains "cannot be satisfied" |
-| can get CRDs with admin cli | — | `jmp admin get client/exporter/lease` | no error |
+| can get CRDs with admin cli | - | `jmp admin get client/exporter/lease` | no error |
 | can delete clients with admin cli | clients exist | delete oidc/sa/legacy clients | secrets/CRDs no longer found via kubectl |
 | can delete exporters with admin cli | exporters exist | delete oidc/sa/legacy exporters | secrets/CRDs no longer found via kubectl |
 
@@ -109,7 +109,7 @@ restarting the exporter.
 
 ## Lane: `direct-listener` (`direct_listener_test.go`)
 
-Prereq: no controller/lease needed — exporter runs standalone with `jmp run --tls-grpc-listener`
+Prereq: no controller/lease needed - exporter runs standalone with `jmp run --tls-grpc-listener`
 on port 19090; each test starts its own process against a config in `e2e/exporters/`.
 
 | Test Name | Prerequisite | Steps | Pass Check |
@@ -161,7 +161,7 @@ Same netns topology, separate exporter on port 19092 with an egress filter
 | should allow TCP to the permitted port | TCP server on allowed port 9997, client connects from DUT ns | client receives "FILTER_OK" |
 | should block TCP to a non-allowed port | TCP server on blocked port 9998, client connects from DUT ns | connection fails (timeout/reset) |
 | should block ICMP ping when egress policy is drop | ping from DUT ns to ext IP | ping fails (`Consistently`) |
-| should resolve DNS entries despite egress drop policy | `add-dns e2e-filter.lab.local 10.0.0.42`, raw DNS query from DUT ns to gateway `192.168.200.1`, `remove-dns` | query resolves `10.0.0.42` (`Eventually`) — dnsmasq responder is before the FORWARD filter |
+| should resolve DNS entries despite egress drop policy | `add-dns e2e-filter.lab.local 10.0.0.42`, raw DNS query from DUT ns to gateway `192.168.200.1`, `remove-dns` | query resolves `10.0.0.42` (`Eventually`) - dnsmasq responder is before the FORWARD filter |
 
 ---
 
@@ -213,13 +213,13 @@ SSH Secret.
 |---|---|---|
 | brings an Exporter Online via SSH-deployed Podman containers | wait for ExporterSet-created Exporter, wait Online/Registered/Available; check `sudo podman ps` for e2e containers | exporter Available; exporter+runtime containers Up |
 | recycles a terminal exporter and refills the pool (ExitAndReplace) | record the Available exporter, lease+release so exitOnLeaseEnd makes it terminal, wait for recycle (runs before the power-cycle test so it starts from a never-leased exporter) | old exporter deleted; one replacement with a new UID comes Online; replacement's containers Up |
-| can lease, power on, and power off through the SSH-deployed exporter | `jmp shell` → `j qemu power on && sleep 5 && j qemu power off` | no error |
+| can lease, power on, and power off through the SSH-deployed exporter | `jmp shell` -> `j qemu power on && sleep 5 && j qemu power off` | no error |
 
 ---
 
 ## Lane: `auth-logging` (`auth_logging_test.go`)
 
-Prereq: self-contained — creates its own legacy client/exporter
+Prereq: self-contained - creates its own legacy client/exporter
 (`test-client-authlog` / `test-exporter-authlog`) with driver overlay. **Not run
 in compat suites** (old controllers lack this logging; the Describe is not labelled
 `compat`).
@@ -233,7 +233,7 @@ in compat suites** (old controllers lack this logging; the Describe is not label
 
 ## Lane: `telemetry` (`telemetry_test.go`)
 
-Prereq: self-contained — creates its own Dex OIDC client/exporter
+Prereq: self-contained - creates its own Dex OIDC client/exporter
 (`test-client-telemetry` / `test-exporter-telemetry`, label
 `example.com/board=telemetry`), logs both in with the password grant, applies the
 driver overlay `exporter.yaml`, runs the exporter in loop mode, and takes one
@@ -254,7 +254,7 @@ telemetry token.
 
 ## Lane: `compat` + `old-controller` (`compat_old_controller_test.go`)
 
-Prereq: separate setup path — `make e2e-compat-setup COMPAT_SCENARIO=old-controller
+Prereq: separate setup path - `make e2e-compat-setup COMPAT_SCENARIO=old-controller
 COMPAT_CONTROLLER_TAG=v0.9.0` installs that release's operator and deploys an **old
 (v0.9.0) controller and router** against current client/exporter code. The controller
 and router images are pinned to the release, since its operator defaults them to
@@ -265,10 +265,10 @@ and router images are pinned to the release, since its operator defaults them to
 | can create client with admin cli | `jmp admin create client --save` `compat-client` | no error |
 | can create exporter with admin cli | `jmp admin create exporter` `compat-exporter`, merge driver overlay | no error |
 | new exporter registers with old controller | start exporter loop | `WaitForExporter` reaches Available |
-| exporter shows as Online and Registered | — | kubectl conditions Online/Registered both `True` |
-| new client can lease and connect through old controller | — | `jmp shell ... j power on` succeeds |
-| can operate on leases through old controller | — | create/list/filter/delete leases (including no-match selector) |
-| exporter stays Online after lease cycle | — | conditions still `True` |
+| exporter shows as Online and Registered | - | kubectl conditions Online/Registered both `True` |
+| new client can lease and connect through old controller | - | `jmp shell ... j power on` succeeds |
+| can operate on leases through old controller | - | create/list/filter/delete leases (including no-match selector) |
+| exporter stays Online after lease cycle | - | conditions still `True` |
 | client started before exporter connects | create `compat-client-wait`/`compat-exporter-wait`, start `jmp shell` first (background), wait 5s confirm still running, then start exporter | client shell completes successfully within 120s once exporter starts |
 | cleans up resources | `jmp admin delete` `compat-client`/`compat-exporter` and wait variants | (cleanup, no strict assertions) |
 
@@ -277,7 +277,7 @@ and router images are pinned to the release, since its operator defaults them to
 ## Lane: `compat` + `old-client` (`compat_old_client_test.go`)
 
 Prereq: `make e2e-compat-setup COMPAT_SCENARIO=old-client
-COMPAT_CLIENT_VERSION=0.7.4` — current controller, but client/exporter binaries from
+COMPAT_CLIENT_VERSION=0.7.4` - current controller, but client/exporter binaries from
 an **old (v0.7.4) Python venv** (`PYTHON_OLD_VENV`); whole suite `Skip`s if that
 venv/binary isn't found.
 
@@ -285,11 +285,11 @@ venv/binary isn't found.
 |---|---|---|
 | creates resources | `jmp admin create` `compat-old-client`/`compat-old-exporter`, merge overlay | no error |
 | old exporter registers with new controller | start exporter loop using **old** `jmp` binary | `WaitForExporter` reaches Available |
-| old exporter shows as Online (not incorrectly offline) | — | Online/Registered conditions `True` |
+| old exporter shows as Online (not incorrectly offline) | - | Online/Registered conditions `True` |
 | old client can connect through new controller | **old** `OldJmp shell ... j power on` | no error |
-| old exporter stays Online after lease completes | — | Online condition `True` |
+| old exporter stays Online after lease completes | - | Online condition `True` |
 | new client can connect to old exporter | current `jmp shell` | no error |
-| old exporter still Online after multiple lease cycles | — | Online + Registered `True` |
+| old exporter still Online after multiple lease cycles | - | Online + Registered `True` |
 | stop exporter and wait for offline | kill exporter process | kubectl wait `condition=Online=False` succeeds within 5m |
 | old exporter recovers Online after reconnect | restart old exporter loop | reaches Available again |
 | lease works after reconnect | old client shell | no error |
@@ -305,14 +305,14 @@ venv/binary isn't found.
   CI's `e2e-tests` job runs `make e2e-run`, which defaults to
   `--label-filter '!lease-churn && !exporterset-qemu-ssh'` (still includes
   `exporterset-qemu`). The `e2e-exporterset-qemu-ssh` CI job runs
-  `make e2e-exporterset-qemu-ssh` separately — it sets up SSH + rootful
+  `make e2e-exporterset-qemu-ssh` separately - it sets up SSH + rootful
   Podman on the runner via `e2e/scripts/setup-qemu-ssh-e2e.sh`.
   `e2e-compat-old-controller`/`e2e-compat-old-client` jobs run
   only on merge-queue/dispatch via `compat/run.sh`. PRs run amd64 only;
   merge-queue and `workflow_dispatch` also run arm64.
 - **`operator-only`** is a secondary label on 2 individual `It`s inside the `core`
   lane (`can login with simplified login` and `legacy client config contains CA
-  certificate and works with secure TLS`) — excluded when running against a
+  certificate and works with secure TLS`) - excluded when running against a
   plain controller (non-operator) deployment via `--label-filter "!operator-only"`.
 - **`lease-churn`** is a secondary label on `cycles leases on one exporter without
   sticking at LeaseReady` inside `core`. It is excluded from `make e2e-run` / CI

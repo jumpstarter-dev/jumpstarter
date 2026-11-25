@@ -34,7 +34,7 @@ importing mitmproxy, so mitmproxy is **not** pulled in as a Python dependency.
 
 - **Exporter hosts** need mitmproxy installed separately
   (`uv tool install mitmproxy` or `pipx install mitmproxy`). **Test clients**
-  don't — they only talk to the driver's client API.
+  don't - they only talk to the driver's client API.
 - **Services (for example under systemd)** often don't have `~/.local/bin` on
   `PATH`. In that case install mitmproxy system-wide, for example with
   `UV_TOOL_BIN_DIR=/usr/local/bin uv tool install mitmproxy`.

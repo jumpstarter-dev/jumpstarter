@@ -32,7 +32,7 @@ $ sudo dnf install linuxptp ethtool
 
 ### gPTP Slave (802.1AS, automotive Ethernet)
 
-The most common automotive scenario — synchronize to an external grandmaster:
+The most common automotive scenario - synchronize to an external grandmaster:
 
 ```yaml
 export:
@@ -99,15 +99,15 @@ export:
 
 ### Config parameters
 
-| Parameter          | Description                                          | Type       | Required | Default  | Standard ref        |
-| ------------------ | ---------------------------------------------------- | ---------- | -------- | -------- | ------------------- |
-| interface          | Network interface for PTP (e.g. `eth0`, `enp3s0`)    | str        | yes      |          |                     |
-| domain             | PTP domain number (0-127)                            | int        | no       | 0        | IEEE 1588-2019 §7.1 |
-| profile            | `"gptp"` (802.1AS-2020) or `"default"` (1588-2019)  | str        | no       | `"gptp"` |                     |
-| transport          | `"L2"`, `"UDPv4"`, or `"UDPv6"`                     | str        | no       | `"L2"`   |                     |
-| role               | `"master"`, `"slave"`, or `"auto"` (BMCA election)  | str        | no       | `"auto"` |                     |
-| sync_system_clock  | Run `phc2sys` to sync CLOCK_REALTIME to PHC (only when hardware timestamping is available) | bool       | no       | true     |                     |
-| ptp4l_extra_args   | Additional ptp4l command-line arguments; `-f`, `--config`, `-i`, `--interface`, `--uds_address` and `--log_file` are rejected | list[str]  | no       | []       |                     |
+| Parameter         | Description                                                                                                                   | Type      | Required | Default  | Standard ref              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | -------- | ------------------------- |
+| interface         | Network interface for PTP (e.g. `eth0`, `enp3s0`)                                                                             | str       | yes      |          |                           |
+| domain            | PTP domain number (0-127)                                                                                                     | int       | no       | 0        | IEEE 1588-2019 clause 7.1 |
+| profile           | `"gptp"` (802.1AS-2020) or `"default"` (1588-2019)                                                                            | str       | no       | `"gptp"` |                           |
+| transport         | `"L2"`, `"UDPv4"`, or `"UDPv6"`                                                                                               | str       | no       | `"L2"`   |                           |
+| role              | `"master"`, `"slave"`, or `"auto"` (BMCA election)                                                                            | str       | no       | `"auto"` |                           |
+| sync_system_clock | Run `phc2sys` to sync CLOCK_REALTIME to PHC (only when hardware timestamping is available)                                    | bool      | no       | true     |                           |
+| ptp4l_extra_args  | Additional ptp4l command-line arguments; `-f`, `--config`, `-i`, `--interface`, `--uds_address` and `--log_file` are rejected | list[str] | no       | []       |                           |
 
 ## PTP Standards Reference
 
@@ -117,25 +117,25 @@ defaults are validated according to these editions.
 
 ### IEEE 802.1AS-2020 (gPTP) vs IEEE 1588-2019 (PTPv2.1)
 
-| Feature           | 802.1AS-2020 (gPTP)          | IEEE 1588-2019 (PTPv2.1)     |
-| ----------------- | ---------------------------- | ----------------------------- |
-| Transport         | Layer 2 only                 | L2, UDPv4, UDPv6             |
-| Domain            | Always 0                     | 0-127 (§7.1)                 |
-| Timestamping      | Hardware required             | HW or software               |
-| Priority1 range   | 0-255 (§7.6.2.2)            | 0-255 (§7.6.2.2)             |
-| Accuracy          | Sub-microsecond              | Sub-microsecond to ms         |
-| Use case          | Automotive, industrial TSN   | General purpose               |
-| Profile setting   | `profile: gptp`              | `profile: default`            |
+| Feature         | 802.1AS-2020 (gPTP)        | IEEE 1588-2019 (PTPv2.1) |
+| --------------- | -------------------------- | ------------------------ |
+| Transport       | Layer 2 only               | L2, UDPv4, UDPv6         |
+| Domain          | Always 0                   | 0-127 (clause 7.1)       |
+| Timestamping    | Hardware required          | HW or software           |
+| Priority1 range | 0-255 (clause 7.6.2.2)     | 0-255 (clause 7.6.2.2)   |
+| Accuracy        | Sub-microsecond            | Sub-microsecond to ms    |
+| Use case        | Automotive, industrial TSN | General purpose          |
+| Profile setting | `profile: gptp`            | `profile: default`       |
 
 ### Port State Machine
 
 PTP ports transition through these states:
 
 ```text
-INITIALIZING → LISTENING → SLAVE (synchronized to master)
-                         → MASTER (elected as grandmaster)
-                         → PASSIVE (backup, not active)
-                         → FAULTY (error detected)
+INITIALIZING -> LISTENING -> SLAVE (synchronized to master)
+                          -> MASTER (elected as grandmaster)
+                          -> PASSIVE (backup, not active)
+                          -> FAULTY (error detected)
 ```
 
 ### Servo States

@@ -3,7 +3,7 @@
 A {term}`lease` is normally exclusive: the {term}`client` that acquires it is
 the sole owner and no one else can reach the leased {term}`exporter`. Lease
 sharing lets the owner grant **additional clients** read/observe/connect access
-to the same lease while keeping ownership — useful for pairing on a debugging
+to the same lease while keeping ownership - useful for pairing on a debugging
 session, letting a teammate watch a serial console, or handing a CI-held lease
 to a human for inspection.
 
@@ -17,13 +17,13 @@ Sharing splits capabilities into two roles:
 
 | Capability | Owner | Shared client |
 | --- | --- | --- |
-| Connect / dial the exporter (`jmp shell`, driver calls) | ✅ | ✅ |
-| Observe serial consoles | ✅ | ✅ |
-| List/inspect the lease (`jmp get leases`) | ✅ | ✅ |
-| Add or remove shared clients | ✅ | ❌ |
-| Change duration / times | ✅ | ❌ |
-| Transfer the lease to another client | ✅ | ❌ |
-| Release or delete the lease | ✅ | ❌ |
+| Connect / dial the exporter (`jmp shell`, driver calls) | Yes | Yes |
+| Observe serial consoles | Yes | Yes |
+| List/inspect the lease (`jmp get leases`) | Yes | Yes |
+| Add or remove shared clients | Yes | No |
+| Change duration / times | Yes | No |
+| Transfer the lease to another client | Yes | No |
+| Release or delete the lease | Yes | No |
 
 In short, shared clients get **access** but not **control**: everything that
 mutates the lease (sharing, timing, transfer, release, delete) is restricted to
@@ -67,14 +67,14 @@ Lease my-lease shared with:
 ```
 
 A name shows as `not active` when it is in the owner's requested share set but
-was filtered out — either because no client with that name exists, or because an
+was filtered out - either because no client with that name exists, or because an
 [exporter access policy](../../../reference/crds/exporteraccesspolicy.md) does
 not allow that client to reach this exporter. See
 [Access policies](#access-policies-and-effective-sharing) below.
 
 ## Working with a lease shared with you
 
-A shared client does not create a lease — the owner already did. `jmp get leases`
+A shared client does not create a lease - the owner already did. `jmp get leases`
 lists the leases shared with you together with your own (`-A`/`--all-clients`
 also adds leases you cannot reach):
 
@@ -102,7 +102,7 @@ you to pick one if it runs in a terminal; otherwise it exits and asks for
 Sharing is always subject to the exporter's
 [access policies](../../../reference/crds/exporteraccesspolicy.md). Adding a
 client to a lease expresses *intent*; the controller then evaluates the policies
-and computes the **effective** share set — the clients that are actually
+and computes the **effective** share set - the clients that are actually
 granted access. A name that matches no client is rejected when you share, and so
 is a client the policy denies if the lease already has an exporter. A client the
 policy denies later (after a policy change, or once an exporter is assigned to a
@@ -130,8 +130,8 @@ Transferring the lease (`jmp update lease my-lease --to-client client-carol`)
 clears its share list, so the previous owner's and every shared client's
 `jmp shell` session ends the same way.
 
-If you need to cut off everyone immediately — including the owner and all shared
-clients — end the lease itself:
+If you need to cut off everyone immediately - including the owner and all shared
+clients - end the lease itself:
 
 ```{code-block} console
 $ jmp delete lease my-lease

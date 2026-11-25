@@ -8,11 +8,11 @@ This folder holds a **Jumpstarter exporter** plus a **prebuilt firmware** so you
 |------|------|
 | `exporter-stm32f4.yaml` | Exporter config: Renode platform (`stm32f4_discovery-kit.repl`), UART on `sysbus.usart2`, and the export name `ecu`. |
 | `.cargo/config.toml` | Rust embedded target (`thumbv7em-none-eabihf`) and link script flags when you build firmware for this board. |
-| `Cargo.toml`, `src/main.rs` | Firmware: toggles the Discovery user LED on **PD12**, prints **`ON` / `OFF`** on **USART2** (PA2 @ 115200 8N1), matching Renode’s `UserLED` and `usart2`. |
+| `Cargo.toml`, `src/main.rs` | Firmware: toggles the Discovery user LED on **PD12**, prints **`ON` / `OFF`** on **USART2** (PA2 @ 115200 8N1), matching Renode's `UserLED` and `usart2`. |
 | `memory.x`, `build.rs` | Linker memory map for the STM32F407 and `cortex-m-rt` (`link.x`). |
 | `rust-toolchain.toml` | Pins **stable** and the **`thumbv7em-none-eabihf`** target via rustup. |
 | `Makefile` | `make firmware` builds, strips, and installs `stm32f407-rust-blink.elf`. |
-| `stm32f407-rust-blink.elf` | Stripped copy of the release ELF for flashing; the canonical build artifact is under `target/…/release/`. |
+| `stm32f407-rust-blink.elf` | Stripped copy of the release ELF for flashing; the canonical build artifact is under `target/.../release/`. |
 | `target/` | Rust build output (if you build here). |
 
 ## Build the firmware
@@ -23,7 +23,7 @@ Install the [rustup](https://rustup.rs/) toolchain and the embedded target (`rus
 PATH="$HOME/.cargo/bin:$PATH" make firmware
 ```
 
-`make firmware` builds the release firmware, strips it, and installs it as `stm32f407-rust-blink.elf` — the same (stripped) artifact that is committed in this folder. `cargo strip` strips `target/thumbv7em-none-eabihf/release/stm32f407-rust-blink` in place; `make build` leaves an unstripped build there.
+`make firmware` builds the release firmware, strips it, and installs it as `stm32f407-rust-blink.elf` - the same (stripped) artifact that is committed in this folder. `cargo strip` strips `target/thumbv7em-none-eabihf/release/stm32f407-rust-blink` in place; `make build` leaves an unstripped build there.
 
 ## Workflow
 
@@ -59,10 +59,10 @@ PATH="$HOME/.cargo/bin:$PATH" make firmware
 
 Under `j ecu` you typically use:
 
-- **`flasher`** — load an ELF into the target.
-- **`power`** — `on`, `off`, `cycle`, etc. (starts/controls the Renode simulation for this exporter).
-- **`console`** — serial client (e.g. `console`) to the UART defined in the YAML.
-- **`monitor`** — send commands to the Renode monitor. This needs `allow_raw_monitor: true` under `config:` in the exporter YAML, which `exporter-stm32f4.yaml` leaves off because it lets the client send any command to the Renode monitor.
+- **`flasher`** - load an ELF into the target.
+- **`power`** - `on`, `off`, `cycle`, etc. (starts/controls the Renode simulation for this exporter).
+- **`console`** - serial client (e.g. `console`) to the UART defined in the YAML.
+- **`monitor`** - send commands to the Renode monitor. This needs `allow_raw_monitor: true` under `config:` in the exporter YAML, which `exporter-stm32f4.yaml` leaves off because it lets the client send any command to the Renode monitor.
 
 Run `j ecu --help` for the full list.
 

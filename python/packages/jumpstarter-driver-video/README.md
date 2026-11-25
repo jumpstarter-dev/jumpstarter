@@ -5,7 +5,7 @@ drivers (`VideoInterface` / `VideoClient`) and an `HttpVideo` driver for
 HTTP/MJPEG camera sources.
 
 `HttpVideo` covers cameras that are reachable from the exporter over the
-network rather than attached to it as a local V4L2 device — for example a
+network rather than attached to it as a local V4L2 device - for example a
 camera connected to the DUT itself, such as ESP32 camera firmware serving
 an MJPEG stream over Wi-Fi, or a generic IP camera.
 

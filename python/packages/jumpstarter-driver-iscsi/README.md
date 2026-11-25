@@ -4,7 +4,7 @@
 LIO target framework via the
 [`rtslib-fb`](https://github.com/open-iscsi/rtslib-fb) Python bindings.
 
-> ⚠️  The driver **creates and manages an iSCSI _target_** (server).  To access the
+> **Note:** The driver **creates and manages an iSCSI _target_** (server). To access the
 > exported LUNs you still need a separate iSCSI **initiator** (client) on the
 > machine running your test-code / DUT.
 

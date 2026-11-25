@@ -22,11 +22,11 @@ Resolving downloads.raspberrypi.org (downloads.raspberrypi.org)... 2a00:1098:80:
 Connecting to downloads.raspberrypi.org (downloads.raspberrypi.org)|2a00:1098:80:56::2:1|:443... connected.
 HTTP request sent, awaiting response... 200 OK
 Length: 523828628 (500M) [application/x-xz]
-Saving to: ‘./images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz’
+Saving to: './images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz'
 
 downloads.raspberrypi.org/raspios_lite_armhf/ima 100%[=======================================================================================================>] 499.56M  77.9MB/s    in 6.6s
 
-2024-10-17 12:12:53 (75.3 MB/s) - ‘./images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz’ saved [523828628/523828628]
+2024-10-17 12:12:53 (75.3 MB/s) - './images/downloads.raspberrypi.org/raspios_lite_armhf/images/raspios_lite_armhf-2024-07-04/2024-07-04-raspios-bookworm-armhf-lite.img.xz' saved [523828628/523828628]
 
 FINISHED --2024-10-17 12:12:53--
 Total wall clock time: 10s

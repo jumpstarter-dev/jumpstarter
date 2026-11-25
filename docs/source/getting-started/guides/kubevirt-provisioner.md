@@ -44,20 +44,20 @@ disks, and for CDI scratch space during conversion.
 ## Architecture
 
 ```
-┌──────────────────────────┐       ┌──────────────────────────────┐
-│   Management Cluster     │       │   Target Cluster (CNV)       │
-│                          │       │                              │
-│  ExporterSet controller  │──────▶│  VirtualMachine CR           │
-│  Exporter Pod            │       │  DataVolume (disk image)     │
-│    ├─ KubevirtPower      │──────▶│  SSH Service (NodePort/LB)   │
-│    ├─ KubevirtConsole    │       │  Forward Port Services       │
-│    ├─ KubevirtStorage    │       │                              │
-│    ├─ ssh (TcpNetwork)   │       │                              │
-│    └─ custom (TcpNetwork)│       │                              │
-└──────────────────────────┘       └──────────────────────────────┘
++--------------------------+       +------------------------------+
+|   Management Cluster     |       |   Target Cluster (CNV)       |
+|                          |       |                              |
+|  ExporterSet controller  |------>|  VirtualMachine CR           |
+|  Exporter Pod            |       |  DataVolume (disk image)     |
+|    +- KubevirtPower      |------>|  SSH Service (NodePort/LB)   |
+|    +- KubevirtConsole    |       |  Forward Port Services       |
+|    +- KubevirtStorage    |       |                              |
+|    +- ssh (TcpNetwork)   |       |                              |
+|    +- custom (TcpNetwork)|       |                              |
++--------------------------+       +------------------------------+
 ```
 
-The provisioner creates VMs with `RunStrategy: Halted` — the Python
+The provisioner creates VMs with `RunStrategy: Halted` - the Python
 `KubevirtPower` driver's `power.on()` starts the VM.
 
 ## Setup
@@ -329,10 +329,10 @@ are not supported, and their power and flash operations can interleave.
 
 ## Lifecycle
 
-- **Create**: ExporterSet controller → provisioner creates VM + Services on
-  target cluster → exporter pod starts on management cluster
+- **Create**: ExporterSet controller -> provisioner creates VM + Services on
+  target cluster -> exporter pod starts on management cluster
 - **Running**: Exporter pod uses kubeconfig to control VM via KubeVirt API
-- **Delete**: `reclaimPolicy: Delete` → provisioner deletes VM and Services on
+- **Delete**: `reclaimPolicy: Delete` -> provisioner deletes VM and Services on
   target cluster. Services also have `ownerReferences` to the VM as a
   secondary cleanup mechanism.
 
@@ -355,7 +355,7 @@ When `sshAccess` is set to `NodePort` or `LoadBalancer`, the provisioner:
 
 ### Port Forwarding
 
-Each entry in `forwardPorts` follows the same pattern — a port is added to the
+Each entry in `forwardPorts` follows the same pattern - a port is added to the
 VMI interface, a Service is created, and a `TcpNetwork` driver is injected with
 the resolved address. The Service is a `LoadBalancer` when `sshAccess` is
 `LoadBalancer`, and a `NodePort` otherwise.

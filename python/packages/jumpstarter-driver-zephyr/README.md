@@ -5,7 +5,7 @@ the test runner (twister) stays on the **client / CI** machine.
 
 This is the flash half of the "server-side twister" workflow: twister runs
 locally, builds the firmware, and for each test ships only the built image(s) to
-the exporter. The exporter owns *how* to flash — the flash command and the
+the exporter. The exporter owns *how* to flash - the flash command and the
 board's probe/target configuration live in this driver's config, so the client
 is board-agnostic.
 
@@ -13,16 +13,16 @@ is board-agnostic.
 
 ```
 jmp shell --selector <board>
-└── j zephyr twister <twister args>
-    └── west twister --device-testing \
++-- j zephyr twister <twister args>
+    +-- west twister --device-testing \
             --device-serial-pty j,zephyr,console,pipe,-i,--retry-count,... \
             --flash-command jmp_flash_wrapper.sh,--driver,zephyr <twister args>
-    └── per testcase:
-        ├── j zephyr console pipe -i --retry-count 10 ...
-        │     (twister owns the PTY; pipe bridges it to the console)
-        └── jmp_flash_wrapper.sh  → j zephyr flash --build-dir <dir>
-              ├── (client side) tar zephyr.hex/.bin/.elf → exporter
-              └── (exporter side) run flash command
+    +-- per testcase:
+        +-- j zephyr console pipe -i --retry-count 10 ...
+        |     (twister owns the PTY; pipe bridges it to the console)
+        +-- jmp_flash_wrapper.sh  -> j zephyr flash --build-dir <dir>
+              +-- (client side) tar zephyr.hex/.bin/.elf -> exporter
+              +-- (exporter side) run flash command
                     (closing the console around it if release_consoles is set)
 ```
 
@@ -78,11 +78,11 @@ the boot output over serial (e.g. openocd's `reset` above).
 
 ## Configuration reference
 
-| Field           | Required | Default | Description                                                        |
-| --------------- | -------- | ------- | ------------------------------------------------------------------ |
-| `flash_command` | yes      | —       | Shell command to flash the board. Supports `{hex}/{bin}/{elf}/{dir}` tokens. |
-| `flash_timeout` | no       | `300`   | Seconds before the flash command, and everything it started, is stopped. `0` disables. |
-| `release_consoles` | no    | `false` | Close the PySerial children's ttys while flashing, for flash tools that open the console's tty (e.g. esptool). |
+| Field              | Required | Default | Description                                                                                                    |
+| ------------------ | -------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `flash_command`    | yes      | -       | Shell command to flash the board. Supports `{hex}/{bin}/{elf}/{dir}` tokens.                                   |
+| `flash_timeout`    | no       | `300`   | Seconds before the flash command, and everything it started, is stopped. `0` disables.                         |
+| `release_consoles` | no       | `false` | Close the PySerial children's ttys while flashing, for flash tools that open the console's tty (e.g. esptool). |
 
 ## Usage with twister
 

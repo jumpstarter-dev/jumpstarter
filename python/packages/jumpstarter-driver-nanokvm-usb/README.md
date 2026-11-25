@@ -101,7 +101,7 @@ the Jumpstarter connection to whichever **client** opens the stream.
 1. A client calls `video.stream("stream")` (context manager) or `open_stream()`.
 2. The exporter's shared FramePump already captures JPEG frames from UVC; the
    stream task forwards those frames to the client.
-3. The client reads frames with `stream.receive()` — each message is one JPEG.
+3. The client reads frames with `stream.receive()` - each message is one JPEG.
 4. When the client closes the context (or calls `close()`), the exporter stops
    the stream task. The pump keeps capturing until the driver closes at the end
    of the session, so VNC and other streams are not interrupted.

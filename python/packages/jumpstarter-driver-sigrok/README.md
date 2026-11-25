@@ -55,29 +55,29 @@ export:
 
 ## Client API
 
-- `scan()` — list devices for the configured driver
-- `capture(config)` — one-shot capture, returns `CaptureResult` with base64 data
-- `capture_stream(config)` — streaming capture via `--continuous` (or `--samples` when `samples` is set)
-- `get_driver_info()` — driver, conn, channel map
-- `get_channel_map()` — device-to-semantic name mappings
-- `list_output_formats()` — supported formats (csv, srzip, vcd, binary, bits, ascii)
+- `scan()` - list devices for the configured driver
+- `capture(config)` - one-shot capture, returns `CaptureResult` with base64 data
+- `capture_stream(config)` - streaming capture via `--continuous` (or `--samples` when `samples` is set)
+- `get_driver_info()` - driver, conn, channel map
+- `get_channel_map()` - device-to-semantic name mappings
+- `list_output_formats()` - supported formats (csv, srzip, vcd, binary, bits, ascii)
 
 ## Output Formats
 
 The driver supports multiple output formats. **VCD (Value Change Dump) is the default** because:
-- ✅ **Efficient**: Only records signal changes (not every sample)
-- ✅ **Precise timing**: Includes exact timestamps in nanoseconds
-- ✅ **Widely supported**: Standard format for signal analysis tools
-- ✅ **Mixed signals**: Handles both digital and analog data
+- **Efficient**: Only records signal changes (not every sample)
+- **Precise timing**: Includes exact timestamps in nanoseconds
+- **Widely supported**: Standard format for signal analysis tools
+- **Mixed signals**: Handles both digital and analog data
 
 ### Available Formats
 
 | Format | Use Case | Decoded By |
 |--------|----------|------------|
-| `vcd` (default) | Change-based signals with timing | `result.decode()` → `list[Sample]` |
-| `csv` | All samples with timing | `result.decode()` → `list[Sample]` |
-| `bits` | Bit sequences by channel | `result.decode()` → `dict[str, list[int]]` |
-| `ascii` | ASCII art visualization | `result.decode()` → `str` |
+| `vcd` (default) | Change-based signals with timing | `result.decode()` -> `list[Sample]` |
+| `csv` | All samples with timing | `result.decode()` -> `list[Sample]` |
+| `bits` | Bit sequences by channel | `result.decode()` -> `dict[str, list[int]]` |
+| `ascii` | ASCII art visualization | `result.decode()` -> `str` |
 | `srzip` | Raw sigrok session (for PulseView) | `result.data` (raw bytes) |
 | `binary` | Raw binary data | `result.data` (raw bytes) |
 

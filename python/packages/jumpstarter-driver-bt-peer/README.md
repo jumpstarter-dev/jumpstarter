@@ -54,7 +54,7 @@ instead of waiting for one. `events` prints what the peer has recorded
 
 The `transport` config accepts any bumble transport string:
 - `tcp-client:host:port` - RootCanal / netsim
-- `usb:0` — USB HCI dongle
+- `usb:0` - USB HCI dongle
 - `serial:/dev/ttyUSB0` - serial UART
 
 ## Playing media
@@ -87,14 +87,14 @@ uploads the encoded SBC, so the exporter does not need ffmpeg. Install it with
 `brew install ffmpeg` (or your distribution's package). A file that is already
 `.sbc` is uploaded as-is.
 
-The peer advertises exactly one SBC configuration — 44100 Hz, stereo, 8
-subbands, 16 blocks, loudness allocation, bitpool 2-53 — because it is the
+The peer advertises exactly one SBC configuration - 44100 Hz, stereo, 8
+subbands, 16 blocks, loudness allocation, bitpool 2-53 - because it is the
 AVDTP acceptor and the DUT's sink picks from whatever is offered. Pinning it
 means a mismatched file is rejected with an explanation instead of arriving as
 noise.
 
-A sink may accept a different bitpool range from the advertised one — narrower,
-or wider, since the spec allows up to 250 — and either side may be the one to
+A sink may accept a different bitpool range from the advertised one - narrower,
+or wider, since the spec allows up to 250 - and either side may be the one to
 configure the stream, as some head units send `SET_CONFIGURATION` themselves
 rather than waiting for the source. The range used for a stream is therefore
 the *intersection* of what the peer pins and what the sink asked for, and a
