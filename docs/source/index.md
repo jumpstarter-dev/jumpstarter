@@ -52,7 +52,7 @@ See Jumpstarter in action:
 
 One tool, any target. Jumpstarter decouples devices from test runners, so a
 script written against a board on your desk can run unchanged against a board in
-a remote lab or a virtual device in CI - your *Makefile* for device testing.
+a remote lab or a virtual device in CI.
 
 ```{include} ../../README.md
 :start-after: "## Highlights"

@@ -6,7 +6,6 @@
 ![GitHub Release](https://img.shields.io/github/v/release/jumpstarter-dev/jumpstarter)
 ![PyPI - Version](https://img.shields.io/pypi/v/jumpstarter)
 
-
 Jumpstarter is a free and open source framework for testing and developing
 software on real and virtual hardware. Developers, test scripts, CI pipelines,
 and AI agents reach devices through the same programmatic interfaces, whether a
