@@ -37,6 +37,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_inline_tabs",
     "typography",
+    "driver_index",
 ]
 
 templates_path = ["_templates"]
