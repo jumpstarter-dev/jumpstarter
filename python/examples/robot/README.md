@@ -33,12 +33,13 @@ $ jmp shell --selector board=mock -- robot -d results tests/
 
 | Path | Contents |
 | --- | --- |
-| `exporter.yaml` | The mock board: a `power` switch, a `storage` mux, and a `shell` driver with the methods `hello` and `fail`. |
+| `exporter.yaml` | The mock board: a `power` switch, a `storage` mux, a `console` byte stream that sends back what it receives, and a `shell` driver with the methods `hello` and `fail`. |
 | `robot.toml` | The RobotCode settings and the client settings for the generator. |
 | `client.resource` | The client resource that the generator made. It has one keyword library for each driver. |
 | `tests/power.robot` | Power keywords, stream values, and `Call Driver`. |
 | `tests/storage.robot` | Writes `data/image.bin` through the storage mux. |
 | `tests/shell.robot` | The shell methods `Shell Hello` and `Shell Fail`, and their return codes. |
+| `tests/console.robot` | The Telnet library of Robot Framework on the console, through `Open Port Forward`. |
 
 ## Make the client resource again
 

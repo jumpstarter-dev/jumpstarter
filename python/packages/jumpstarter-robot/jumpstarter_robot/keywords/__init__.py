@@ -11,5 +11,6 @@ def load_all() -> list[type]:
     """The keyword set classes, in the order their keywords are documented."""
     from .adb import AdbKeywords
     from .appium import AppiumKeywords
+    from .contexts import ContextKeywords
 
-    return [AppiumKeywords, AdbKeywords]
+    return [ContextKeywords, AppiumKeywords, AdbKeywords]
