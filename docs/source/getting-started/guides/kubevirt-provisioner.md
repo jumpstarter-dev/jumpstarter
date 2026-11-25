@@ -43,7 +43,7 @@ disks, and for CDI scratch space during conversion.
 
 ## Architecture
 
-```
+```text
 +--------------------------+       +------------------------------+
 |   Management Cluster     |       |   Target Cluster (CNV)       |
 |                          |       |                              |

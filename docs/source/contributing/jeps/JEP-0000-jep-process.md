@@ -217,9 +217,9 @@ Changes to the JEP process itself require a new Process-type JEP.
 
 This process draws inspiration from:
 
-- [Python Enhancement Proposals (PEPs)](https://peps.python.org/pep-0001/)  - 
+- [Python Enhancement Proposals (PEPs)](https://peps.python.org/pep-0001/)  -
   lightweight metadata, champion model, clear status lifecycle.
-- [Kubernetes Enhancement Proposals (KEPs)](https://github.com/kubernetes/enhancements/tree/master/keps)  - 
+- [Kubernetes Enhancement Proposals (KEPs)](https://github.com/kubernetes/enhancements/tree/master/keps)  -
   test plan requirements, graduation criteria, production readiness.
 - [Rust RFCs](https://github.com/rust-lang/rfcs) - PR-based workflow, emphasis
   on motivation and teaching, prior art section.

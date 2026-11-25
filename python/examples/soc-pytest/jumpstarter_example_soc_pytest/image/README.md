@@ -10,7 +10,6 @@ You will need guestmount installed, sudo permissions.
 
 fuse must be configured to enable `user_allow_other` in `/etc/fuse.conf`.
 
-
 ```shell
 $ make
 make download-image

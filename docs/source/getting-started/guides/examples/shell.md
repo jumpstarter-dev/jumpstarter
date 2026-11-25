@@ -3,16 +3,19 @@
 ## Starting and Exiting a Session
 
 Start a {term}`local mode` {term}`exporter` {term}`session`:
+
 ```console
 $ jmp shell --exporter example-local
 ```
 
 Start a {term}`distributed mode` {term}`exporter` {term}`session`:
+
 ```console
 $ jmp shell --client hello --selector example.com/board=foo
 ```
 
 When finished, simply exit the shell:
+
 ```console
 $ exit
 ```

@@ -66,6 +66,7 @@ documentation.
 ### Python Client & Drivers (`python/`)
 
 The Python implementation provides:
+
 - `jmp` CLI tool for interacting with hardware
 - Client libraries for test automation
 - Hardware drivers for various devices
@@ -77,12 +78,14 @@ See [`python/README.md`](python/README.md) for details.
 ### Jumpstarter Service (`controller/`)
 
 The Kubernetes-native service that provides:
+
 - Centralized hardware management
 - Client and exporter routing
 - Authentication and authorization
 - Multi-tenant support
 
 **Prerequisites:**
+
 - Kubernetes (version must match the k8s.io dependencies in [controller/go.mod](controller/go.mod))
 - kubectl (version matching the k8s.io dependencies in [controller/go.mod](controller/go.mod))
 
@@ -91,6 +94,7 @@ See [`controller/README.md`](controller/README.md) for deployment instructions.
 ### Protocol (`protocol/`)
 
 The gRPC-based communication layer that enables:
+
 - Unified interface for virtual and physical hardware
 - Secure communication over HTTPS
 - Tunneling support for Unix sockets, TCP, and UDP

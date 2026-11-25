@@ -99,7 +99,7 @@ j ssh_mitm -v hostname
 
 ## Architecture
 
-```
+```text
 SSHWrapper --> SSHMITM --> TcpNetwork --> DUT
 ```
 

@@ -49,7 +49,8 @@ export:
 
 The probe driver client comes with a CLI tool that can be used to interact with
 the target device.
-```
+
+```console
 jumpstarter ⚡ local ➤ j probe
 Usage: j probe [OPTIONS] COMMAND [ARGS]...
 

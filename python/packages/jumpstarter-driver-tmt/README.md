@@ -99,6 +99,7 @@ The driver automatically handles tmt provision arguments by:
 3. **Preserving other arguments**: Keeps all other tmt arguments intact
 
 Example of how arguments are transformed:
+
 ```bash
 # Input command
 j tmt run --name /my/test/plan provision -h connect -g 192.168.1.100 -P 22

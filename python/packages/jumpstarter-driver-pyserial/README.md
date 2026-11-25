@@ -25,6 +25,7 @@ export:
 ```
 
 Example configuration to send commands to a MCU with DTR/RTS controlling boot process over serial port, with --no-output (fire-and-forget mode):
+
 ```yaml
 export:
   serial:
@@ -39,6 +40,7 @@ export:
 Example configuration with power control: a power driver referenced as the
 `power` child of the serial device enables the Ctrl-] x3 power-cycle hotkey in
 `console` (the console stays attached while the board re-enumerates):
+
 ```yaml
 export:
   serial:
@@ -70,7 +72,6 @@ during each outage logs a warning; input is not buffered or replayed.
 This also applies to pipe and pexpect writers, which can lose input without a
 send error.
 
-
 ### Config parameters
 
 | Parameter      | Description                                                                                                                                          | Type  | Required | Default |
@@ -98,7 +99,7 @@ Multiple driver instances can share a single demuxer process by specifying diffe
 
 #### Configuration
 
-##### Single channel example:
+##### Single channel example
 
 ```yaml
 export:
@@ -110,7 +111,7 @@ export:
       # chip defaults to T264 (Thor), use T234 for Orin
 ```
 
-##### Multiple channels example:
+##### Multiple channels example
 
 ```yaml
 export:
@@ -186,8 +187,6 @@ When using multiple driver instances, all instances must have compatible configu
 
 If these requirements are not met, the driver will raise a `ValueError` during initialization.
 
-
-
 ## Usage
 
 The PySerial driver provides the following CLI commands for interacting with serial ports:
@@ -202,6 +201,7 @@ j serial console
 ```
 
 **Hotkeys:**
+
 - **CTRL+B x3**: Exit the console
 - **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above; not with `--observe`)
 
@@ -259,6 +259,7 @@ cat commands.txt | j serial pipe --no-output
 - `--retry-interval SECONDS`: Seconds between attach attempts (default: 0.5)
 
 Notes:
+
 - `--no-output` cannot be combined with `--output` or `--append`.
 - `--no-output` requires stdin input (piped stdin or `--input`).
 - `--observe` cannot be combined with `--input` or `--no-output`.
@@ -352,6 +353,7 @@ reset some boards unless `disable_hupcl` is set.
 ### Examples
 
 Using expect with a context manager
+
 ```{testcode}
 with pyserialclient.pexpect() as session:
     session.sendline("Hello, world!")
@@ -359,6 +361,7 @@ with pyserialclient.pexpect() as session:
 ```
 
 Using expect without a context manager
+
 ```{testcode}
 session = pyserialclient.open()
 session.sendline("Hello, world!")
@@ -367,6 +370,7 @@ pyserialclient.close()
 ```
 
 Using a simple BlockingStream with a context manager
+
 ```{testcode}
 with pyserialclient.stream() as stream:
     stream.send(b"Hello, world!")
@@ -374,6 +378,7 @@ with pyserialclient.stream() as stream:
 ```
 
 Using a simple BlockingStream without a context manager
+
 ```{testcode}
 stream = pyserialclient.open_stream()
 stream.send(b"Hello, world!")

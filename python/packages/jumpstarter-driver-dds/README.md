@@ -77,14 +77,16 @@ the same topic at the same time.
 ### QoS Options
 
 **Reliability:**
-- `RELIABLE` -- Guaranteed delivery with acknowledgment
-- `BEST_EFFORT` -- Fire-and-forget, lowest latency
+
+- `RELIABLE` - Guaranteed delivery with acknowledgment
+- `BEST_EFFORT` - Fire-and-forget, lowest latency
 
 **Durability:**
-- `VOLATILE` -- Samples only delivered to currently connected readers
-- `TRANSIENT_LOCAL` -- Late-joining readers receive cached samples
-- `TRANSIENT` -- Samples survive writer restarts
-- `PERSISTENT` -- Samples survive system restarts
+
+- `VOLATILE` - Samples only delivered to currently connected readers
+- `TRANSIENT_LOCAL` - Late-joining readers receive cached samples
+- `TRANSIENT` - Samples survive writer restarts
+- `PERSISTENT` - Samples survive system restarts
 
 ## Example Usage
 

@@ -189,6 +189,7 @@ This is a **composite driver** with three core children and two optional display
 - **turn** - TCP endpoint for the TURN relay, when provisioned
 
 The exporter config also typically includes sibling drivers:
+
 - **netsim** (`jumpstarter-driver-netsim`) - virtual radio control (BLE, Wi-Fi, UWB) via netsim REST API
 - **bt_peer** (`jumpstarter-driver-bt-peer`) - Bluetooth peer device via bumble + RootCanal HCI
 

@@ -116,7 +116,7 @@ orphan: true
 
   For each decision, state what was decided, what alternatives were
   considered, and why the chosen approach was preferred. This section
-  is the most important part of the JEP for long-term project memory  - 
+  is the most important part of the JEP for long-term project memory  -
   future contributors will refer to it to understand *why* things are
   the way they are.
 -->
@@ -178,7 +178,7 @@ Reference specific project constraints, prior art, or technical tradeoffs.
 
 <!--
   Define measurable criteria that must be met for this JEP to be considered
-  successfully implemented. These should be specific, testable conditions  - 
+  successfully implemented. These should be specific, testable conditions  -
   not vague goals. Good acceptance criteria help reviewers evaluate the
   implementation and help authors know when their work is done.
 

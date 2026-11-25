@@ -11,7 +11,7 @@ is board-agnostic.
 
 ## How it fits together
 
-```
+```text
 jmp shell --selector <board>
 +-- j zephyr twister <twister args>
     +-- west twister --device-testing \

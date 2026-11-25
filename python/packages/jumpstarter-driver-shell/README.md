@@ -83,6 +83,7 @@ export:
 **Method Configuration Options:**
 
 For the dict format, each method supports:
+
 - `command`: The shell command to execute (optional, defaults to `"echo Hello"`)
 - `description`: CLI help text (optional, defaults to `"Execute the {method_name} shell method"`)
 - `timeout`: Command-specific timeout in seconds (optional, defaults to global `timeout` value)
@@ -148,6 +149,7 @@ methods:
 ```
 
 Results in:
+
 ```console
 Commands:
   deploy   Deploy using Ansible

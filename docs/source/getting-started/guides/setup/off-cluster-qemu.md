@@ -157,7 +157,7 @@ spec:
           type: jumpstarter_driver_qemu.driver.Qemu
 ```
 
-By default the provisioner auto-aliases the QEMU children as root-level refs 
+By default the provisioner auto-aliases the QEMU children as root-level refs
 `power`, `storage`, and `serial` so clients can
 use `client.power` like on real hardware. Set `parameters.exposeRootDrivers:
 false` to keep a nested-only export map (`client.qemu.power`,

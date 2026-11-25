@@ -187,7 +187,6 @@ certificate and hostname verification enabled. The CLI passes
 `JUMPSTARTER_IOS_HTTPS_METADATA` to the command. The client API is shared with
 the {doc}`iOS device driver <iosdevice>`.
 
-
 ## Security and limitations
 
 Each lease owns a private device set and companion Unix socket. Lifecycle

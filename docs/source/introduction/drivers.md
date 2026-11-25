@@ -108,7 +108,7 @@ environment.
 
 Here's an example of a composite driver tree:
 
-```
+```text
 MyHarness         # Custom composite driver for the entire target device harness
 +- TcpNetwork     # TCP Network driver to tunnel port 8000
 +- MyPower        # Custom power driver to control device power
@@ -194,7 +194,6 @@ flowchart LR
 - **Bidirectional Streaming** - Methods marked with the `@exportstream` decorator open a
   full-duplex byte stream. Used for serial communication, video capture, or
   tunneling existing protocols (such as SSH) over Jumpstarter.
-
 
 ## Authentication and Security
 

@@ -12,7 +12,7 @@ You also need `sshfs` installed on the client machine:
 
 - **Fedora/RHEL**: `sudo dnf install fuse-sshfs`
 - **Debian/Ubuntu**: `sudo apt-get install sshfs`
-- **macOS**: Install macFUSE and SSHFS from https://macfuse.github.io/, please note that
+- **macOS**: Install macFUSE and SSHFS from <https://macfuse.github.io/>, please note that
   it needs special handling to enable the macOS kernel extensions, read the install documentation
   carefully.
 

@@ -272,6 +272,7 @@ $ sudo setcap cap_net_raw+ep $(which ptp4l)
 ### No hardware timestamping
 
 If you see "falling back to software timestamping":
+
 1. Check NIC support: `ethtool -T <interface>`
 2. Verify the NIC driver is loaded: `lsmod | grep <driver>`
 3. Some virtualized NICs (virtio, veth) only support software timestamping
@@ -279,6 +280,7 @@ If you see "falling back to software timestamping":
 ### ptp4l not found
 
 Ensure linuxptp is installed:
+
 ```console
 $ which ptp4l
 /usr/sbin/ptp4l
@@ -290,4 +292,3 @@ $ which ptp4l
 - Check physical layer: `ethtool <interface>` should show link up
 - Review ptp4l logs in the exporter output
 - Ensure both ends use the same domain number and transport
-

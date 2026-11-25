@@ -77,7 +77,6 @@ Mock exporters are real exporter runtimes with lightweight, hardware-free driver
 and distinct credentials. They connect to the cluster's controller and routers as
 normal exporters; the tool does not fake online status or write lease assignments.
 
-
 ### Example configuration and CLI
 
 Each scenario owns its `load` configuration: resource counts, concurrency, timing,

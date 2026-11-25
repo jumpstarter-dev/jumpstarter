@@ -5,7 +5,6 @@ gpiod GPIO pins for digital input/output operations.
 
 This requires the /dev/gpiochip[0..N] device available on the system, and you can use the `gpioinfo` gpiod tool to list the available GPIO lines.
 
-
 ## Installation
 
 ```{code-block} console
@@ -94,7 +93,8 @@ what doesn't.
 ### Digital Output Examples
 
 Basic LED control:
-```
+
+```python
 # Turn LED on
 led_output.on()
 
@@ -109,7 +109,8 @@ print(f"LED state: {state}")
 ### Digital Input Examples
 
 Button input with edge detection:
-```
+
+```python
 # Read current input state
 state = button_input.read()
 print(f"Button state: {state}")
@@ -127,11 +128,11 @@ button_input.wait_for_edge("rising", timeout=10.0)
 button_input.wait_for_edge("falling", timeout=10.0)
 ```
 
-
 ### Power Switch Examples
 
 Power control for devices:
-```
+
+```python
 # Turn power on
 power_switch.on()
 
@@ -199,6 +200,7 @@ long wires or fast edges.
 #### Initial Values
 
 For output pins, you can set the initial state:
+
 - **"inactive"** or **"off"** or **False**: Start inactive
 - **"active"** or **"on"** or **True**: Start active
 - **"preserve"**: Keep whatever level the line is already at

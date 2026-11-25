@@ -46,7 +46,7 @@ Power and storage control need DUT Link firmware 0.08 or later: older firmware h
 no control interface, and the driver then fails at the first power or storage call
 with an error naming the firmware version. The console works with older firmware.
 Releases and flashing instructions are at
-https://github.com/jumpstarter-dev/dutlink-firmware.
+<https://github.com/jumpstarter-dev/dutlink-firmware>.
 
 ### Permissions
 
@@ -54,7 +54,7 @@ The exporter opens the board over libusb and opens its console tty. To run it as
 non-root user, add a udev rule such as
 `/etc/udev/rules.d/60-dutlink.rules`:
 
-```
+```text
 SUBSYSTEM=="usb", ATTR{idVendor}=="2b23", ATTR{idProduct}=="1012", MODE="0660", GROUP="plugdev"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="2b23", ATTRS{idProduct}=="1012", MODE="0660", GROUP="plugdev"
 ```

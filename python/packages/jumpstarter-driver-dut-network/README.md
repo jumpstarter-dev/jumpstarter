@@ -20,6 +20,7 @@ The following must be available on the exporter host:
 - `dnsmasq` - for DHCP serving
 
 Optional:
+
 - `nmcli` (NetworkManager) - only needed if NM is running; the driver marks its interfaces as unmanaged
 - `tcpdump` - only needed with `enable_tcpdump: true`
 
@@ -177,7 +178,6 @@ sub-interfaces are added when at least one address entry carries a
 `vlan_id`.  Adding or removing addresses at runtime (via `add-address`
 / `remove-address`) triggers a full rebuild, so the rule set always
 matches the current address list.
-
 
 ### Disabled NAT (DHCP only)
 
@@ -587,4 +587,3 @@ sudo ip rule del from 192.168.100.125 table 905
 # Kill orphan dnsmasq
 sudo pkill -f "dnsmasq.*jumpstarter"
 ```
-

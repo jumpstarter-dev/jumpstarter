@@ -79,7 +79,6 @@ If no `-l` flag is provided, the default username from the driver config will be
     :members: run
 ```
 
-
 ### Configuration Parameters
 
 | Parameter        | Description                                                                                    | Type | Required | Default                                                                                    |

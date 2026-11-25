@@ -1,18 +1,18 @@
 # JEP-0014: Virtual Scalable Exporters
 
-| Field             | Value                                                          |
-| ----------------- | -------------------------------------------------------------- |
-| **JEP**           | 0014                                                           |
-| **Title**         | Virtual Scalable Exporters                                     |
-| **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo)                           |
-| **Status**        | Approved                                                       |
-| **Type**          | Standards Track                                                |
-| **Created**       | 2026-06-03                                                     |
-| **Updated**       | 2026-07-28                                                     |
-| **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/issues/41       |
-| **Requires**      |                                                                |
-| **Supersedes**    |                                                                |
-| **Superseded-By** |                                                                |
+| Field             | Value                                                                 |
+| ----------------- | --------------------------------------------------------------------- |
+| **JEP**           | 0014                                                                  |
+| **Title**         | Virtual Scalable Exporters                                            |
+| **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo)                                  |
+| **Status**        | Approved                                                              |
+| **Type**          | Standards Track                                                       |
+| **Created**       | 2026-06-03                                                            |
+| **Updated**       | 2026-07-28                                                            |
+| **Discussion**    | [Issue #41](https://github.com/jumpstarter-dev/jumpstarter/issues/41) |
+| **Requires**      |                                                                       |
+| **Supersedes**    |                                                                       |
+| **Superseded-By** |                                                                       |
 
 ---
 
@@ -430,78 +430,78 @@ and boot what they need after leasing (see Phase 4 and DD-7).
 1. Create a `VirtualTargetClass` describing the QEMU backend (same namespace as
    the `ExporterSet` that will reference it):
 
-```yaml
-apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
-kind: VirtualTargetClass
-metadata:
-  name: qemu-rpi4
-  namespace: jumpstarter
-spec:
-  provisioner: qemu.jumpstarter.dev
-  bindingMode: Immediate
-  reclaimPolicy: Delete
-  scheduling:
-    nodeSelector:
-      kubernetes.io/arch: arm64
-    tolerations:
-      - key: jumpstarter.dev/kvm
-        operator: Exists
-        effect: NoSchedule
-    resources:
-      limits:
-        devices.kubevirt.io/kvm: "1"
-  parameters:
-    machineType: virt
-    firmware:
-      url: registry.example.com/firmware/rpi4:latest
-      digest: sha256:abc...
-    resources:
-      cpu: 4
-      memory: 4Gi
-    storage:
-      size: 16Gi
-      fsOverhead: "10%"
-```
+   ```yaml
+   apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+   kind: VirtualTargetClass
+   metadata:
+     name: qemu-rpi4
+     namespace: jumpstarter
+   spec:
+     provisioner: qemu.jumpstarter.dev
+     bindingMode: Immediate
+     reclaimPolicy: Delete
+     scheduling:
+       nodeSelector:
+         kubernetes.io/arch: arm64
+       tolerations:
+         - key: jumpstarter.dev/kvm
+           operator: Exists
+           effect: NoSchedule
+       resources:
+         limits:
+           devices.kubevirt.io/kvm: "1"
+     parameters:
+       machineType: virt
+       firmware:
+         url: registry.example.com/firmware/rpi4:latest
+         digest: sha256:abc...
+       resources:
+         cpu: 4
+         memory: 4Gi
+       storage:
+         size: 16Gi
+         fsOverhead: "10%"
+   ```
 
 2. Create an `ExporterSet` in the **same namespace** that references the class
    by name and declares scaling + lease-matching labels:
 
-```yaml
-apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
-kind: ExporterSet
-metadata:
-  name: rpi4-virtual
-  namespace: jumpstarter
-spec:
-  minReplicas: 0
-  maxReplicas: 20
-  minAvailableReplicas: 2
-  scaleDownCooldown: 5m
-  recycleStrategy: ExitAndReplace
-  virtualTargetClassName: qemu-rpi4
-  parameters:
-    resources:
-      memory: 8Gi
-  selector:
-    matchLabels:
-      board: rpi4
-  template:
-    metadata:
-      labels:
-        board: rpi4
-        arch: aarch64
-        virtual: "true"
-    spec:
-      drivers:
-        - name: qemu
-          type: jumpstarter_driver_qemu.driver.Qemu
-        - name: tcp
-          type: jumpstarter_driver_network.driver.TcpNetwork
-          config:
-            port: 22
-        - name: serial
-          type: jumpstarter_driver_serial.driver.QemuSerial
-```
+   ```yaml
+   apiVersion: virtualtarget.jumpstarter.dev/v1alpha1
+   kind: ExporterSet
+   metadata:
+     name: rpi4-virtual
+     namespace: jumpstarter
+   spec:
+     minReplicas: 0
+     maxReplicas: 20
+     minAvailableReplicas: 2
+     scaleDownCooldown: 5m
+     recycleStrategy: ExitAndReplace
+     virtualTargetClassName: qemu-rpi4
+     parameters:
+       resources:
+         memory: 8Gi
+     selector:
+       matchLabels:
+         board: rpi4
+     template:
+       metadata:
+         labels:
+           board: rpi4
+           arch: aarch64
+           virtual: "true"
+       spec:
+         drivers:
+           - name: qemu
+             type: jumpstarter_driver_qemu.driver.Qemu
+           - name: tcp
+             type: jumpstarter_driver_network.driver.TcpNetwork
+             config:
+               port: 22
+           - name: serial
+             type: jumpstarter_driver_serial.driver.QemuSerial
+   ```
 
 **User actions:** None.
 
@@ -1503,6 +1503,7 @@ it straightforward to correlate Pods, Exporters, and their logs.
 ## Test Plan
 
 ### Unit Tests
+
 Unit tests should meet the project test coverage requirements.
 
 ### Integration Tests

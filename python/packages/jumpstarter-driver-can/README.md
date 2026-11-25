@@ -100,6 +100,7 @@ export:
 | params        | IsoTp parameters, refer to the [IsoTpParams](#isotpparams) section table. Only `stmin`, `blocksize`, `wftmax`, `tx_padding`, `tx_data_length` and `can_fd` are applied to the kernel socket | `IsoTpParams` | no | see table |
 
 ### IsoTpParams
+
 | Parameter                   | Description                                                                                           | Type             | Required | Default    |
 |-----------------------------|-------------------------------------------------------------------------------------------------------|------------------|----------|------------|
 | `stmin`                     | Minimum Separation Time minimum in milliseconds between consecutive frames.                           | `int`            | No       | `0`        |

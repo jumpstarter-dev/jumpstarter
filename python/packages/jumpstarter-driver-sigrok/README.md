@@ -1,6 +1,7 @@
 # Sigrok Driver
 
 `jumpstarter-driver-sigrok` wraps [sigrok-cli](https://sigrok.org/wiki/Sigrok-cli) to provide logic analyzer and oscilloscope capture from Jumpstarter exporters. It supports:
+
 - **Logic analyzers** (digital channels)
 - **Oscilloscopes** (analog channels) - voltage waveform capture
 - One-shot and streaming capture
@@ -65,6 +66,7 @@ export:
 ## Output Formats
 
 The driver supports multiple output formats. **VCD (Value Change Dump) is the default** because:
+
 - **Efficient**: Only records signal changes (not every sample)
 - **Precise timing**: Includes exact timestamps in nanoseconds
 - **Widely supported**: Standard format for signal analysis tools
@@ -98,6 +100,7 @@ config = CaptureConfig(
 ### Example 1: Simple Capture (VCD format - default)
 
 **Python client code:**
+
 ```python
 from jumpstarter_driver_sigrok.common import CaptureConfig
 
@@ -116,6 +119,7 @@ for sample in samples[:5]:
 ```
 
 **Equivalent sigrok-cli command:**
+
 ```bash
 sigrok-cli -d fx2lafw -C D0,D1,D2 \
   -c samplerate=1MHz --samples 1000 \
@@ -127,6 +131,7 @@ sigrok-cli -d fx2lafw -C D0,D1,D2 \
 ### Example 2: Triggered Capture with Pretrigger
 
 **Python client code:**
+
 ```python
 from jumpstarter_driver_sigrok.common import CaptureConfig
 
@@ -151,6 +156,7 @@ for sample in samples[:3]:
 ```
 
 **Equivalent sigrok-cli command:**
+
 ```bash
 sigrok-cli -d fx2lafw -C D0,D1,D2,D3 \
   -c samplerate=8MHz,pretrigger=5000 --samples 20000 \
@@ -163,6 +169,7 @@ sigrok-cli -d fx2lafw -C D0,D1,D2,D3 \
 ### Example 3: Oscilloscope (Analog Channels)
 
 **Exporter config:**
+
 ```yaml
 export:
   oscilloscope:
@@ -176,6 +183,7 @@ export:
 ```
 
 **Python client code:**
+
 ```python
 from jumpstarter_driver_sigrok.common import CaptureConfig, OutputFormat
 
@@ -197,6 +205,7 @@ for sample in samples[:5]:
 ```
 
 **Equivalent sigrok-cli command:**
+
 ```bash
 sigrok-cli -d rigol-ds:conn=usb -C A0=CH1,A1=CH2 \
   -c samplerate=1MHz --samples 10000 \
@@ -208,6 +217,7 @@ sigrok-cli -d rigol-ds:conn=usb -C A0=CH1,A1=CH2 \
 ### Example 4: Bits Format (Simple Bit Sequences)
 
 **Python client code:**
+
 ```python
 from jumpstarter_driver_sigrok.common import CaptureConfig, OutputFormat
 
@@ -227,6 +237,7 @@ for channel, bits in bits_by_channel.items():
 ```
 
 **Equivalent sigrok-cli command:**
+
 ```bash
 sigrok-cli -d demo -C D0,D1,D2 \
   -c samplerate=100kHz --samples 100 \

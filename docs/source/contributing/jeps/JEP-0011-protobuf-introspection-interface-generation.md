@@ -667,7 +667,7 @@ This JEP is a purely software-layer change. No hardware is required or affected.
 
 ### Architecture
 
-```
+```text
   +---------------------------------------------- development time ---+
   |                                                                   |
   |  +----------------------------+                                   |
@@ -902,7 +902,7 @@ Jumpstarter drivers follow several patterns in practice. The introspection and p
 
 The standard and most common pattern in the Jumpstarter ecosystem. A separate abstract interface class defines the contract, one or more driver classes implement it, and a client class provides the consumer API:
 
-```
+```text
 PowerInterface (abstract)      -> PowerClient (DriverClient)
   +-- MockPower (Driver)
   +-- DutlinkPower (Driver)
@@ -984,7 +984,7 @@ The `resource_handle` field option is defined in `jumpstarter/annotations/annota
 
 Jumpstarter drivers form trees. A `Dutlink` board exposes a composite root with named children - `power` (PowerInterface), `storage` (StorageMuxFlasherInterface), `console` (serial) - each with its own UUID, interface, and client. The `GetReport` RPC returns this tree as a flat list of `DriverInstanceReport` entries linked by `parent_uuid`:
 
-```
+```text
 Dutlink (CompositeInterface, uuid=root)
 +-- power   (PowerInterface,              uuid=aaa, parent=root)
 +-- storage (StorageMuxFlasherInterface,   uuid=bbb, parent=root)
@@ -1347,7 +1347,7 @@ The following are **not** part of this JEP but are natural extensions enabled by
 
 Today, every driver call flows through a single generic RPC:
 
-```
+```text
 Client                              Exporter
   |                                    |
   |  DriverCall(uuid, "on", [])        |
@@ -1360,7 +1360,7 @@ Client                              Exporter
 
 With native gRPC, each interface becomes a real service with compiled stubs:
 
-```
+```text
 Client                              Exporter
   |                                    |
   |  PowerInterface.On(Empty)          |
@@ -1402,6 +1402,7 @@ message PowerReading {
 ```
 
 `protoc` generates:
+
 - **Python:** `power_pb2.py` (messages), `power_pb2_grpc.py` (stubs + servicers)
 - **Java/Kotlin:** `PowerInterfaceGrpc.java`, `Power.java` (messages)
 - **Go:** `power_grpc.pb.go`, `power.pb.go`
@@ -1584,7 +1585,7 @@ During the transition, the exporter serves both protocols simultaneously:
 
 Both paths call the same underlying driver methods. The driver implementation is unchanged - it's the dispatch and serialization layers that differ.
 
-```
+```text
                     +-----------------------------+
                     |     ExporterService         |
 Legacy client ----> |  DriverCall(uuid, method)   | --+

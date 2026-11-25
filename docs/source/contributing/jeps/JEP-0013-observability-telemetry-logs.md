@@ -4,19 +4,19 @@ orphan: true
 
 # JEP-0013: Metrics, Tracing, and Log Observability
 
-| Field             | Value                                                                 |
-| ----------------- | --------------------------------------------------------------------- |
-| **JEP**           | 0013                                                                  |
-| **Title**         | Metrics, Tracing, and Log Observability                               |
-| **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo <miguelangel@ajo.es>)             |
-| **Status**        | Accepted                                                              |
-| **Type**          | Standards Track                                                       |
-| **Created**       | 2026-04-23                                                            |
-| **Updated**       | 2026-11-04                                                            |
-| **Discussion**    | https://github.com/jumpstarter-dev/jumpstarter/pull/631               |
-| **Requires**      | -                                                                     |
-| **Supersedes**    | -                                                                     |
-| **Superseded-By** | -                                                                     |
+| Field             | Value                                                              |
+| ----------------- | ------------------------------------------------------------------ |
+| **JEP**           | 0013                                                               |
+| **Title**         | Metrics, Tracing, and Log Observability                            |
+| **Author(s)**     | @mangelajo (Miguel Angel Ajo Pelayo <miguelangel@ajo.es>)          |
+| **Status**        | Accepted                                                           |
+| **Type**          | Standards Track                                                    |
+| **Created**       | 2026-04-23                                                         |
+| **Updated**       | 2026-11-04                                                         |
+| **Discussion**    | [PR #631](https://github.com/jumpstarter-dev/jumpstarter/pull/631) |
+| **Requires**      | -                                                                  |
+| **Supersedes**    | -                                                                  |
+| **Superseded-By** | -                                                                  |
 
 ---
 
@@ -25,7 +25,7 @@ orphan: true
 This JEP defines an optional, cross-component observability model for
 Jumpstarter covering lease context metadata, structured operational events,
 exporter/driver metrics, and standardized logging. It targets direct integration
-with Prometheus (scrape), Loki (log aggregation), and Perses (dashboards)  - 
+with Prometheus (scrape), Loki (log aggregation), and Perses (dashboards)  -
 without mandating OpenTelemetry - and introduces an optional in-cluster
 Jumpstarter Telemetry service that aggregates data from exporters and clients so
 that edge processes never need Loki or cluster-scrape credentials.
@@ -52,9 +52,10 @@ without requiring the Telemetry service.
 
 Today, operators and CI maintainers need to answer questions that raw Kubernetes
 objects and ad hoc text logs do not always answer in one place:
+
 - *Which pipeline or image was being tested on this lease?*
 - *How often do flashes fail on this exporter?*
-- *What lease or user correlates a controller line with a failure on the client?* 
+- *What lease or user correlates a controller line with a failure on the client?*
 
 The `Lease` API already models scheduling and assignment; it does
 not yet provide a first-class, documented place for run metadata or a standard
@@ -582,7 +583,7 @@ are still useful for selection and for tools that only understand metadata.
   and used as indexed stream selectors. They must be low-cardinality to
   keep the active stream count manageable (Grafana recommends < 100 k
   active streams per tenant). With the labels above, a deployment with
-  200 exporters across 5 namespaces produces roughly 1 000 streams  - 
+  200 exporters across 5 namespaces produces roughly 1 000 streams  -
   well within budget. High-cardinality fields like `client` or
   `lease_id` must stay in the JSON body: promoting `client` to a
   stream label in a 1 000-client, 200-exporter cluster would create
@@ -699,7 +700,6 @@ Collector rests on three arguments, ordered by importance:
    Full three-pillar OTel (unified logs and metrics via OTLP) is
    *optional product territory*; this JEP optimizes for low ceremony
    and direct integration with exactly those two backends.
-
 
 **Future extension:** because the Telemetry service already aggregates
 metrics snapshots and structured log entries in well-defined formats,
@@ -858,7 +858,7 @@ a retry could result in duplicate log entries in Loki.
 
 **Alternatives considered:**
 
-1. **Idempotent** log pushes (deduplication keys per `LogEntry`)  - 
+1. **Idempotent** log pushes (deduplication keys per `LogEntry`)  -
   appropriate for billing- or SLO-sensitive log pipelines; requires
   a dedup store or Loki-side dedup.
 2. **Best effort** (at-least-once) for `PushLogs` without global
@@ -1004,7 +1004,7 @@ then, omitting it saves ~45 characters of exemplar budget.
 
 `spec.context` keys (e.g. `build_id`, `image_digest`) are included as
 exemplar keys when listed in the operator's `exemplarKeys` allowlist (see
-*Operator configuration*). Because exemplars are per-observation metadata  - 
+*Operator configuration*). Because exemplars are per-observation metadata  -
 not label dimensions - they have zero impact on series cardinality regardless
 of how many distinct values appear.
 
@@ -1703,7 +1703,7 @@ all subsequent phases have E2E coverage from the start.
   Kubernetes-native CRDs; CUE/JSON spec with GitOps SDKs; focused on
   Prometheus, Loki, and Tempo data sources (see **DD-10**).
 - [OpenTelemetry](https://opentelemetry.io/) and the
-  [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)  - 
+  [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)  -
   relevant as ecosystem and operator-side *optional* plumbing;
   this JEP intentionally does not adopt them in-process by default (**DD-6**).
 - Other HiL / test systems often separate "run metadata" (like Jenkins build

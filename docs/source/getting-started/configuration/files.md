@@ -19,6 +19,7 @@ tokens.
 selection.  
 
 **Format**:
+
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: UserConfig
@@ -36,6 +37,7 @@ config:
 tokens, and driver settings.
 
 **Format**:
+
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ClientConfig
@@ -86,6 +88,7 @@ instead of loading the current client. See [Loading Order](loading-order.md).
 - `JMP_EXPORTER_LABELS` - Connected exporter's labels as comma-separated `key=value` pairs
 
 **CLI Commands**:
+
 ```{code-block}  console
 $ jmp config client create <alias>  # Create a client config
 $ jmp config client use <alias>     # Switch to a different client config
@@ -122,6 +125,7 @@ config home can be overridden with `JMP_CLIENT_CONFIG_HOME` or `XDG_CONFIG_HOME`
 to write the config to an explicit path.
 
 **Format**:
+
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
 kind: ExporterConfig
@@ -179,6 +183,7 @@ a hook configured with `onFailure: exit`; units using
 to the Kubernetes API is restored.
 
 **Environment Variables**:
+
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
 - `JMP_NAMESPACE` - Namespace in the {term}`controller`, when `metadata` in the config file sets none
 - `JMP_NAME` - {term}`Exporter` name, when `metadata` in the config file sets none
@@ -189,6 +194,7 @@ renews an internal token before it expires and writes the new value back to the
 `token` field of the file; see [Exporters](../../introduction/exporters.md).
 
 **CLI Commands**:
+
 ```{code-block}  console
 $ jmp config exporter create <alias>  # Create an exporter config
 $ jmp config exporter list            # List available exporter configs

@@ -111,7 +111,7 @@ For the full list of available tools and their parameters, see the
 
 ### Claude Code Session
 
-```
+```console
 $ claude
 
 > /mcp

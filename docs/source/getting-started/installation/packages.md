@@ -18,16 +18,19 @@ The [Jumpstarter Python packages](https://pkg.jumpstarter.dev/) provide all the
 tools you need to interact with hardware locally.
 
 #### Using the Installer
+
 ##### Quick Install (Recommended)
 
 Install directly using our installer from GitHub:
 
 For the latest release:
+
 ```{code-block} console
 curl -fsSL https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/python/install.sh | bash
 ```
 
 Or with explicit source specification (main branch example)
+
 ```{code-block} console
 curl -fsSL https://raw.githubusercontent.com/jumpstarter-dev/jumpstarter/main/python/install.sh | bash -s - -s main
 ```
@@ -61,7 +64,7 @@ directory; pass `--source` to switch, for example `jmp self update --source main
 
 After installation, the following structure is created:
 
-```
+```text
 ~/.local/jumpstarter/
 +-- venv/                    # Python virtual environment
 +-- bin/                     # Command symlinks
@@ -73,11 +76,13 @@ After installation, the following structure is created:
 ##### Activating the Environment
 
 Activate for current session, adjust `~/.local/jumpstarter` if you picked a custom install directory.
+
 ```{code-block} console
 source ~/.local/jumpstarter/set
 ```
 
 Or add to your shell profile for permanent activation, adjust `~/.local/jumpstarter` if you picked a custom install directory.
+
 ```{code-block} console
 echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 ```
@@ -96,7 +101,6 @@ echo 'source ~/.local/jumpstarter/set' >> ~/.bashrc
 - pip3
 - curl
 - bash shell
-
 
 ##### Uninstalling
 

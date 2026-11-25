@@ -13,7 +13,7 @@ A modular web service for configuring Jumpstarter deployment settings on MicroSh
 
 ## Project Structure
 
-```
+```text
 config-svc/
 +-- __init__.py              # Package initialization
 +-- app.py                   # Main application entry point
@@ -34,7 +34,9 @@ config-svc/
 ## Module Organization
 
 ### `auth.py`
+
 Authentication and validation utilities:
+
 - `validate_hostname()` - RFC 1123 hostname validation
 - `validate_password()` - Password security validation
 - `check_auth()` - PAM-based authentication
@@ -42,7 +44,9 @@ Authentication and validation utilities:
 - `is_default_password()` - Default password check
 
 ### `system.py`
+
 System utility functions:
+
 - `get_current_hostname()` - Get system hostname
 - `get_jumpstarter_config()` - Retrieve Jumpstarter CR configuration
 - `set_root_password()` - Set root user password
@@ -55,7 +59,9 @@ System utility functions:
 - `get_default_route_ip()` - Get default route IP address
 
 ### `api.py`
+
 API route handlers:
+
 - `/api/change-password` - Password and SSH key management
 - `/api/configure-jumpstarter` - Jumpstarter CR configuration
 - `/api/system-stats` - System statistics
@@ -72,14 +78,18 @@ API route handlers:
 - `/kubeconfig` - Download kubeconfig
 
 ### `routes.py`
+
 Main UI route handlers:
+
 - `/` - Main configuration page
 - `/static/styles.css` - CSS stylesheet
 - `/logout` - Logout endpoint
 - `/configure-jumpstarter` - Legacy form submission handler
 
 ### `app.py`
+
 Main application entry point that:
+
 - Creates Flask application
 - Registers all routes
 - Updates login banner
@@ -97,6 +107,7 @@ pip install -e .
 ### Using pyproject.toml
 
 The application is configured using `pyproject.toml` with:
+
 - Project metadata
 - Dependencies (Flask 2.3+)
 - Optional dependencies (python-pam for PAM auth)
@@ -124,14 +135,18 @@ systemctl enable --now config-svc.service
 ## Dependencies
 
 ### Required
+
 - Python 3.9+
 - Flask 2.3+
 
 ### Optional
+
 - python-pam 2.0+ (for PAM authentication, falls back to subprocess)
 
 ### System Commands
+
 The application requires the following system commands:
+
 - `oc` - OpenShift CLI
 - `bootc` - bootc CLI
 - `pvscan` - LVM commands
@@ -143,6 +158,7 @@ The application requires the following system commands:
 ### Code Style
 
 The project uses:
+
 - Black for code formatting (line length: 120)
 - isort for import sorting
 - pylint for linting
@@ -164,5 +180,3 @@ mypy app.py auth.py system.py api.py routes.py
 - SSH key management with proper permissions
 - Hostname validation per RFC 1123
 - Default password change enforcement
-
-

@@ -1,6 +1,5 @@
 # NanoKVM-USB Driver
 
-
 `jumpstarter-driver-nanokvm-usb` provides KVM (Keyboard, Video, Mouse) control for
 [NanoKVM-USB](https://github.com/sipeed/NanoKVM-USB) devices connected directly
 to the exporter host over USB.

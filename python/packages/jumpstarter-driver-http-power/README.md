@@ -45,7 +45,7 @@ For devices that require HTTP Digest Auth instead, replace the `basic` block wit
           password: "secret"
 ```
 
-### Example configuration for Shelly Smart Plug (Gen1):
+### Example configuration for Shelly Smart Plug (Gen1)
 
 ```yaml
 apiVersion: jumpstarter.dev/v1alpha1
@@ -70,7 +70,7 @@ export:
           password: something
 ```
 
-### Example configuration for Shelly Smart Plug (Gen2/Gen3):
+### Example configuration for Shelly Smart Plug (Gen2/Gen3)
 
 Gen2/Gen3 plugs (e.g. Plug S G3) use the RPC API and report `voltage`/`current`
 as top-level keys, so `read()` works with no path configuration:
@@ -152,6 +152,7 @@ error at exporter startup.
 ### Examples
 
 Basic power control:
+
 ```python
 # Power on the device
 http_power_client.on()
@@ -159,7 +160,6 @@ http_power_client.on()
 # Power off the device
 http_power_client.off()
 ```
-
 
 Reading measurements: `read()` parses the JSON returned by `power_read` and pulls
 voltage and current from `voltage_path` / `current_path` (defaulting to top-level

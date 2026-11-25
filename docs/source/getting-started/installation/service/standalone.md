@@ -113,6 +113,7 @@ This creates a 1GB LVM disk image, starts MicroShift in a privileged container,
 sets up LVM volume groups for TopoLVM, and waits for MicroShift to be ready.
 
 Access the services:
+
 - **Configuration Web UI**: `http://localhost:8880` (login: `root` / `jumpstarter`)
 - **MicroShift API**: `https://jumpstarter.<your-ip>.nip.io:6443`
 - **Pod Monitoring**: the **MicroShift** section of the web UI,

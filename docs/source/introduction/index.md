@@ -267,10 +267,10 @@ authentication system that secures access through:
 - **Secure Communication** - All {term}`gRPC` communication between components uses
    token authentication
 - **Access Control** - {term}`Controller` enforces permissions based on token identity:
-   - Which {term}`exporter`s a client can {term}`lease`, through access policies
-     that match clients and {term}`exporter`s by label
-   - The longest {term}`lease` a client may request on those {term}`exporter`s
-   - Only the owner of a {term}`lease` can change, share, transfer, or release it
+  - Which {term}`exporter`s a client can {term}`lease`, through access policies
+    that match clients and {term}`exporter`s by label
+  - The longest {term}`lease` a client may request on those {term}`exporter`s
+  - Only the owner of a {term}`lease` can change, share, transfer, or release it
 - **Client-side Allow List** - Clients load only the driver client classes that
    match their `drivers.allow` patterns, so an {term}`exporter` cannot make a
    client import code it has not approved

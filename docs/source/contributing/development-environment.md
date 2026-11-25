@@ -19,6 +19,7 @@ We use [uv](https://docs.astral.sh/uv/) as our Python package and project
 manager, and `make` as our build interface.
 
 To install the basic set of dependencies, run the following commands:
+
 ```console
 $ sudo dnf install -y python-devel g++ make git uv qemu qemu-user-static
 ```
@@ -42,6 +43,7 @@ $ uv run jmp
 ### Running the Tests
 
 To run the tests, you can use `make` from the `python/` directory:
+
 ```console
 $ make test
 ```
@@ -84,7 +86,9 @@ $ CONTAINER_TOOL=podman make clean
 ```
 
 ### Running the Tests
+
 To run the tests, you can use the `make` command:
+
 ```console
 $ make test
 ```

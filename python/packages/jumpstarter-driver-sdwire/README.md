@@ -74,7 +74,7 @@ is also supported, but with two requirements:
    ```
 
    After flashing, **unplug and replug** the SD Wire USB cable. If you run the
-   driver against an unprogrammed device that has *not* had this fix applied,
+   driver against an unprogrammed device that has _not_ had this fix applied,
    the device is found but `host()`/`dut()` silently fail to move the mux.
 
 ## macOS notes
@@ -90,8 +90,8 @@ On macOS (`Darwin`) the driver does extra work that is unnecessary on Linux:
   protection circuit that reverts to HOST if it sees no SD activity on the DUT
   side shortly after switching.
 - **`host()` power cycles the reader's hub port.** Because the prior `eject`
-  leaves the SMSC reader stopped, `host()` routes the card back and *then*
-  power cycles port 1 of *this* SD Wire's internal hub to force a clean
+  leaves the SMSC reader stopped, `host()` routes the card back and _then_
+  power cycles port 1 of _this_ SD Wire's internal hub to force a clean
   re-enumeration (correlated by USB topology so other attached SD Wires are not
   disturbed).
 - **Storage discovery uses `system_profiler`** (pyudev is Linux-only) and may

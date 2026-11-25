@@ -96,9 +96,11 @@ Install a CH340 or CP2102 USB-serial kernel extension if no new port appears.
 
 **Permission denied on Linux**
 Add your user to the `dialout` group and log out/in:
+
 ```shell
 sudo usermod -aG dialout $USER
 ```
+
 Alternatively, create a udev rule for the adapter's USB vendor/product ID.
 
 **"No OBD-II adapters found"**

@@ -35,19 +35,19 @@ This example demonstrates how Python interacts with the {term}`exporter`:
 2. The `with env() as client:` statement creates a client connected to your
    local {term}`exporter` and handles connection setup and cleanup.
 
-3. `client.power.on()` directly calls the power driver's "on" method--the same
+3. `client.power.on()` directly calls the power driver's "on" method - the same
    action that `j power on` performs in the CLI.
 
-4. `client.power.off()` directly calls the power driver's "off" method--the same
+4. `client.power.off()` directly calls the power driver's "off" method - the same
    action that `j power off` performs in the CLI.
 
-Using a Python with Jumpstarter allows you to:
+Using Python with Jumpstarter allows you to:
 
-   - Create sequences of operations (power on -> wait -> power off)
-   - Save and reuse complex workflows
-   - Add logic, error handling, and conditional operations
-   - Import other Python libraries (like `time` in this example)
-   - Build sophisticated automation scripts
+- Create sequences of operations (power on -> wait -> power off)
+- Save and reuse complex workflows
+- Add logic, error handling, and conditional operations
+- Import other Python libraries (like `time` in this example)
+- Build sophisticated automation scripts
 
 ### Running `pytest` in the Shell
 
