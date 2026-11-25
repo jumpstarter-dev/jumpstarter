@@ -35,7 +35,6 @@ import (
 
 // ClientReconciler reconciles a Client object
 type ClientReconciler struct {
-	DisableLegacyTokenAuthentication bool
 	kclient.Client
 	Scheme   *runtime.Scheme
 	Signer   *oidc.Signer
@@ -106,7 +105,7 @@ func (r *ClientReconciler) reconcileStatusCredential(
 	secret, expiry, err := ensureSecret(ctx, kclient.ObjectKey{
 		Name:      client.CredentialSecretName(),
 		Namespace: client.Namespace,
-	}, r.Client, r.Scheme, r.Signer, client.InternalSubject(), client, r.DisableLegacyTokenAuthentication, nil)
+	}, r.Client, r.Scheme, r.Signer, client.InternalSubject(), client, nil)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("reconcileStatusCredential: failed to prepare credential for client: %w", err)
 	}

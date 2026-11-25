@@ -302,9 +302,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
     """
 
     _token_rotation_unsupported: bool = field(init=False, default=False)
-    _token_rotation_advised: bool = field(init=False, default=False)
-    _token_refresh_requested: Event = field(init=False, default_factory=Event)
-    _status_stream_scope: CancelScope | None = field(init=False, default=None)
 
     # Internal State Fields
 
@@ -500,10 +497,9 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         try:
             yield jumpstarter_pb2_grpc.ControllerServiceStub(channel)
         finally:
-            with CancelScope(shield=True):
-                await channel.close()
+            await channel.close()
 
-    async def _retry_stream(  # noqa: C901 - keep reconnect and outage handling in the same cancellation scope
+    async def _retry_stream(
         self,
         stream_name: str,
         stream_factory: Callable[[jumpstarter_pb2_grpc.ControllerServiceStub], AsyncGenerator],
@@ -515,16 +511,12 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         delay = backoff
         outage_started = None
         while True:
-            deadline = (
-                outage_started + outage_budget
-                if outage_started is not None and outage_budget is not None else math.inf
-            )
+            deadline = math.inf
+            if outage_started is not None and outage_budget is not None:
+                deadline = outage_started + outage_budget
             scope = CancelScope(deadline=deadline)
-            stream_token = self.token
             try:
                 with scope:
-                    if stream_name == "Status":
-                        self._status_stream_scope = scope
                     async with self._controller_stub() as controller:
                         async for item in stream_factory(controller):
                             if outage_started is not None:
@@ -550,13 +542,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                     raise
                 reason = str(e)
             else:
-                if scope.cancelled_caught and stream_name == "Status" and self.token != stream_token:
-                    logger.info("Reconnecting Status stream to acknowledge credential migration")
-                    continue
                 reason = "stream ended" if not scope.cancelled_caught else "outage deadline reached"
-            finally:
-                if stream_name == "Status":
-                    self._status_stream_scope = None
 
             now = anyio.current_time()
             if outage_started is None:
@@ -715,7 +701,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         Returns:
             The newly rotated token string.
         """
-        rotation_advised = self._token_rotation_advised
         async with self._controller_stub() as controller:
             response: jumpstarter_pb2.RotateTokenResponse = await controller.RotateToken(
                 jumpstarter_pb2.RotateTokenRequest(),
@@ -733,14 +718,10 @@ class Exporter(AsyncContextManagerMixin, Metadata):
             except Exception:
                 logger.exception("Error in on_token_rotated callback")
 
-        # Reauthenticate Status with the replacement so the controller can
-        # acknowledge migration. This leaves the active lease and Listen alone.
-        if rotation_advised and self._status_stream_scope is not None:
-            self._status_stream_scope.cancel()
         return new_token
 
     async def _token_refresh_loop(self) -> None:
-        """Refresh on expiry or an explicit controller advisory, using one retry loop."""
+        """Monitor token expiration and request a new token when it is about to expire."""
         while True:
             # The server also verifies the internal signature, issuer and exporter UID.
             if not is_internal_exporter_token(self.token):
@@ -751,17 +732,13 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.debug("Token does not have an expiry claim; automatic refresh disabled")
                 return
 
-            if sleep_duration > 0 and not self._token_refresh_requested.is_set():
+            if sleep_duration > 0:
                 logger.debug("Token refresh scheduled in %.1f seconds", sleep_duration)
-                with move_on_after(min(sleep_duration, _TOKEN_REFRESH_CHECK_INTERVAL)):
-                    await self._token_refresh_requested.wait()
+                await sleep(min(sleep_duration, _TOKEN_REFRESH_CHECK_INTERVAL))
                 continue
 
-            previous_token = self.token
             if not await self._rotate_token_with_retry():
                 return
-            if self.token != previous_token:
-                self._token_refresh_requested = Event()
 
     async def _rotate_token_with_retry(self) -> bool:
         attempt = 0
@@ -771,7 +748,7 @@ class Exporter(AsyncContextManagerMixin, Metadata):
                 logger.error("Exporter token expired; re-provision the exporter credential")
                 return False
             try:
-                logger.info("Requesting exporter token renewal from controller")
+                logger.info("Token is about to expire; requesting new token from controller")
                 await self.rotate_token()
                 self._token_rotation_unsupported = False
                 logger.info("Successfully refreshed exporter authentication token")
@@ -1502,12 +1479,6 @@ class Exporter(AsyncContextManagerMixin, Metadata):
         tg: TaskGroup,
     ) -> bool:
         """Process a single status update. Returns True to stop the status loop."""
-        if status.token_rotation_advised and not self._token_rotation_advised:
-            logger.info("Controller advises exporter token rotation")
-            self._token_refresh_requested.set()
-        elif not status.token_rotation_advised and self._token_rotation_advised:
-            self._token_refresh_requested = Event()
-        self._token_rotation_advised = status.token_rotation_advised
         previous_state = self._lease_state
         current_leased = status.leased
 

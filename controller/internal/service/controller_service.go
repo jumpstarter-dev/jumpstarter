@@ -1209,8 +1209,6 @@ func (s *ControllerService) Status(req *pb.StatusRequest, stream pb.ControllerSe
 					// Always set, even when empty: its presence tells the exporter
 					// that this controller keeps lease hook records.
 					LeaseHooks: exporter.Status.LeaseHooks.ToProtobuf(),
-					TokenRotationAdvised: meta.IsStatusConditionTrue(exporter.Status.Conditions,
-						string(jumpstarterdevv1alpha1.ExporterConditionTypeCredentialUpdateRequired)),
 				}
 				if proto.Equal(lastPbStatusResponse, &status) {
 					jlog.Verbose(logger, "Not sending status update to exporter, it is the same as the last one")

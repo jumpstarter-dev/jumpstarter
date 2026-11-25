@@ -111,9 +111,6 @@ message StatusResponse {
   map<string, string> context = 4; // User-defined lease context metadata.
   LeaseHooks lease_hooks = 5; // Hook record of the exporter's latest lease. Always set by controllers that keep it, even when empty.
   optional string lease_uid = 6; // UID of the active lease, if any. Tells it apart from an earlier lease with the same name.
-  // The exporter should call RotateToken now, even before its expiry-based renewal window.
-  // Advisory only: RotateToken still authenticates the credential and enforces eligibility.
-  bool token_rotation_advised = 7;
 }
 
 // Phase of a lease lifecycle hook.

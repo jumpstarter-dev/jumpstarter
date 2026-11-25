@@ -24,10 +24,10 @@ Kubernetes**. It does not trust signatures made with the previous signing key.
 
 This fallback is enabled by default. It runs only after normal authentication
 fails. Valid current-key and external OIDC tokens do not cause an additional
-Secret lookup. The fallback reads the credential Secret directly from the API
-server, checks the token's issuer, audience, expiry and internal subject, and
-requires an exact token or SHA-256 hash match. Normal resource authorization,
-including the identity's UID, still applies.
+Secret lookup. The fallback checks the token's issuer, audience, expiry and
+internal subject, then requires an exact token or SHA-256 hash match in the
+cached Secret before re-reading the Secret and its owner directly from the API
+server. Normal resource authorization, including the identity's UID, still applies.
 
 When reconciliation replaces an old-key token in a `<name>-client` or
 `<name>-exporter` Secret, it retains the old token's hash in the Secret's
@@ -36,33 +36,33 @@ the Secret is retained; tokens supplied in requests are never enrolled. Install
 this migration support together with the signing-key fix: a credential already
 overwritten without retaining its hash cannot be recovered by this mechanism.
 
-Each fallback authentication logs a warning naming the credential Secret, without
-logging the token. Exporters also receive a `CredentialUpdateRequired=True`
-condition and a warning event. Update only the `token` field of the local
-configuration from the regenerated Secret, preserving driver and TLS settings,
-then reconnect. Fresh exporter authentication with the replacement clears the
-condition and removes the old-token allowance; heartbeats alone do not.
+Old tokens keep working until their own expiry; the fallback never extends it.
+Exporters retrieve the replacement token through `RotateToken` at their normal
+expiry-based refresh. Clients must be re-imported with `jmp admin import` to
+pick up their replacement credentials. Exporters without automatic refresh need
+their local `token` field updated from the Secret, preserving driver and TLS
+settings. Each fallback authentication logs a warning naming the credential
+Secret, without logging the token.
 
-The controller also sends `token_rotation_advised: true` on the exporter's
-`Status` stream while the update condition is true. Updated exporters wake
-their existing token-refresh loop immediately, retrieve the replacement through
-`RotateToken` even before the normal renewal window, and persist it through the
-existing token-save callback. Retries return the same replacement. They then
-reconnect only the Status stream with the new token so the controller can clear
-the condition and revoke the retained hash; active leases are not interrupted.
-Repeated advisory updates do not start concurrent rotations. Older exporters
-ignore the added protobuf field and continue their expiry-based refresh (where
-supported), or require the manual token update described above. Updated
-exporters connected to older controllers keep their existing expiry schedule.
+Keep the fallback enabled until the old tokens have expired. Turning it off
+earlier cuts off holders that have not refreshed. The switch only controls
+authentication: reconciliation records and retains the hash even while fallback
+is off. Turning it off deletes nothing, and turning it back on restores access
+for unexpired retained tokens. To permanently revoke a retained credential,
+delete the Secret's `jumpstarter.dev/legacy-token-hash` annotation or the Secret
+itself. These changes affect new authentication; they do not retroactively
+reauthenticate existing streams.
 
-Client allowances remain until disabled, expired, or superseded by another
-credential regeneration. Old credentials keep their original expiry; this
-feature never extends it. Deleting the Secret or its retained-hash annotation
-revokes a retained credential. Disabling the fallback affects new authentication;
-it does not retroactively reauthenticate existing streams.
+The same migration path covers a `CONTROLLER_KEY` rotation. Only one previous
+generation is retained, so space rotations far enough apart for holders to
+refresh. The retained hash stays until the next credential regeneration, even
+after expiry; an expired token is rejected by the authenticator.
 
-After updating client and exporter configurations, disable the fallback in the
-controller ConfigMap's `config` section:
+After a suspected signing-key leak, turn the fallback off and re-issue
+credentials. Otherwise, genuine tokens obtained earlier would be carried over
+to the new signing key through the stored-token fallback.
+
+To disable the fallback, set this in the controller ConfigMap's `config` section:
 
 ```yaml
 authentication:
@@ -85,8 +85,7 @@ default, so omitted values can follow a future release's default.
 
 The operator updates the controller configuration and triggers a rolling restart.
 For manually managed deployments, restart the controller after editing its
-configuration. Reconciliation removes retained hashes when the fallback is
-disabled. Telemetry continues to require current-key telemetry tokens; callers
+configuration. Telemetry continues to require current-key telemetry tokens; callers
 obtain those through the controller's `GetServiceEndpoints` RPC.
 
 ## Username Collisions

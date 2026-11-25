@@ -26,8 +26,6 @@ const PreviousTokenHashAnnotation = "jumpstarter.dev/previous-token-hash"
 
 const expiredTokenAnnotation = "jumpstarter.dev/expired-token-at"
 
-const credentialUpdateAnnotation = "jumpstarter.dev/credential-update-required"
-
 func ensureSecret(
 	ctx context.Context,
 	key client.ObjectKey,
@@ -36,7 +34,6 @@ func ensureSecret(
 	signer *oidc.Signer,
 	subject string,
 	owner metav1.Object,
-	disableLegacyTokens bool,
 	onRegenerate func(secret *corev1.Secret, replaced []byte),
 ) (*corev1.Secret, time.Time, error) {
 	logger := log.FromContext(ctx).WithName("ensureSecret")
@@ -81,9 +78,6 @@ func ensureSecret(
 			return nil, time.Time{}, err
 		}
 		token, ok := secret.Data[TokenKey]
-		if disableLegacyTokens {
-			delete(secret.Annotations, authentication.LegacyTokenHashAnnotation)
-		}
 		if !ok || signer.Validate(string(token)) != nil {
 			// Secret present but invalid
 			logger.Info("secret present but invalid, updating")
@@ -101,10 +95,7 @@ func ensureSecret(
 				if secret.Annotations == nil {
 					secret.Annotations = map[string]string{}
 				}
-				secret.Annotations[credentialUpdateAnnotation] = "true"
-				if !disableLegacyTokens {
-					secret.Annotations[authentication.LegacyTokenHashAnnotation] = TokenHash(string(token))
-				}
+				secret.Annotations[authentication.LegacyTokenHashAnnotation] = TokenHash(string(token))
 			}
 			if onRegenerate != nil {
 				onRegenerate(&secret, token)

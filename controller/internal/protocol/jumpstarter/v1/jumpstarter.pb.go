@@ -538,18 +538,15 @@ func (*StatusRequest) Descriptor() ([]byte, []int) {
 
 // Lease status update for an exporter.
 type StatusResponse struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Leased     bool                   `protobuf:"varint,1,opt,name=leased,proto3" json:"leased,omitempty"`                                                                            // Whether the exporter is currently leased.
-	LeaseName  *string                `protobuf:"bytes,2,opt,name=lease_name,json=leaseName,proto3,oneof" json:"lease_name,omitempty"`                                                // Name of the active lease, if any.
-	ClientName *string                `protobuf:"bytes,3,opt,name=client_name,json=clientName,proto3,oneof" json:"client_name,omitempty"`                                             // Name of the connected client, if any.
-	Context    map[string]string      `protobuf:"bytes,4,rep,name=context,proto3" json:"context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // User-defined lease context metadata.
-	LeaseHooks *LeaseHooks            `protobuf:"bytes,5,opt,name=lease_hooks,json=leaseHooks,proto3" json:"lease_hooks,omitempty"`                                                   // Hook record of the exporter's latest lease. Always set by controllers that keep it, even when empty.
-	LeaseUid   *string                `protobuf:"bytes,6,opt,name=lease_uid,json=leaseUid,proto3,oneof" json:"lease_uid,omitempty"`                                                   // UID of the active lease, if any. Tells it apart from an earlier lease with the same name.
-	// The exporter should call RotateToken now, even before its expiry-based renewal window.
-	// Advisory only: RotateToken still authenticates the credential and enforces eligibility.
-	TokenRotationAdvised bool `protobuf:"varint,7,opt,name=token_rotation_advised,json=tokenRotationAdvised,proto3" json:"token_rotation_advised,omitempty"`
-	unknownFields        protoimpl.UnknownFields
-	sizeCache            protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Leased        bool                   `protobuf:"varint,1,opt,name=leased,proto3" json:"leased,omitempty"`                                                                            // Whether the exporter is currently leased.
+	LeaseName     *string                `protobuf:"bytes,2,opt,name=lease_name,json=leaseName,proto3,oneof" json:"lease_name,omitempty"`                                                // Name of the active lease, if any.
+	ClientName    *string                `protobuf:"bytes,3,opt,name=client_name,json=clientName,proto3,oneof" json:"client_name,omitempty"`                                             // Name of the connected client, if any.
+	Context       map[string]string      `protobuf:"bytes,4,rep,name=context,proto3" json:"context,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // User-defined lease context metadata.
+	LeaseHooks    *LeaseHooks            `protobuf:"bytes,5,opt,name=lease_hooks,json=leaseHooks,proto3" json:"lease_hooks,omitempty"`                                                   // Hook record of the exporter's latest lease. Always set by controllers that keep it, even when empty.
+	LeaseUid      *string                `protobuf:"bytes,6,opt,name=lease_uid,json=leaseUid,proto3,oneof" json:"lease_uid,omitempty"`                                                   // UID of the active lease, if any. Tells it apart from an earlier lease with the same name.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatusResponse) Reset() {
@@ -622,13 +619,6 @@ func (x *StatusResponse) GetLeaseUid() string {
 		return *x.LeaseUid
 	}
 	return ""
-}
-
-func (x *StatusResponse) GetTokenRotationAdvised() bool {
-	if x != nil {
-		return x.TokenRotationAdvised
-	}
-	return false
 }
 
 // State of one lease lifecycle hook.
@@ -2501,7 +2491,7 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\x0eListenResponse\x12'\n" +
 	"\x0frouter_endpoint\x18\x01 \x01(\tR\x0erouterEndpoint\x12!\n" +
 	"\frouter_token\x18\x02 \x01(\tR\vrouterToken\"\x0f\n" +
-	"\rStatusRequest\"\xb7\x03\n" +
+	"\rStatusRequest\"\x81\x03\n" +
 	"\x0eStatusResponse\x12\x16\n" +
 	"\x06leased\x18\x01 \x01(\bR\x06leased\x12\"\n" +
 	"\n" +
@@ -2511,8 +2501,7 @@ const file_jumpstarter_v1_jumpstarter_proto_rawDesc = "" +
 	"\acontext\x18\x04 \x03(\v2+.jumpstarter.v1.StatusResponse.ContextEntryR\acontext\x12;\n" +
 	"\vlease_hooks\x18\x05 \x01(\v2\x1a.jumpstarter.v1.LeaseHooksR\n" +
 	"leaseHooks\x12 \n" +
-	"\tlease_uid\x18\x06 \x01(\tH\x02R\bleaseUid\x88\x01\x01\x124\n" +
-	"\x16token_rotation_advised\x18\a \x01(\bR\x14tokenRotationAdvised\x1a:\n" +
+	"\tlease_uid\x18\x06 \x01(\tH\x02R\bleaseUid\x88\x01\x01\x1a:\n" +
 	"\fContextEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\r\n" +

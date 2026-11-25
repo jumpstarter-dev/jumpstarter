@@ -2,9 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
 	"testing"
-	"time"
 
 	api "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
@@ -14,7 +12,6 @@ import (
 	pb "github.com/jumpstarter-dev/jumpstarter/controller/internal/protocol/jumpstarter/v1"
 	"google.golang.org/grpc/metadata"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
@@ -115,46 +112,5 @@ func TestLegacyExporterTokenMigration(t *testing.T) {
 	}
 	if string(secret.Data[controller.TokenKey]) != newToken {
 		t.Fatal("migration mutated the replacement")
-	}
-}
-
-func TestStatusStreamAdvisesTokenRotation(t *testing.T) {
-	svc, kc := leaseHooksService(t, api.ExporterStatus{})
-	ctx, cancel := context.WithTimeout(exporterRPCContext(context.Background()), 5*time.Second)
-	defer cancel()
-	stream := &capturingStatusStream{ctx: ctx, sent: make(chan *pb.StatusResponse, 4)}
-	done := make(chan error, 1)
-	go func() { done <- svc.Status(&pb.StatusRequest{}, stream) }()
-	for _, advised := range []bool{false, true, false} {
-		select {
-		case response := <-stream.sent:
-			if response.TokenRotationAdvised != advised {
-				t.Fatalf("token_rotation_advised=%t, want %t", response.TokenRotationAdvised, advised)
-			}
-		case err := <-done:
-			t.Fatalf("Status ended before advisory: %v", err)
-		case <-ctx.Done():
-			t.Fatal("Status did not send the advisory update")
-		}
-		exporter := &api.Exporter{}
-		if err := kc.Get(ctx, client.ObjectKey{Namespace: "default", Name: "test-exporter"}, exporter); err != nil {
-			t.Fatal(err)
-		}
-		original := client.MergeFrom(exporter.DeepCopy())
-		conditionStatus := metav1.ConditionTrue
-		if advised {
-			conditionStatus = metav1.ConditionFalse
-		}
-		meta.SetStatusCondition(&exporter.Status.Conditions, metav1.Condition{
-			Type:   string(api.ExporterConditionTypeCredentialUpdateRequired),
-			Status: conditionStatus, Reason: "Migration", Message: "Signing key migration",
-		})
-		if err := kc.Status().Patch(ctx, exporter, original); err != nil {
-			t.Fatal(err)
-		}
-	}
-	cancel()
-	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
-		t.Fatalf("Status shutdown: %v", err)
 	}
 }

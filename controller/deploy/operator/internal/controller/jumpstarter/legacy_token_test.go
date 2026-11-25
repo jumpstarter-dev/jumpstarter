@@ -1,7 +1,6 @@
 package jumpstarter
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -15,7 +14,7 @@ func TestStoredTokenFallbackConfig(t *testing.T) {
 		js := &operatorv1alpha1.Jumpstarter{}
 		js.Spec.Authentication.Internal.Enabled = true
 		js.Spec.Authentication.Internal.AllowStoredTokenFallback = allowed
-		cfg, err := (&JumpstarterReconciler{}).buildConfig(context.Background(), js)
+		cfg, err := (&JumpstarterReconciler{}).buildConfig(t.Context(), js)
 		if err != nil {
 			t.Fatal(err)
 		}

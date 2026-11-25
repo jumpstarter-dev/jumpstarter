@@ -132,10 +132,9 @@ func (h *ExporterLeaseHooks) OwesAfterLease() bool {
 type ExporterConditionType string
 
 const (
-	ExporterConditionTypeRegistered               ExporterConditionType = "Registered"
-	ExporterConditionTypeOnline                   ExporterConditionType = "Online"
-	ExporterConditionTypeTokenExpiring            ExporterConditionType = "TokenExpiring"
-	ExporterConditionTypeCredentialUpdateRequired ExporterConditionType = "CredentialUpdateRequired"
+	ExporterConditionTypeRegistered    ExporterConditionType = "Registered"
+	ExporterConditionTypeOnline        ExporterConditionType = "Online"
+	ExporterConditionTypeTokenExpiring ExporterConditionType = "TokenExpiring"
 )
 
 // ExporterStatus values - PascalCase for Kubernetes, converted from proto ALL_CAPS
