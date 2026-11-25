@@ -109,3 +109,19 @@ def test_variadic_models_are_built_one_by_one():
     assert kwargs == {"extra": Options(retries=5)}
     with pytest.raises(Failure, match="argument 'extra'"):
         spec.bind([], {"extra": "nope"})
+
+
+class Pair(BaseModel):
+    a: int
+    b: int
+
+
+def test_json_errors_are_reported_and_text_still_accepted():
+    def configure(self, pair: Pair, text: str | Pair): ...
+
+    spec = argument_spec(configure, skip=1)
+    with pytest.raises(Failure, match=r"(?s)argument 'pair'.*\nb\n +Field required"):
+        spec.bind(['{"a": 1}'], {})
+    with pytest.raises(Failure, match="argument 'pair'"):
+        spec.bind(["not json"], {})
+    assert spec.bind(['{"a": 1, "b": 2}', "123"], {})[0] == [Pair(a=1, b=2), "123"]

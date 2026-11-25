@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import itertools
 import signal
+import threading
 import time
 from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
@@ -220,8 +222,14 @@ class LimitedClient(DriverClient):
         yield from self.streamingcall("read", max_items)
 
 
+class GreedyClient(DriverClient):
+    def read(self, max_items: int, keyword_max_items: int) -> Generator[int, None, None]:
+        yield from self.streamingcall("read", max_items + keyword_max_items)
+
+
 class Limited(JumpstarterDriver):
     active = 0
+    blocking = threading.Event()
 
     @classmethod
     def client(cls) -> str:
@@ -249,9 +257,15 @@ class Limited(JumpstarterDriver):
 
     @export
     def block(self) -> Generator[int, None, None]:
-        yield 1
-        time.sleep(2)  # on the event loop the client shares with a local exporter
-        yield 2
+        Limited.active += 1
+        try:
+            yield 1
+            Limited.blocking.set()
+            time.sleep(2)  # on the event loop the client shares with a local exporter
+            while True:
+                yield 2
+        finally:
+            Limited.active -= 1
 
 
 class TestBoundedStreams:
@@ -313,23 +327,57 @@ class TestBoundedStreams:
 
     def test_interrupting_a_blocked_portal_is_bounded(self, limited, monkeypatch):
         monkeypatch.setattr(context, "CANCEL_GRACE", 0.2)
+        Limited.blocking.clear()
+        main = threading.get_ident()
+        interrupted_at = []
 
         class Interrupted(Exception): ...
 
         def interrupt(signum, frame):
             raise Interrupted
 
+        def interrupt_once_blocked():
+            if Limited.blocking.wait(10):
+                interrupted_at.append(time.monotonic())
+                signal.pthread_kill(main, signal.SIGALRM)
+
         gauge = limited.children["gauge"]
         previous = signal.signal(signal.SIGALRM, interrupt)
-        started = time.monotonic()
         try:
-            signal.setitimer(signal.ITIMER_REAL, 0.1)
+            threading.Thread(target=interrupt_once_blocked, daemon=True).start()
             with pytest.raises(Interrupted), context.bounded_streams(gauge):
-                list(gauge.streamingcall("block"))
+                for _ in itertools.islice(gauge.streamingcall("block"), 1000):
+                    pass
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
-        assert time.monotonic() - started < 1.5
+        assert time.monotonic() - interrupted_at[0] < 1.5  # the driver blocks for two seconds
+        self.wait_idle()  # and once it does not, its stream ends as well
+
+    def test_interrupted_patching_is_undone(self, limited, monkeypatch):
+        real = context._registered_streamingcall
+        calls = []
+
+        def interrupted(client, ending):
+            if calls:
+                raise KeyboardInterrupt
+            calls.append(client)
+            return real(client, ending)
+
+        monkeypatch.setattr(context, "_registered_streamingcall", interrupted)
+        with pytest.raises(KeyboardInterrupt), context.bounded_streams(limited):
+            pass
+        assert "streamingcall" not in vars(calls[0])
+
+    def test_a_client_with_both_limit_names_keeps_them(self, limited):
+        driver = Driver("gauge", client=f"{__name__}.GreedyClient", max_items=2)
+        gauge = limited.children["gauge"]
+        assert ("keyword_keyword_max_items", 2) in driver.get_keyword_arguments("Gauge Read")
+        gauge.labels["jumpstarter.dev/client"] = f"{__name__}.GreedyClient"
+        gauge.read = GreedyClient.read.__get__(gauge)
+        values = driver.run_keyword(
+            "Gauge Read", [], {"max_items": 1, "keyword_max_items": 2, "keyword_keyword_max_items": 3}
+        )
+        assert [int(v) for v in values] == [3, 4, 5]
 
     def test_dropped_generators_do_not_swallow_an_interruption(self, limited):
         class Interrupted(Exception): ...

@@ -18,7 +18,7 @@ import weakref
 from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future
 from contextlib import AbstractAsyncContextManager, ExitStack, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from queue import Empty, SimpleQueue
@@ -274,13 +274,38 @@ def _wait(outcome: SimpleQueue[tuple[Any, BaseException | None]], deadline: floa
 class _PortalCall:
     """One async call in a portal that another thread can cancel."""
 
-    def __init__(self, portal: BlockingPortal, func: Callable[..., Awaitable[Any]], args: tuple):
+    def __init__(self, portal: BlockingPortal, func: Callable[..., Awaitable[Any]], args: tuple = ()):
         self.portal, self.func, self.args = portal, func, args
         self.scopes: list[anyio.CancelScope] = []
         self.interrupted = threading.Event()
-        self.done = threading.Event()
+        self.started = False
+        self.done = threading.Event()  # started, and no longer runs in the portal
 
-    async def run(self) -> Any:
+    def wait(self) -> Any:
+        """Run it and return its result; cancel it if the waiting keyword is interrupted."""
+        try:
+            self.started = True
+            result, error = _in_thread(self._call).get()
+        except BaseException:
+            self.interrupted.set()
+            if not self.done.is_set():
+                _wait(_in_thread(self._stop), time.monotonic() + CANCEL_GRACE)
+            raise
+        if error is not None:
+            raise error
+        return result
+
+    @property
+    def running(self) -> bool:
+        return self.started and not self.done.is_set()
+
+    def _call(self) -> Any:
+        try:
+            return self.portal.call(self._run)
+        finally:
+            self.done.set()
+
+    async def _run(self) -> Any:
         with anyio.CancelScope() as scope:
             self.scopes.append(scope)
             try:
@@ -288,43 +313,25 @@ class _PortalCall:
             finally:
                 self.done.set()
 
-    def stop(self) -> None:
+    def _stop(self) -> None:
         self.portal.call(self._cancel)
         if self.scopes:
             self.done.wait(CANCEL_GRACE)
         else:
-            self.done.set()  # run() has not started, and does nothing once it does
+            self.done.set()  # _run() has not started, and does nothing once it does
 
     def _cancel(self) -> None:
         for scope in self.scopes:
             scope.cancel()
 
 
-def call_cancellable(
-    portal: BlockingPortal,
-    func: Callable[..., Awaitable[Any]],
-    *args: Any,
-    stuck: threading.Event | None = None,
-) -> Any:
+def call_cancellable(portal: BlockingPortal, func: Callable[..., Awaitable[Any]], *args: Any) -> Any:
     """``portal.call(func, *args)`` that cancels ``func`` when the keyword is interrupted.
 
     ``portal.call`` returns on an RF timeout or Ctrl-C but leaves ``func``
     running in the portal: a stream being read stays open on the exporter.
-    ``stuck`` is set when it did not stop within ``CANCEL_GRACE``.
     """
-    call = _PortalCall(portal, func, args)
-    try:
-        result, error = _in_thread(lambda: portal.call(call.run)).get()
-    except BaseException:
-        call.interrupted.set()
-        if not call.done.is_set():
-            _wait(_in_thread(call.stop), time.monotonic() + CANCEL_GRACE)
-            if stuck is not None and not call.done.is_set():
-                stuck.set()
-        raise
-    if error is not None:
-        raise error
-    return result
+    return _PortalCall(portal, func, args).wait()
 
 
 async def _cancel_stream(stream: Any) -> None:
@@ -348,18 +355,17 @@ class _Stream:
     node: DriverClient
     stream: Any
     generator: weakref.ref | None = None
-    reading: bool = False  # from the first read until the stream ends by itself
-    stuck: threading.Event = field(default_factory=threading.Event)
+    read: _PortalCall | None = None  # the last read; None before the first and once the stream ended by itself
 
     def items(self) -> Generator[Any]:
         # No ``finally``: it would run in the finalizer of a dropped generator,
         # where Python discards an RF timeout. See _end_dropped.
         while True:
-            self.reading = True
+            self.read = _PortalCall(self.node.portal, self.stream.__anext__)
             try:
-                item = call_cancellable(self.node.portal, self.stream.__anext__, stuck=self.stuck)
+                item = self.read.wait()
             except StopAsyncIteration:
-                self.reading = False
+                self.read = None
                 return
             yield item
 
@@ -367,20 +373,28 @@ class _Stream:
         generator = None if self.generator is None else self.generator()
         return generator is None or generator.gi_frame is None
 
+    def end(self, read: _PortalCall) -> None:
+        # a read that did not stop in time may still return an item and leave the stream open
+        if read.running:
+            read.done.wait()
+        self.node.portal.call(_cancel_stream, self.stream)
+
 
 # A generator that is still alive keeps its stream, also after the keyword.
 _streams: list[_Stream] = []
 
 
 def _end_dropped() -> list[SimpleQueue]:
-    """Start ending the streams whose generators were closed or dropped."""
+    """Start ending the streams whose generators were closed or dropped; returns the ones to wait for."""
     outcomes = []
     for entry in list(_streams):
         if not entry.dropped():
             continue
-        # a stuck read was cancelled already
-        if entry.reading and not entry.stuck.is_set():
-            outcomes.append(_in_thread(partial(entry.node.portal.call, _cancel_stream, entry.stream)))
+        if (read := entry.read) is not None:
+            running = read.running
+            outcome = _in_thread(partial(entry.end, read))
+            if not running:  # else the interrupted keyword waited long enough
+                outcomes.append(outcome)
         _streams.remove(entry)
     return outcomes
 
@@ -408,18 +422,21 @@ def bounded_streams(node: DriverClient | None) -> Generator[None]:
     patched = []
     ending = _end_dropped()
     pending = [] if node is None else [node]
-    while pending:
-        client = pending.pop()
-        pending.extend(getattr(client, "children", {}).values())
-        own = getattr(type(client), "streamingcall", None) is not DriverClient.streamingcall
-        if not own and "streamingcall" not in vars(client):
-            client.streamingcall = _registered_streamingcall(client, ending)
-            patched.append(client)
     try:
+        while pending:
+            client = pending.pop()
+            pending.extend(getattr(client, "children", {}).values())
+            own = getattr(type(client), "streamingcall", None) is not DriverClient.streamingcall
+            if not own and "streamingcall" not in vars(client):
+                # recorded first: an RF timeout may land right after the assignment
+                wrapper = _registered_streamingcall(client, ending)
+                patched.append((client, wrapper))
+                client.streamingcall = wrapper
         yield
     finally:
-        for client in patched:
-            del client.streamingcall
+        for client, wrapper in patched:
+            if vars(client).get("streamingcall") is wrapper:
+                del client.streamingcall
         deadline = time.monotonic() + CANCEL_GRACE
         for outcome in [*ending, *_end_dropped()]:
             _wait(outcome, deadline)

@@ -234,8 +234,10 @@ class Driver:
         args = list(arguments.args)
         extra: dict[str, Any] = {}
         if member.kind == "generator":
-            # the client's own max_items argument, if it has one, keeps its name
-            limit = "max_items" if "max_items" not in arguments.signature.parameters else "keyword_max_items"
+            # the client's own arguments keep their names
+            limit = "max_items"
+            while limit in arguments.signature.parameters:
+                limit = f"keyword_{limit}"
             args = _with_keyword_only(args, (limit, self.max_items))
             extra["limit"] = limit
             invoke = _generator_invoker(member.name)

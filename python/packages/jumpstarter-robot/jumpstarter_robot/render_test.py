@@ -228,3 +228,10 @@ class TestRoleFilters:
         racks = {f"rack{r}.dut{d}.power": POWER for r in (1, 2) for d in (1, 2)}
         found, _ = self.render(racks, include=["dut1.*"], exclude=["rack2.*"])
         assert found == {"rack1.dut1.power": "Rack1 Dut1 Power"}
+
+    def test_groups_are_checked_against_roles_found_later(self):
+        tree = {"loose.power": POWER, "rack1.unit.power": POWER, "rack2.unit.power": POWER}
+        assert self.render(tree, exclude=["unit.power"]) == ({"loose.power": "Loose Power"}, "")
+        found, devices = self.render(tree)
+        assert found == {"power": "Power", "unit.power": "Unit Power"}
+        assert devices == "@{DEVICES}    loose    rack1.unit    rack2.unit"

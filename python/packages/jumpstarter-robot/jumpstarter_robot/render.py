@@ -27,7 +27,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -112,7 +112,7 @@ class Plan:
 
 
 def _selected(
-    path: str, session: str, include: Sequence[str], exclude: Sequence[str], roles: Sequence[str] = ()
+    path: str, session: str, include: Sequence[str], exclude: Sequence[str], roles: Iterable[str] = ()
 ) -> bool:
     """Whether the filters keep the driver at ``path``; roles also match by their relative path."""
     candidates = [name for p in (path, *roles) for name in (p, f"{session}.{p}")]
@@ -286,7 +286,7 @@ def plan(
         for n in tree.walk()
         if n.kind == "opaque"
     ]
-    roles_of: dict[str, list[str]] = {}  # a driver may be in an outer and a nested candidate group
+    roles_of: dict[str, set[str]] = {}  # a driver may be in an outer and a nested candidate group
 
     def selected(node: DeviceNode) -> bool:
         return _selected(node.dotted, session, include, exclude, roles_of.get(node.dotted, ()))
@@ -298,10 +298,14 @@ def plan(
         for member in group:
             for node in member.walk():
                 if node is not member:
-                    roles_of.setdefault(node.dotted, []).append(_role(node, member))
+                    roles_of.setdefault(node.dotted, set()).add(_role(node, member))
         return _filter_group(group, lambda n: selected(n) and in_role(n))
 
-    groups, roles_by_path = _role_libraries(find_role_groups(tree, keep) if roles else [], in_role, selected)
+    found = find_role_groups(tree, keep) if roles else []
+    # a later candidate may have added a role by which the filters remove a driver of an earlier group
+    while any(len(keep(group)) != len(group) for group in found):
+        found = find_role_groups(tree, keep)
+    groups, roles_by_path = _role_libraries(found, in_role, selected)
     covered = [member.path for group in groups for member in group]
     plain = [
         n

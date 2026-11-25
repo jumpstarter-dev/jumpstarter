@@ -23,7 +23,7 @@ import typing
 from collections.abc import Callable
 from typing import Any
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +81,13 @@ def _coerce(name: str, adapter: TypeAdapter, value: Any) -> Any:
         if isinstance(value, (str, bytes)):
             try:
                 return adapter.validate_json(value)
-            except ValueError:
-                return adapter.validate_python(value)
+            except ValidationError as invalid:
+                try:
+                    return adapter.validate_python(value)  # text of a ``str | Model`` may look like JSON
+                except ValidationError:
+                    if any(error["type"] == "json_invalid" for error in invalid.errors()):
+                        raise
+                    raise invalid from None  # what is wrong with the JSON, not that text is no model
         return adapter.validate_python(value)
     except ValueError as e:
         raise Failure(f"Invalid value for argument '{name}': {e}") from None
