@@ -174,7 +174,7 @@ class TestCalls:
             run(library, "Gadget Apply", "not json")
 
     def test_class_mismatch(self, tree):
-        with pytest.raises(Failure, match="regenerate the client resource"):
+        with pytest.raises(Failure, match="correct its client argument"):
             run(Driver("dut.power", client=SHELL), "Dut Power Run Method", "x")
 
     def test_missing_driver(self, tree):

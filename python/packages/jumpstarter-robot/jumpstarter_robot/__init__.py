@@ -1,14 +1,11 @@
 """Robot Framework libraries for Jumpstarter.
 
 - ``jumpstarter_robot.Jumpstarter``: sessions, leases and cross-driver keywords
-- ``jumpstarter_robot.Session``: declare a named session (used by generated resources)
+- ``jumpstarter_robot.Session``: declare a named session
 - ``jumpstarter_robot.Driver``: the keywords of one driver of the tree
 
-``jmp-robot generate`` (or ``jmp-robot generate``) writes a client resource
-that imports them for a given exporter.
-
-The libraries load on first use, so importing ``jumpstarter_robot.cli`` (which
-``jmp`` does at start) does not load Robot Framework.
+The libraries load on first use, so importing ``jumpstarter_robot`` does not
+load Robot Framework.
 """
 
 from __future__ import annotations

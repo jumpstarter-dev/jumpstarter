@@ -4308,7 +4308,6 @@ dev = [
 name = "jumpstarter-robot"
 source = { editable = "packages/jumpstarter-robot" }
 dependencies = [
-    { name = "click" },
     { name = "jumpstarter" },
     { name = "robotframework" },
 ]
@@ -4327,7 +4326,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "robotframework", specifier = ">=7.5" },
 ]

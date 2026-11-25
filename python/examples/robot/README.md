@@ -34,25 +34,17 @@ $ jmp shell --selector board=mock -- robot -d results tests/
 | Path | Contents |
 | --- | --- |
 | `exporter.yaml` | The mock board: a `power` switch, a `storage` mux, a `console` byte stream that sends back what it receives, and a `shell` driver with the methods `hello` and `fail`. |
-| `robot.toml` | The RobotCode settings and the client settings for the generator. |
-| `client.resource` | The client resource that the generator made. It has one keyword library for each driver. |
+| `client.resource` | The resource file that each test imports. It declares the session and imports one `Driver` keyword library for each driver. |
 | `tests/power.robot` | Power keywords, stream values, and `Call Driver`. |
 | `tests/storage.robot` | Writes `data/image.bin` through the storage mux. |
 | `tests/shell.robot` | The shell methods `Shell Hello` and `Shell Fail`, and their return codes. |
 | `tests/console.robot` | The Telnet library of Robot Framework on the console, through `Open Port Forward`. |
 
-## Make the client resource again
+## Add a driver
 
-The generator makes `client.resource` from `exporter.yaml` and the settings in
-`robot.toml`. The keyword names start with the path of the driver: `power`
-gives `Power On`, and `storage` gives `Storage Flash`.
+1. Add the driver to `exporter.yaml`.
+2. Add a `Library` line for the driver to `client.resource`. Give the path of
+   the driver and its client class.
 
-If you change one of these two files:
-
-1. Run the generator in this directory:
-
-   ```console
-   $ uv run jmp-robot generate
-   ```
-
-2. Commit `client.resource`.
+The keyword names start with the path of the driver: `power` gives `Power On`,
+and `storage` gives `Storage Flash`.

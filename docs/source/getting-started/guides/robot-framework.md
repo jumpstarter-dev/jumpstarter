@@ -5,15 +5,15 @@ keywords. The `jumpstarter-robot` package makes each Jumpstarter driver
 available as Robot Framework keywords. It also gets the {term}`lease` for a
 test run.
 
-For all arguments, keywords and settings, refer to the
+For all arguments and keywords, refer to the
 {doc}`Robot Framework reference <../../reference/package-apis/robot/reference>`.
 
 ## What you get
 
 - **Keywords for each driver.** The package makes the keywords from the Python
   client of each driver. You do not change the drivers.
-- **Completion in your editor.** A client resource file lists the drivers of
-  an {term}`exporter`. [RobotCode](https://robotcode.io/) reads this file and
+- **Completion in your editor.** A test file imports one keyword library for
+  each driver. [RobotCode](https://robotcode.io/) reads these imports and
   shows each keyword. A lease is not necessary.
 - **Lease control.** A test run can use a local exporter config, a
   `jmp shell`, or a lease from the {term}`controller`.
@@ -67,8 +67,17 @@ export:
         hello: "echo \"$GREETING $@\""
 ```
 
-Each test file imports `client.resource`. The generator makes this file from
-`exporter.yaml`. The file gives a keyword library for each driver:
+The file `client.resource` declares the session and imports a keyword library
+for each driver:
+
+```robotframework
+*** Settings ***
+Library    jumpstarter_robot.Jumpstarter    exporter_config=${CURDIR}/exporter.yaml    auto_import=False
+Library    jumpstarter_robot.Driver    power    client=jumpstarter_driver_power.client.PowerClient    AS    power
+Library    jumpstarter_robot.Driver    storage    client=jumpstarter_driver_opendal.client.StorageMuxFlasherClient    AS    storage
+```
+
+Each test file imports `client.resource`:
 
 ```robotframework
 *** Settings ***
@@ -90,54 +99,34 @@ The first keyword that uses the exporter starts it. The test run stops the
 exporter at the end. Thus a suite setup is not necessary.
 
 You can run the same tests on a remote exporter that has the same drivers.
-Use `jmp shell`, or make a lease first:
+Use `jmp shell`:
 
 ```console
 $ jmp shell --selector board=mock -- robot -d results tests/
 ```
 
-```console
-$ jmp create lease -l board=mock --duration 1h
-$ robot -d results -v JMP_SELECTOR:board=mock tests/
+## Driver keywords
+
+The `jumpstarter_robot.Driver` library gives the keywords of one driver.
+Import it one time for each driver:
+
+```robotframework
+Library    jumpstarter_robot.Driver    dut.power    client=jumpstarter_driver_power.client.PowerClient    AS    dut.power
 ```
 
-## Client resources
+- The first argument is the path of the driver in the exporter. `dut.power` is
+  `client.dut.power` in Python.
+- `client` is the client class of the driver. The library reads the keywords,
+  their arguments and their documentation from this class. Thus your editor
+  can show them.
 
-A client resource is a Robot Framework
+Put these imports in a
 [resource file](https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#resource-files).
-It does three things:
+Then each test file imports that one file.
 
-- It imports the Jumpstarter libraries.
-- It tells the session how to connect.
-- It imports one keyword library for each driver.
-
-The file gives the client class of each driver. Thus your editor can show
-each keyword with its arguments and its documentation.
-
-### Make a client resource
-
-1. Add the client to the `robot.toml` file of your project:
-
-   ```toml
-   [tool.jumpstarter.client.default]
-   exporter-config = "exporter.yaml" # The path to your exporter config
-   resource = "client.resource" # The resource file to write
-   ```
-
-2. Run the generator:
-
-   ```console
-   $ jmp-robot generate
-   default: wrote client.resource (4 driver libraries)
-   ```
-
-3. Commit `client.resource`.
-
-If you do not have the exporter config, read the drivers from a lease:
-
-```console
-$ jmp shell --selector board=rpi4 -- jmp-robot generate --live
-```
+If you do not import a `Driver` library, the `Jumpstarter` library imports one
+for each driver when the session connects. The keywords then exist only during
+the test run, and your editor cannot show them.
 
 ### Keyword names
 
@@ -148,7 +137,7 @@ A keyword name is the path of the driver and then the name of the method.
 | `dut.power` | `cycle` | `Dut Power Cycle` |
 | `storage` | `flash` | `Storage Flash` |
 
-To use a different prefix, add an alias in `robot.toml`.
+To use a different prefix, give the `prefix` argument of the `Driver` library.
 
 `Call Driver` calls a client method by its driver path. `List Drivers` and
 `List Driver Keywords` show the drivers and keywords of an exporter:
@@ -169,8 +158,11 @@ the same selector:
 
 ```console
 $ jmp create lease -l board=rpi4 --duration 4h
-$ robot -d results -v JMP_SELECTOR:board=rpi4 tests/
 $ JMP_LEASE=<name> robot -d results tests/
+```
+
+```robotframework
+Library    jumpstarter_robot.Jumpstarter    selector=board=rpi4
 ```
 
 A session with a selector uses an active lease of your client that has the
@@ -248,4 +240,4 @@ decorators of Robot Framework on the client class.
 ## Next steps
 
 - {doc}`Reference <../../reference/package-apis/robot/reference>`: all library
-  arguments, keywords and project settings.
+  arguments and keywords.
