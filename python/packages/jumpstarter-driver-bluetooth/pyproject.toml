@@ -16,6 +16,7 @@ dependencies = [
 ]
 
 [project.entry-points."jumpstarter.drivers"]
+AndroidBluetooth = "jumpstarter_driver_bluetooth.driver:AndroidBluetooth"
 BluetoothBridge = "jumpstarter_driver_bluetooth.driver:BluetoothBridge"
 BluetoothControllerPort = "jumpstarter_driver_bluetooth.driver:BluetoothControllerPort"
 BluetoothRemoteController = "jumpstarter_driver_bluetooth.driver:BluetoothRemoteController"
