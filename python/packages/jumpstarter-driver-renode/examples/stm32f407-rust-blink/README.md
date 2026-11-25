@@ -11,19 +11,19 @@ This folder holds a **Jumpstarter exporter** plus a **prebuilt firmware** so you
 | `Cargo.toml`, `src/main.rs` | Firmware: toggles the Discovery user LED on **PD12**, prints **`ON` / `OFF`** on **USART2** (PA2 @ 115200 8N1), matching Renode's `UserLED` and `usart2`. |
 | `memory.x`, `build.rs` | Linker memory map for the STM32F407 and `cortex-m-rt` (`link.x`). |
 | `rust-toolchain.toml` | Pins **stable** and the **`thumbv7em-none-eabihf`** target via rustup. |
-| `Makefile` | `make firmware` builds, strips, and installs `stm32f407-rust-blink.elf`. |
+| `Makefile` | The `firmware` target builds, strips, and installs `stm32f407-rust-blink.elf`. |
 | `stm32f407-rust-blink.elf` | Stripped copy of the release ELF for flashing; the canonical build artifact is under `target/.../release/`. |
 | `target/` | Rust build output (if you build here). |
 
 ## Build the firmware
 
-Install the [rustup](https://rustup.rs/) toolchain and the embedded target (`rust-toolchain.toml` requests it). `make firmware` also runs `cargo strip`, which cargo does not include; [cargo-binutils](https://github.com/rust-embedded/cargo-binutils) provides it (`cargo install cargo-binutils` and `rustup component add llvm-tools`). From this directory:
+Install the [rustup](https://rustup.rs/) toolchain and the embedded target (`rust-toolchain.toml` requests it). The `firmware` target also runs `cargo strip`, which cargo does not include; [cargo-binutils](https://github.com/rust-embedded/cargo-binutils) provides it (`cargo install cargo-binutils` and `rustup component add llvm-tools`). From the repository root:
 
 ```bash
-PATH="$HOME/.cargo/bin:$PATH" make firmware
+PATH="$HOME/.cargo/bin:$PATH" make -C python/packages/jumpstarter-driver-renode/examples/stm32f407-rust-blink firmware
 ```
 
-`make firmware` builds the release firmware, strips it, and installs it as `stm32f407-rust-blink.elf` - the same (stripped) artifact that is committed in this folder. `cargo strip` strips `target/thumbv7em-none-eabihf/release/stm32f407-rust-blink` in place; `make build` leaves an unstripped build there.
+The `firmware` target builds the release firmware, strips it, and installs it as `stm32f407-rust-blink.elf` - the same (stripped) artifact that is committed in this folder. `cargo strip` strips `target/thumbv7em-none-eabihf/release/stm32f407-rust-blink` in place; the `build` target leaves an unstripped build there.
 
 ## Workflow
 

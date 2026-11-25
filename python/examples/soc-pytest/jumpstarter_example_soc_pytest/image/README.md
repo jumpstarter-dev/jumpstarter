@@ -1,7 +1,7 @@
 # Image preparation scripts
 
-This directory contains scripts to prepare the image for the example SoC test,
-running `make` should:
+This directory contains scripts to prepare the image for the example SoC test.
+Running `make -C python/examples/soc-pytest/jumpstarter_example_soc_pytest/image` from the repository root should:
 
 * Download a minimal Raspbian image
 * Inject the settings for the test to be performed (enable UART, set up a basic password, TPM DTB)
@@ -11,7 +11,7 @@ You will need guestmount installed, sudo permissions.
 fuse must be configured to enable `user_allow_other` in `/etc/fuse.conf`.
 
 ```shell
-$ make
+$ make -C python/examples/soc-pytest/jumpstarter_example_soc_pytest/image
 make download-image
 make[1]: Entering directory '/home/majopela/jumpstarter/examples/soc-pytest/jumpstarter_example_soc_pytest/image'
 scripts/download-latest-raspbian

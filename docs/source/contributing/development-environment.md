@@ -16,7 +16,8 @@ The Jumpstarter core and drivers live in the
 [jumpstarter](https://github.com/jumpstarter-dev/jumpstarter) repository.
 
 We use [uv](https://docs.astral.sh/uv/) as our Python package and project
-manager, and `make` as our build interface.
+manager, and `make` as our build interface. Run the commands on this page from
+the repository root.
 
 To install the basic set of dependencies, run the following commands:
 
@@ -32,26 +33,25 @@ $ cd jumpstarter
 $ make -C python sync
 ```
 
-At this point you can run any of the jumpstarter commands prefixing them with
-`uv run` from the `python/` directory:
+At this point you can run any of the Jumpstarter commands by prefixing them
+with `uv run --project python`:
 
 ```console
-$ cd python
-$ uv run jmp
+$ uv run --project python jmp
 ```
 
 ### Running the Tests
 
-To run the tests, you can use `make` from the `python/` directory:
+To run the tests:
 
 ```console
-$ make test
+$ make -C python test
 ```
 
 You can also run specific tests with:
 
 ```console
-$ make pkg-test-${package_name}
+$ make -C python pkg-test-${package_name}
 ```
 
 ## Go Environment
@@ -68,29 +68,28 @@ $ sudo dnf install -y git make golang kubectl
 Then you can build the controller from the repository root:
 
 ```console
-$ cd controller
-$ make build
+$ make -C controller build
 ```
 
 At this point you can deploy the controller in a Kubernetes cluster in Docker
 (`kind`) with:
 
 ```console
-$ CONTAINER_TOOL=podman make deploy
+$ make -C controller deploy CONTAINER_TOOL=podman
 ```
 
 And you can cleanup and stop the controller/cluster with:
 
 ```console
-$ CONTAINER_TOOL=podman make clean
+$ make -C controller clean CONTAINER_TOOL=podman
 ```
 
 ### Running the Tests
 
-To run the tests, you can use the `make` command:
+To run the tests:
 
 ```console
-$ make test
+$ make -C controller test
 ```
 
 ## Rust Environment
@@ -101,6 +100,6 @@ directory. CI pins the Rust toolchain version with `RUST_TOOLCHAIN` in
 build and test it from the repository root:
 
 ```console
-$ make build-rust
-$ make test-rust
+$ make -C rust build
+$ make -C rust test
 ```

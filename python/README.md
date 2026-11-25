@@ -6,11 +6,13 @@ directory is managed as a [uv workspace](https://docs.astral.sh/uv/concepts/work
 
 ## Development
 
-```sh
-make build
-make test
-make lint-fix
+Run these from the repository root:
 
-uv run ruff check .
-uv run ruff format .
+```sh
+make -C python build
+make -C python test
+make -C python lint-fix
+
+uv run --directory python ruff check .
+uv run --directory python ruff format .
 ```

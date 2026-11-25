@@ -119,13 +119,15 @@ See the [Makefile](Makefile) for available targets.
 
 ### Building
 
+Run these from the repository root:
+
 ```shell
 # Build all components
 make build
 
 # Build specific components
-make build-python      # Python packages
-make build-controller  # Controller binary
+make -C python build      # Python packages
+make -C controller build  # Controller binary
 
 # Regenerate the gRPC code after changing protocol/
 make -C controller protobuf-gen

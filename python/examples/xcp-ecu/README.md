@@ -30,6 +30,5 @@ A stateful mock ECU (`mock_ecu.py`) simulates a realistic automotive ECU with:
 ## Running
 
 ```bash
-cd python
-uv run --directory examples/xcp-ecu pytest -v
+uv run --directory python/examples/xcp-ecu pytest -v
 ```

@@ -205,11 +205,11 @@ Run the following commands to clone the repository and create a virtual environm
 # Clone the git repository
 $ git clone https://github.com/jumpstarter-dev/jumpstarter.git
 
-# Open the Python workspace
-$ cd jumpstarter/python
+# Enter the repository
+$ cd jumpstarter
 
 # Install Python venv and sync packages with uv
-$ make sync
+$ make -C python sync
 
 # Create local config directories for Jumpstarter
 $ mkdir -p "${HOME}/.config/jumpstarter/"
@@ -218,7 +218,7 @@ $ mkdir -p "${HOME}/.config/jumpstarter/"
 $ sudo mkdir /etc/jumpstarter
 
 # Activate the virtual environment to use the Jumpstarter CLI
-$ source .venv/bin/activate
+$ source python/.venv/bin/activate
 $ jmp version
 ```
 

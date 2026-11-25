@@ -11,14 +11,16 @@ If you have questions, reach out in our Matrix chat or open an issue on GitHub.
 ## Making Changes
 
 - Focus on a single issue
-- Follow code style (validate with `make lint`, fix with `make lint-fix`)
+- Follow code style (validate with `make lint`, fix Python code with
+  `make -C python lint-fix`)
 - Keep Markdown formatted (validate with `make lint-markdown`, fix what can be
   fixed automatically with `make lint-markdown-fix`)
-- Perform static type checking with (`make pkg-ty-${package_name}`)
+- Run static type checking (`make -C python pkg-ty-${package_name}`)
 - Add tests and update documentation
-- Verify all tests pass (`make pkg-test-${package_name}` or `make test`)
+- Verify all tests pass (`make -C python pkg-test-${package_name}` or
+  `make -C python test`)
 
-Run these `make` targets from the `python/` directory.
+Run these commands from the repository root.
 
 ## Commit Messages
 
@@ -40,16 +42,16 @@ We welcome bug fixes, features, and improvements to the core codebase.
 
 ### Drivers
 
-To create a new driver scaffold, run from the `python/` directory:
+To create a new driver scaffold, run from the repository root:
 
 ```console
-$ ./__templates__/create_driver.sh driver_package DriverClass "Your Name" "your.email@example.com"
+$ ./python/__templates__/create_driver.sh driver_package DriverClass "Your Name" "your.email@example.com"
 ```
 
 For private drivers, consider forking our
 [jumpstarter-driver-template](https://github.com/jumpstarter-dev/jumpstarter-driver-template).
 
-Test your driver: `make pkg-test-${package_name}`
+Test your driver: `make -C python pkg-test-${package_name}`
 
 ### Documentation
 

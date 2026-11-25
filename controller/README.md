@@ -10,16 +10,18 @@ policies.
 
 ## Development
 
+Run these from the repository root:
+
 ```sh
 # build the images, create a kind cluster and deploy through the operator
-make deploy
+make -C controller deploy
 # or on k3s
-make deploy CLUSTER_TYPE=k3s
+make -C controller deploy CLUSTER_TYPE=k3s
 
 # delete the cluster
-make clean
+make -C controller clean
 # or on k3s (this uninstalls k3s)
-make clean CLUSTER_TYPE=k3s
+make -C controller clean CLUSTER_TYPE=k3s
 ```
 
 For production deployment, see the

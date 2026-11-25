@@ -21,6 +21,8 @@ from these definitions.
 
 ## Development
 
+Run this from the repository root:
+
 ```sh
-make lint
+make -C protocol lint
 ```

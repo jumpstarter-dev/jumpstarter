@@ -33,8 +33,9 @@ Important project-specific rules and guidelines are located in the `.claude/rule
 - All Python code is located under the `python/` directory
 - The project uses UV workspace for dependency management
 - Driver creation script: `./python/__templates__/create_driver.sh`
-- Testing: Use `make pkg-test-<package_name>` for package-specific tests
-- Linting: Use `make lint-fix` to fix linting issues
-- Type checking: Use `make pkg-ty-<package_name>` for type checking
+- Make commands run from the repository root: `make <target>` for the root Makefile, `make -C <dir> <target>` for any other
+- Testing: Use `make -C python pkg-test-<package_name>` for package-specific tests
+- Linting: Use `make -C python lint-fix` to fix Python linting issues and `make lint-markdown-fix` for Markdown
+- Type checking: Use `make -C python pkg-ty-<package_name>` for type checking
 
 Please refer to the detailed rules in `.claude/rules/` for comprehensive guidance.

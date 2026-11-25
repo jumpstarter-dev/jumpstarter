@@ -259,17 +259,16 @@ git pull origin release-X.Y
 3. **Regenerate manifests and set the operator image tag:**
 
    ```bash
-   cd controller/deploy/operator
-   make build-installer
-   grep newTag config/manager/kustomization.yaml   # must show X.Y.Z
+   make -C controller/deploy/operator build-installer
+   grep newTag controller/deploy/operator/config/manager/kustomization.yaml   # must show X.Y.Z
    ```
 
-   `build-installer` runs `make manifests generate` and then sets `newTag` in `config/manager/kustomization.yaml` from `VERSION`. It needs no images, so it belongs in this pre-tag commit. `make bundle` in step 2D sets the same tag, but only after the tag is cut, so without this step the tagged tree keeps the previous release's image tag.
+   `build-installer` runs `make manifests generate` and then sets `newTag` in `config/manager/kustomization.yaml` from `VERSION`. It needs no images, so it belongs in this pre-tag commit. The `bundle` target in step 2D sets the same tag, but only after the tag is cut, so without this step the tagged tree keeps the previous release's image tag.
 
 4. **Commit and push via PR** — release branches are protected and require merge queue, so direct pushes will be rejected. Files to include:
    - `controller/deploy/operator/Makefile`
    - `controller/deploy/operator/config/manager/kustomization.yaml`
-   - Any other files changed by `make build-installer`
+   - Any other files changed by the `build-installer` target
    - FLS pin files (if bumped): `python/Containerfile`, `python/packages/jumpstarter-driver-flashers/jumpstarter_driver_flashers/client.py`
 
    Push to the user's fork and create a PR targeting the release branch:
@@ -373,13 +372,11 @@ git checkout vX.Y.Z   # detached HEAD is fine
 Build all workspace packages:
 
 ```bash
-cd python
-
-rm -rf dist/
-uv build --all --out-dir dist
+rm -rf python/dist/
+uv build --project python --all --out-dir python/dist
 
 # Verify the version in the built filenames matches the release
-ls dist/ | head -20
+ls python/dist/ | head -20
 ```
 
 Confirm the `.whl` and `.tar.gz` filenames contain the expected version (e.g., `X.Y.Z`, no `.devN` suffix). If versions look wrong, ensure `git describe --tags --exact-match` resolves to the correct tag.
@@ -389,7 +386,7 @@ Confirm the `.whl` and `.tar.gz` filenames contain the expected version (e.g., `
 ```bash
 # Requires UV_PUBLISH_TOKEN set to a PyPI API token
 ${UV_PUBLISH_TOKEN:?ERROR: UV_PUBLISH_TOKEN is not set — get a PyPI API token first}
-uv publish dist/jumpstarter-X.Y.Z* dist/jumpstarter_*-X.Y.Z*
+uv publish python/dist/jumpstarter-X.Y.Z* python/dist/jumpstarter_*-X.Y.Z*
 ```
 
 **PyPI rate limit on new projects:** PyPI returns `429 Too Many Requests — Too many new projects created` when an account registers too many new projects in a short window. `uv publish` stops on the first failure, so a bulk upload of all packages will abort mid-batch if any are new.
@@ -399,7 +396,7 @@ uv publish dist/jumpstarter-X.Y.Z* dist/jumpstarter_*-X.Y.Z*
 1. Check which packages already exist on PyPI (any version):
 
    ```bash
-   for f in dist/jumpstarter-X.Y.Z-py3-none-any.whl dist/jumpstarter_*-X.Y.Z-py3-none-any.whl; do
+   for f in python/dist/jumpstarter-X.Y.Z-py3-none-any.whl python/dist/jumpstarter_*-X.Y.Z-py3-none-any.whl; do
      name=$(basename "$f" | sed 's/-X.Y.Z-.*//' | tr '_' '-')
      code=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/${name}/json")
      [ "$code" = "200" ] && echo "EXISTS: $name" || echo "NEW:    $name"
@@ -409,13 +406,13 @@ uv publish dist/jumpstarter-X.Y.Z* dist/jumpstarter_*-X.Y.Z*
 2. Publish existing packages one at a time (they won't hit the new-project limit):
 
    ```bash
-   uv publish dist/<existing_package>-X.Y.Z*
+   uv publish python/dist/<existing_package>-X.Y.Z*
    ```
 
 3. For new packages, wait for the rate limit to reset (typically a few hours, sometimes ~24h) and retry:
 
    ```bash
-   uv publish dist/<new_package>-X.Y.Z*
+   uv publish python/dist/<new_package>-X.Y.Z*
    ```
 
 4. Report to the user which packages succeeded and which are still pending.
@@ -444,7 +441,7 @@ The user can also check `quay.io/jumpstarter-dev/jumpstarter-controller:X.Y.Z` d
 
 #### Verify correct branch state
 
-During long CI waits, the user may have switched branches. Before generating the bundle, verify the branch and version are correct — `make bundle` silently uses whatever is checked out:
+During long CI waits, the user may have switched branches. Before generating the bundle, verify the branch and version are correct — the `bundle` target silently uses whatever is checked out:
 
 ```bash
 CURRENT_BRANCH=$(git branch --show-current)
@@ -459,8 +456,7 @@ fi
 #### Generate the OLM bundle
 
 ```bash
-cd controller/deploy/operator
-make bundle
+make -C controller/deploy/operator bundle
 ```
 
 #### Verify the bundle output
@@ -477,9 +473,9 @@ Show the output to the user and ask them to confirm it looks correct before cont
 
 #### Contribute to community-operators
 
-**Note:** `make contribute` depends on `make bundle` internally and will re-run bundle generation. This means the branch state guard above is critical — if the wrong branch is checked out, `make contribute` will silently produce a wrong bundle.
+**Note:** The `contribute` target depends on the `bundle` target internally and will re-run bundle generation. This means the branch state guard above is critical — if the wrong branch is checked out, the `contribute` target will silently produce a wrong bundle.
 
-**Pre-check: Ensure forks exist** under `GITHUB_USER`. If they don't, `make contribute` will fail mid-way:
+**Pre-check: Ensure forks exist** under `GITHUB_USER`. If they don't, the `contribute` target will fail mid-way:
 
 ```bash
 for REPO in k8s-operatorhub/community-operators redhat-openshift-ecosystem/community-operators-prod; do
@@ -493,11 +489,9 @@ done
 Then run the contribute script:
 
 ```bash
-cd controller/deploy/operator
-
 # GITHUB_USER controls which fork the contribute script uses
 # AUTO_CONFIRM=1 skips the interactive y/N prompt
-GITHUB_USER="${GITHUB_USER}" AUTO_CONFIRM=1 make contribute
+make -C controller/deploy/operator contribute GITHUB_USER="${GITHUB_USER}" AUTO_CONFIRM=1
 ```
 
 After the script completes, push to the fork and create PRs using `gh`:
@@ -557,6 +551,6 @@ Present a checklist of what was done (mark completed items) and what remains:
 - [ ] CI image build completed
 - [ ] `operator-installer.yaml` asset uploaded (automated by CI)
 - [ ] Published to PyPI via `uv publish` (final releases only, not RCs)
-- [ ] OLM bundle generated and verified (`make bundle`)
-- [ ] Community-operators PRs created (`make contribute` + `gh pr create`)
+- [ ] OLM bundle generated and verified (`make -C controller/deploy/operator bundle`)
+- [ ] Community-operators PRs created (`make -C controller/deploy/operator contribute` + `gh pr create`)
 - [ ] Infrastructure fixes cherry-picked to `main` (if applicable)
