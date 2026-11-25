@@ -1,0 +1,24 @@
+# A virtual Android phone (Cuttlefish) with its Wi-Fi as a port.
+#
+# The driver declares its port itself (`hwsim`): no `ports` key is needed. It starts with a lease and stops
+# with it (`autostart: false` to have a test start it instead). The examples of jumpstarter-driver-bluetooth
+# have the same device with its Bluetooth beside this.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: cuttlefish-phone
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  cuttlefish:
+    type: jumpstarter_driver_cuttlefish.driver.Cuttlefish
+    config:
+      env_config:
+        instances:
+          - vm: { cpus: 4, memory_mb: 4096 }
+  # Wi-Fi: a frame bridge beside the device's simulated medium. Port `hwsim` (connects, ieee80211-frames).
+  wifi:
+    type: jumpstarter_driver_wifi.driver.WifiMedium
+    config:
+      port: 7310

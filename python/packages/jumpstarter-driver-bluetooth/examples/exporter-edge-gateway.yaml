@@ -1,0 +1,41 @@
+# The exporter on the host beside a physical tablet (a Raspberry Pi), with the edge gateways that put real
+# radios beside the tablet: a Bluetooth controller as an HCI port on 127.0.0.1:7300, and a test Wi-Fi network
+# whose one port is answered at 127.0.0.1:7410.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: tablet
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  ios:
+    type: jumpstarter_driver_iosdevice.driver.IosDevice
+    config:
+      udid: "<the device's UDID>"
+  # Bluetooth: one half of a bridge, on the real controller. Port `bluetooth` (connects, bt-l2cap-bridge).
+  # In the controller's radio the half carries the name of the device at the other end of the forward: the
+  # tablet finds that name when it looks for devices to pair with. `name`, `address` and `class_of_device`
+  # are the tablet's own, as the far half is to carry them in its radio. There is no asking a tablet who it
+  # is but over the radio: once it has linked, it is asked its name, which then replaces `name` (`learn_name`).
+  # It is the driver of a virtual device's bridge: only where the HCI port is, and who is asked, differ.
+  # There is no `device`: nothing asks an iPad's own Bluetooth stack yet.
+  bluetooth:
+    type: jumpstarter_driver_bluetooth.driver.Bluetooth
+    config:
+      transport: tcp-client:127.0.0.1:7300 # the gateway's HCI port
+      # transport: hci-socket:0            # or the controller itself, without a gateway
+      link: bridge
+      name: Bench iPad
+      address: "AA:BB:CC:DD:EE:FF" # the tablet's Bluetooth address (Settings, General, About)
+      class_of_device: 0x5A0110 # a tablet
+      learn_name: true
+      retry: 5.0 # closing a gateway's port resets the controller: it is not asked again in a hurry
+  # Wi-Fi: the one port of the test network. Port `wifi-service` (requires): a connection a device on the
+  # Wi-Fi makes to the gateway's port goes to the `provides` port a forward joins this one to.
+  wifi:
+    type: jumpstarter_driver_wifi.driver.WifiGateway
+    config:
+      attach: 127.0.0.1:7410
+      listen: 127.0.0.1:7411
+      waiting: 3

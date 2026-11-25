@@ -1,0 +1,47 @@
+# A virtual Android Automotive head unit (Cuttlefish) with its two radios as ports, and one TCP service of
+# the device as a port for a physical device's Wi-Fi to reach.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: cuttlefish-headunit
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  cuttlefish:
+    type: jumpstarter_driver_cuttlefish.driver.Cuttlefish
+    config:
+      env_config:
+        instances:
+          - vm: { cpus: 4, memory_mb: 8192 }
+  android:
+    type: jumpstarter_driver_adb.driver.AdbDevice
+    config:
+      address: 127.0.0.1:6520
+      transport: tcp
+  # Port `hwsim` (connects, ieee80211-frames).
+  wifi:
+    type: jumpstarter_driver_wifi.driver.WifiMedium
+    config:
+      port: 7310
+  # Port `bluetooth` (connects, bt-l2cap-bridge): one half of a bridge, and the device's own stack.
+  bluetooth:
+    type: jumpstarter_driver_bluetooth.driver.Bluetooth
+    config:
+      transport: tcp-client:127.0.0.1:7300
+      link: bridge
+      device:
+        adb: 127.0.0.1:6520 # the device itself says its name, address and class
+      name: Cuttlefish head unit
+      class_of_device: 0x200408 # audio/video: a car's audio
+  # Port `web` (provides): a TCP service inside the device, where the exporter can reach it. Here that is a
+  # port of the exporter's host that is forwarded into the guest (`adb forward tcp:18000 tcp:8000`); the
+  # guest's own address and port serve as well. A WifiGateway's `wifi-service` port is joined to it.
+  web:
+    type: jumpstarter_driver_network.driver.TcpNetwork
+    config:
+      host: 127.0.0.1
+      port: 18000
+    ports:
+      - name: web
+        direction: provides

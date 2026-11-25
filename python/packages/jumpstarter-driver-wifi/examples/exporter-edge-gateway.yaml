@@ -1,0 +1,18 @@
+# The exporter on the host beside a physical tablet (a Raspberry Pi), with the edge gateway that puts a real
+# test Wi-Fi network beside the tablet: its one port is answered at 127.0.0.1:7410.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: tablet
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  # Wi-Fi: the one port of the test network. Port `wifi-service` (requires): a connection a device on the
+  # Wi-Fi makes to the gateway's port goes to the `provides` port a forward joins this one to.
+  wifi:
+    type: jumpstarter_driver_wifi.driver.WifiGateway
+    config:
+      attach: 127.0.0.1:7410
+      listen: 127.0.0.1:7411
+      waiting: 3

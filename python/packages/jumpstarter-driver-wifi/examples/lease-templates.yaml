@@ -1,0 +1,53 @@
+# Lease templates that join Wi-Fi with forwards (JEP-0016). The members are found by their labels; the ports
+# are those the Wi-Fi drivers declare (see the exporter configurations beside this file).
+#
+#   kubectl apply -f lease-templates.yaml
+#   jmp shell --lease-template phone-headunit-wifi
+#
+# The drivers start with the lease, so the bridges are set up when it is ready. No test starts them.
+#
+# A forward's endpoints may be in any order: the controller takes each port's direction from its exporter.
+---
+# Virtual to virtual: a Cuttlefish phone and a Cuttlefish head unit on one air.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: phone-headunit-wifi
+  namespace: jumpstarter-lab
+spec:
+  description: "A virtual phone and a virtual head unit whose Wi-Fi is joined"
+  members:
+    - name: phone
+      selector: { matchLabels: { type: phone } }
+    - name: headunit
+      selector: { matchLabels: { type: head-unit } }
+  forwards:
+    # Two `connects` ports make a path: each end runs its bridge beside its own medium.
+    - name: wifi
+      endpoints:
+        - { member: phone, port: hwsim }
+        - { member: headunit, port: hwsim }
+  defaults:
+    duration: 45m
+---
+# Physical to virtual: a tablet on a bench, with an edge gateway beside it, and a Cuttlefish head unit.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: tablet-headunit-wifi
+  namespace: jumpstarter-lab
+spec:
+  description: "A physical tablet that reaches one service of a virtual head unit over real Wi-Fi"
+  members:
+    - name: tablet
+      selector: { matchLabels: { type: tablet } }
+    - name: headunit
+      selector: { matchLabels: { type: head-unit } }
+  forwards:
+    # What the tablet connects to on the test Wi-Fi is a service inside the head unit.
+    - name: web
+      endpoints:
+        - { member: headunit, port: web }        # provides (TcpNetwork)
+        - { member: tablet, port: wifi-service } # requires (WifiGateway)
+  defaults:
+    duration: 45m

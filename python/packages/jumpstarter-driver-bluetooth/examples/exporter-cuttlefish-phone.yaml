@@ -1,0 +1,49 @@
+# A virtual Android phone (Cuttlefish) with its two radios as ports.
+#
+# The radio drivers declare their ports themselves (`hwsim` and `bluetooth`): no `ports` key is needed. They
+# start with a lease and stop with it (`autostart: false` to have a test start them instead).
+#
+# `wifi` is of jumpstarter-driver-wifi, whose own examples say more of it.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: cuttlefish-phone
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  cuttlefish:
+    type: jumpstarter_driver_cuttlefish.driver.Cuttlefish
+    config:
+      env_config:
+        instances:
+          - vm: { cpus: 4, memory_mb: 4096 }
+  android:
+    type: jumpstarter_driver_adb.driver.AdbDevice
+    config:
+      address: 127.0.0.1:6520
+      transport: tcp
+  # Wi-Fi: a frame bridge beside the device's simulated medium. Port `hwsim` (connects, ieee80211-frames).
+  wifi:
+    type: jumpstarter_driver_wifi.driver.WifiMedium
+    config:
+      port: 7310
+  # Bluetooth, as one entry: how the radio is joined to another device (`link`), and the device's own stack
+  # (`device`). A suite says `phone.bluetooth` for all of it.
+  #
+  # `link: bridge` is one half of a bridge, on the virtual radio's HCI port. Port `bluetooth` (connects,
+  # bt-l2cap-bridge). It runs from the start of the lease, and asks the device itself who it is (over the ADB
+  # of `device`): the other device lists this one under its real name, and either can start a pairing. `name`
+  # and `class_of_device` are what is said until the device has booted.
+  #
+  # `device` is the Android device as the ADB server of `android` above knows it: its adapter's state, its
+  # bonds, Bluetooth on and off, and its HCI recorded with its own snoop log.
+  bluetooth:
+    type: jumpstarter_driver_bluetooth.driver.Bluetooth
+    config:
+      transport: tcp-client:127.0.0.1:7300 # --hci_port: 7300 + instance_num - 1
+      link: bridge
+      device:
+        adb: 127.0.0.1:6520
+      name: Cuttlefish phone
+      class_of_device: 0x5A020C # a smartphone
