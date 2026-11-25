@@ -346,7 +346,7 @@ def selector_key(selector: str | None) -> frozenset[tuple[str, str, frozenset[st
         return frozenset()
     excluded: dict[str, set[str]] = {}
     requirements: set[tuple[str, str, frozenset[str]]] = set()
-    for part in filter(None, map(str.strip, _SELECTOR_PARTS.split(selector or ""))):
+    for part in map(str.strip, _SELECTOR_PARTS.split(selector or "")):
         if empty := _EMPTY_VALUE.fullmatch(part):
             expressions = [(empty[1], "!=" if empty[2] == "!=" else "=", [""])]
         else:

@@ -320,7 +320,7 @@ class TestMatchingLease:
         assert self.match([listed("l1", f"{empty},board=rpi4")], f"board=rpi4,{empty}") == "l1"
 
     def test_selectors_that_cannot_be_read_match_nothing(self):
-        for selector in ("board=rpi4,lab in", "board=rpi4,lab~eu", "lab in (eu"):
+        for selector in ("board=rpi4,lab in", "board=rpi4,lab~eu", "lab in (eu", "board=rpi4,", ",board=rpi4", "a,,b"):
             assert self.match([listed("l1", selector), listed("l2", "board=rpi4")], selector) is None
         assert self.match([listed("l1", "board=rpi4,lab~eu")], "board=rpi4") is None
 
@@ -328,6 +328,12 @@ class TestMatchingLease:
         lease = listed("l1", "<none>", exporter_name="rpi4-01")
         assert self.match([lease], None, "rpi4-01") == "l1"
         assert self.match([lease], "board=rpi4", "rpi4-01") is None
+
+    @pytest.mark.parametrize("selector", [",,,", ",", " , "])
+    def test_empty_requirements_are_not_the_empty_selector(self, selector):
+        # the controller's parser rejects them
+        assert self.match([listed("l1", "<none>"), listed("l2", "")], selector) is None
+        assert self.match([listed("l1", selector)], selector) is None
 
     def test_contradictory_values_are_kept(self):
         assert self.match([listed("l1", "board=rpi4")], "board=rpi5,board=rpi4") is None

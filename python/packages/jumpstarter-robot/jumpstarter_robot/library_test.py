@@ -548,3 +548,43 @@ class TestInRobot:
         )
         with use_session_factory(local=local):
             run_robot(tmp_path / "suites").assert_passed()
+
+    @pytest.mark.parametrize("order", [("board-a", "board_a"), ("board_a", "board-a")])
+    @pytest.mark.parametrize("literal", [False, True], ids=["variables", "literals"])
+    def test_reused_sessions_with_clashing_names_keep_their_exporters(
+        self, tmp_path, leases, run_robot, order, literal
+    ):
+        """Robot Framework reuses a library only for the same arguments, so a shadowed variable is a new import."""
+        for name in order:
+            variable = session_variable("JMP_SELECTOR", name)
+            selector = f"board={name}" if literal else f"${{{variable}}}"
+            write(
+                tmp_path,
+                f"{name}.resource",
+                f"""
+                *** Settings ***
+                Library    jumpstarter_robot.Jumpstarter    auto_import=False
+                Library    jumpstarter_robot.Session    {name}    selector={selector}    AS    session.{name}
+
+                *** Variables ***
+                ${{{variable}}}    board={name}
+                """,
+            )
+        for index, names in enumerate(((order[0],), (order[1],), order), 1):
+            resources = "\n".join(f"Resource    ../{name}.resource" for name in names)
+            cases = "\n".join(
+                f"Open {name} In {index}\n"
+                f"    Release Lease    session={name}\n"
+                f"    ${{exporter}}=    Get Exporter Name    session={name}\n"
+                f"    Should Be Equal    ${{exporter}}    exporter-{name}\n"
+                for name in names
+            )
+            write(
+                tmp_path, f"suites/{index}.robot", "*** Settings ***\n" + resources + "\n*** Test Cases ***\n" + cases
+            )
+        run = run_robot(tmp_path / "suites")
+        assert leases.calls
+        # whatever was refused, no session was ever opened for the other one's selector
+        assert {(name, call["selector"]) for name, call in leases.calls} == {(name, f"board={name}") for name in order}
+        refused = any("same variable and keyword names" in error.message for error in run.result.errors)
+        assert refused is not literal
