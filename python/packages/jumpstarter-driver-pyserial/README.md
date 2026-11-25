@@ -200,6 +200,18 @@ j serial console
 - **CTRL+B x3**: Exit the console
 - **CTRL+] x3**: Power cycle the board (when the serial device has a `power` child, see above)
 
+The hotkeys also work while the console is still connecting, for example while
+the exporter waits for a serial port that appears only once the board is
+powered: CTRL+B x3 exits, and CTRL+] x3 power cycles the board, which also
+powers on a board that is switched off. CTRL+] x3 is ignored while a power
+cycle is still running, and CTRL+B x3 during a power cycle exits once the cycle
+is done.
+
+Keys typed while the console is connecting are sent once it has connected.
+Starting a power cycle discards the keys still waiting to be sent, and until
+the console has connected, keys it reads during the cycle are discarded too. A
+connected console sends keys as they are typed, also during a power cycle.
+
 Use `--observe` to attach in read-only (watch-only) mode. Observers receive
 serial output but cannot write, so they can watch a session another client is
 driving without interfering:
