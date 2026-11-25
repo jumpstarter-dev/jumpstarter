@@ -13,6 +13,10 @@ board sits on your desk, in a shared lab, or runs as a virtual device. Tests sta
 ordinary pytest or shell scripts with no job language to learn, and every
 component runs on infrastructure you control.
 
+One tool, any target. Jumpstarter decouples devices from test runners, so a
+script written against a board on your desk can run unchanged against a board in
+a remote lab or a virtual device in CI.
+
 ## Highlights
 
 - 🧪 **Unified Testing** - One interface for real boards and virtual targets alike
