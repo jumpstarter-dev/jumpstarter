@@ -1,5 +1,6 @@
 import pytest
 
+from .client import _QNX_CAT, _ssh_write_heredoc
 from .driver import Qnx, QnxPower, Qvm, QvmFlasher, QvmPower
 from jumpstarter.common.exceptions import ConfigurationError
 from jumpstarter.driver import Driver
@@ -106,3 +107,19 @@ class TestQvmDriverInit:
         """Qvm driver should return empty string when no default config."""
         qvm = Qvm(children={"qnx": MockDriver()})
         assert qvm.render_config() == ""
+
+
+class TestSshWriteHeredoc:
+    """Remote write helper must be a single argv for OpenSSH joining."""
+
+    def test_uses_absolute_cat_and_quoted_path(self):
+        cmd = _ssh_write_heredoc("/tmp/qvm.conf", "system guest\nram 1g\n")
+        assert cmd.startswith(f"{_QNX_CAT} > /tmp/qvm.conf << 'QVMEOF'\n")
+        assert cmd.endswith("QVMEOF")
+        assert "system guest\nram 1g\n" in cmd
+        # One shell script — not split into sh / -c / body argv pieces.
+        assert not cmd.startswith("sh ")
+
+    def test_quotes_path_with_spaces(self):
+        cmd = _ssh_write_heredoc("/tmp/my conf.conf", "x\n")
+        assert f"{_QNX_CAT} > '/tmp/my conf.conf' << 'QVMEOF'\n" in cmd

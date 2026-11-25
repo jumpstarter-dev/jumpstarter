@@ -1,4 +1,6 @@
+import logging
 import os
+import shlex
 import subprocess
 import threading
 import time
@@ -16,9 +18,21 @@ from jumpstarter.client.decorators import driver_click_group
 from jumpstarter.common.exceptions import JumpstarterException
 from jumpstarter.common.fls import get_fls_binary
 
+# Non-interactive QNX SSH sessions typically lack /proc/boot on PATH.
+_QNX_CAT = "/proc/boot/cat"
+
 
 class QnxError(JumpstarterException):
     """Base exception for QNX/QVM driver errors (surfaced cleanly by ``j``)."""
+
+
+def _ssh_write_heredoc(path: str, content: str) -> str:
+    """Build a single remote shell command that writes *content* to *path*.
+
+    Must be one argv element: OpenSSH joins remote args with spaces and does
+    not preserve quoting, so ``sh -c '…'`` becomes ``sh -c …`` and breaks.
+    """
+    return f"{_QNX_CAT} > {shlex.quote(path)} << 'QVMEOF'\n{content}QVMEOF"
 
 
 class QnxTimeoutError(QnxError):
@@ -34,6 +48,34 @@ class QnxState(Enum):
     QVM_STARTING = auto()
     QVM_RUNNING = auto()
     QVM_STOPPING = auto()
+
+
+class _LineBufferedDebugLog:
+    """pexpect ``logfile_read`` sink that emits complete lines at DEBUG."""
+
+    def __init__(self, logger: logging.Logger, prefix: str = "serial"):
+        self._logger = logger
+        self._prefix = prefix
+        self._buf = ""
+
+    def write(self, data):
+        if not data:
+            return
+        if isinstance(data, (bytes, bytearray)):
+            text = bytes(data).decode(errors="replace")
+        else:
+            text = str(data)
+        self._buf += text
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            line = line.rstrip("\r")
+            if line:
+                self._logger.debug("%s: %s", self._prefix, line)
+
+    def flush(self):
+        if self._buf.strip():
+            self._logger.debug("%s: %s", self._prefix, self._buf.rstrip("\r"))
+            self._buf = ""
 
 
 @dataclass(kw_only=True)
@@ -104,30 +146,45 @@ class QnxPowerClient(CompositeClient):
 
     def _run_init_script(self, console):
         self.logger.info("Running init script...")
-        # Run as one compound command so $? is the overall exit code
+        # Send as one compound command so $? is the overall exit code and
+        # multiline constructs (if/while/for) parse correctly.
         script = self._init_script.rstrip("\n")
-        console.sendline("{")
-        for line in script.splitlines():
-            console.sendline(line)
-        console.sendline("}; echo INIT_EXIT_CODE=$?")
-        try:
-            console.expect(r"INIT_EXIT_CODE=(\d+)", timeout=self._prompt_timeout)
-        except pexpect.TIMEOUT as err:
-            output = self._console_text(console).strip()
-            detail = f"\n--- serial output ---\n{output}\n---" if output else ""
-            raise QnxTimeoutError(
-                f"Timed out waiting for init script exit code after {self._prompt_timeout}s{detail}"
-            ) from err
-
-        exit_code = int(console.match.group(1))
-        output = self._console_text(console).strip()
-        if exit_code != 0:
-            detail = f"\n--- serial output ---\n{output}\n---" if output else ""
-            raise QnxError(f"Init script failed with exit code {exit_code}{detail}")
-
-        self._expect(
-            console, self._final_prompt, self._prompt_timeout, "QNX prompt after init script"
+        self.logger.debug(
+            "Sending init script (%d lines):\n%s", len(script.splitlines()), script
         )
+
+        debug_log = None
+        previous_logfile = None
+        if self.logger.isEnabledFor(logging.DEBUG):
+            previous_logfile = getattr(console, "logfile_read", None)
+            debug_log = _LineBufferedDebugLog(self.logger)
+            console.logfile_read = debug_log
+
+        try:
+            console.sendline(f"{{\n{script}\n}}; echo INIT_EXIT_CODE=$?")
+            try:
+                console.expect(r"INIT_EXIT_CODE=(\d+)", timeout=self._prompt_timeout)
+            except pexpect.TIMEOUT as err:
+                output = self._console_text(console).strip()
+                detail = f"\n--- serial output ---\n{output}\n---" if output else ""
+                raise QnxTimeoutError(
+                    f"Timed out waiting for init script exit code after {self._prompt_timeout}s{detail}"
+                ) from err
+
+            exit_code = int(console.match.group(1))
+            output = self._console_text(console).strip()
+            if exit_code != 0:
+                detail = f"\n--- serial output ---\n{output}\n---" if output else ""
+                raise QnxError(f"Init script failed with exit code {exit_code}{detail}")
+
+            self._expect(
+                console, self._final_prompt, self._prompt_timeout, "QNX prompt after init script"
+            )
+        finally:
+            if debug_log is not None:
+                debug_log.flush()
+                console.logfile_read = previous_logfile
+
         self.logger.info("Init script completed successfully")
 
     def _boot_via_ipl(self, console):
@@ -268,12 +325,7 @@ class QvmPowerClient(CompositeClient):
         """Write QVM config to the board via SSH."""
         opts = SSHCommandRunOptions(capture_output=True)
         result = self.qnx.ssh.run(
-            opts,
-            [
-                "sh",
-                "-c",
-                f"cat > {self._qvm_config_path} << 'QVMEOF'\n{content}QVMEOF",
-            ],
+            opts, [_ssh_write_heredoc(self._qvm_config_path, content)]
         )
         if result.return_code != 0:
             raise QnxError(f"Failed to write QVM config: {result.stderr}")
@@ -524,7 +576,7 @@ class QvmClient(CompositeClient):
         qvm_config_path = self.call("get_qvm_config_path")
         result = self.qnx.ssh.run(
             SSHCommandRunOptions(capture_output=True),
-            ["cat", qvm_config_path],
+            [_QNX_CAT, qvm_config_path],
         )
         if result.return_code != 0:
             raise QnxError(f"Failed to read QVM config: {result.stderr}")
@@ -535,11 +587,7 @@ class QvmClient(CompositeClient):
         qvm_config_path = self.call("get_qvm_config_path")
         result = self.qnx.ssh.run(
             SSHCommandRunOptions(capture_output=True),
-            [
-                "sh",
-                "-c",
-                f"cat > {qvm_config_path} << 'QVMEOF'\n{content}QVMEOF",
-            ],
+            [_ssh_write_heredoc(qvm_config_path, content)],
         )
         if result.return_code != 0:
             raise QnxError(f"Failed to write QVM config: {result.stderr}")

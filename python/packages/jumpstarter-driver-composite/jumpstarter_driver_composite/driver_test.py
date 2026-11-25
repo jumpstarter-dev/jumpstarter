@@ -1,6 +1,10 @@
+import logging
+
+import click
 from jumpstarter_driver_power.driver import MockPower
 from pydantic.dataclasses import dataclass
 
+from .client import _opt_log_level_callback
 from .driver import Composite, Proxy
 from jumpstarter.client.base import StubDriverClient
 from jumpstarter.common.utils import serve
@@ -165,3 +169,41 @@ def test_proxy_in_parent_child():
     result = parent.initialize()
     assert result == "initialized with connected"
     assert actual_serial.connected is True
+
+
+def test_nested_log_level_option_does_not_reset_parent_debug():
+    """Parent ``--log-level DEBUG`` must survive nested composites omitting it."""
+    logger = logging.getLogger("QnxPowerClient")
+    previous_level = logger.level
+    logger.setLevel(logging.WARNING)
+    try:
+
+        @click.group()
+        @click.option(
+            "--log-level",
+            "log_level",
+            type=click.Choice(["DEBUG", "INFO"]),
+            expose_value=False,
+            callback=_opt_log_level_callback,
+        )
+        def root():
+            pass
+
+        @root.group()
+        @click.option(
+            "--log-level",
+            "log_level",
+            type=click.Choice(["DEBUG", "INFO"]),
+            expose_value=False,
+            callback=_opt_log_level_callback,
+        )
+        def qnx():
+            pass
+
+        @qnx.command()
+        def power():
+            assert logger.isEnabledFor(logging.DEBUG)
+
+        root(["--log-level", "DEBUG", "qnx", "power"], standalone_mode=False)
+    finally:
+        logger.setLevel(previous_level)
