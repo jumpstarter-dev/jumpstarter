@@ -34,7 +34,7 @@ class MockHTTPHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else None
 
-        self.server.requests.append({  # ty: ignore[unresolved-attribute]
+        self.server.requests.append({  # ty: ignore[missing-attribute]
             'method': self.command,
             'path': self.path,
             'body': body
@@ -56,7 +56,7 @@ class MockHTTPHandler(BaseHTTPRequestHandler):
 def test_drivers_http_power():
     # Start a mock HTTP server
     server = HTTPServer(('localhost', 0), MockHTTPHandler)
-    server.requests = []  # ty: ignore[unresolved-attribute]
+    server.requests = []  # ty: ignore[missing-attribute]
     server_port = server.server_address[1]
     server_thread = threading.Thread(target=server.serve_forever)
     server_thread.daemon = True
@@ -88,22 +88,22 @@ def test_drivers_http_power():
             assert readings[0].current == 2.5
 
             # Verify HTTP requests were made
-            assert len(server.requests) == 3  # ty: ignore[unresolved-attribute]
+            assert len(server.requests) == 3  # ty: ignore[missing-attribute]
 
             # Check on request
-            on_request = server.requests[0]  # ty: ignore[unresolved-attribute]
+            on_request = server.requests[0]  # ty: ignore[missing-attribute]
             assert on_request['method'] == 'POST'
             assert on_request['path'] == '/on'
             assert on_request['body'] == 'power=on'
 
             # Check off request
-            off_request = server.requests[1]  # ty: ignore[unresolved-attribute]
+            off_request = server.requests[1]  # ty: ignore[missing-attribute]
             assert off_request['method'] == 'POST'
             assert off_request['path'] == '/off'
             assert off_request['body'] == 'power=off'
 
             # Check read request
-            read_request = server.requests[2]  # ty: ignore[unresolved-attribute]
+            read_request = server.requests[2]  # ty: ignore[missing-attribute]
             assert read_request['method'] == 'GET'
             assert read_request['path'] == '/read'
             assert read_request['body'] is None
@@ -182,7 +182,7 @@ class AuthHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         auth = self.headers.get("Authorization")
-        self.server.auth_headers.append(auth)  # ty: ignore[unresolved-attribute]
+        self.server.auth_headers.append(auth)  # ty: ignore[missing-attribute]
         if self.path.startswith("/digest") and not (auth or "").startswith("Digest "):
             self.send_response(401)
             self.send_header("WWW-Authenticate", NO_QOP_CHALLENGE if "noqop" in self.path else CHALLENGE)
@@ -195,7 +195,7 @@ class AuthHandler(BaseHTTPRequestHandler):
 @contextmanager
 def _auth_server():
     server = HTTPServer(("localhost", 0), AuthHandler)
-    server.auth_headers = []  # ty: ignore[unresolved-attribute]
+    server.auth_headers = []  # ty: ignore[missing-attribute]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:

@@ -126,7 +126,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 pass
             yield self.serial
 
-    def flash(  # noqa: C901  # ty: ignore[invalid-method-override]
+    def flash(  # noqa: C901  # ty: ignore[incompatible-method-override]
         self,
         path: PathBuf,
         *,
@@ -299,12 +299,12 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         # First pass: look for non-retryable errors (highest priority)
         non_retryable = self._find_exception_in_chain(exception, FlashNonRetryableError)
         if non_retryable is not None:
-            return non_retryable  # ty: ignore[invalid-return-type]
+            return non_retryable  # ty: ignore[invalid-explicit-return]
 
         # Second pass: look for retryable errors
         retryable = self._find_exception_in_chain(exception, FlashRetryableError)
         if retryable is not None:
-            return retryable  # ty: ignore[invalid-return-type]
+            return retryable  # ty: ignore[invalid-explicit-return]
 
         # CancelledError is a special case that should be treated as non-retryable
         if isinstance(exception, CancelledError):
@@ -1178,7 +1178,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         else:
             raise ArgumentError(f"No block device found for address {address}, output was: {output}")
 
-    def dump(  # ty: ignore[invalid-method-override]
+    def dump(  # ty: ignore[incompatible-method-override]
         self,
         path: PathBuf,
         *,

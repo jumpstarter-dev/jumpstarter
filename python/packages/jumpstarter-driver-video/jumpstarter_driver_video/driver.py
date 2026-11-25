@@ -76,7 +76,7 @@ class HttpVideo(VideoInterface, Driver):
                 part = await reader.next()
                 if part is None:
                     raise RuntimeError(f"no frame received from {self.url}")
-                return await part.read()  # ty: ignore[unresolved-attribute]
+                return await part.read()  # ty: ignore[missing-union-attribute]
 
     @export
     async def snapshot(self) -> str:

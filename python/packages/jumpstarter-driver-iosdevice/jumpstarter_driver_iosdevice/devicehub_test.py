@@ -62,7 +62,7 @@ class TruststoreContext(STDLIB_CONTEXT):
 
     @minimum_version.setter
     def minimum_version(self, value):
-        STDLIB_SETTERS.minimum_version.__set__(self._ctx, value)  # ty: ignore[unresolved-attribute]
+        STDLIB_SETTERS.minimum_version.__set__(self._ctx, value)  # ty: ignore[missing-attribute]
 
     @property
     def maximum_version(self):
@@ -70,7 +70,7 @@ class TruststoreContext(STDLIB_CONTEXT):
 
     @maximum_version.setter
     def maximum_version(self, value):
-        STDLIB_SETTERS.maximum_version.__set__(self._ctx, value)  # ty: ignore[unresolved-attribute]
+        STDLIB_SETTERS.maximum_version.__set__(self._ctx, value)  # ty: ignore[missing-attribute]
 
 
 @pytest.fixture

@@ -151,7 +151,7 @@ class MitmproxyClient(DriverClient):
 
     # ── Status ──────────────────────────────────────────────────
 
-    def status(self) -> dict:  # ty: ignore[invalid-property-type-override]
+    def status(self) -> dict:  # ty: ignore[incompatible-property-override]
         """Get proxy status as a dict.
 
         Returns:

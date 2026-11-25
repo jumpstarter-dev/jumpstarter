@@ -245,7 +245,7 @@ def _flash_rich(client: QualcommFlasherClient, file, *, manifest, cached, force_
 class QualcommFlasherClient(StreamingFlasherClient, CompositeClient):
     """Client for Qualcomm QDL firmware flashing and identification."""
 
-    def _iter_flash_status(  # ty: ignore[invalid-method-override]
+    def _iter_flash_status(  # ty: ignore[incompatible-method-override]
         self,
         *,
         handle: Any,

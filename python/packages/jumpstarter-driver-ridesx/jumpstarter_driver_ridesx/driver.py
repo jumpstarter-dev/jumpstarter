@@ -117,7 +117,7 @@ class RideSXDriver(Driver):
             # Register with Opendal for automatic cleanup on close
             storage = self.children["storage"]
             relative_path = decompressed_file.relative_to(Path(self.storage_dir))
-            storage.register_path(str(relative_path))  # ty: ignore[unresolved-attribute]
+            storage.register_path(str(relative_path))  # ty: ignore[missing-attribute]
 
             return decompressed_file
 

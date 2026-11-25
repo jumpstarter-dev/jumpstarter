@@ -186,7 +186,7 @@ class _FanOutStreamBase:
         return self
 
     async def __aexit__(self, *exc):
-        await self.aclose()  # ty: ignore[unresolved-attribute]
+        await self.aclose()  # ty: ignore[missing-attribute]
 
 
 class ExclusiveStream(_FanOutStreamBase):
@@ -646,7 +646,7 @@ class FanOutStreamMixin:
     @asynccontextmanager
     async def serving(self):
         """Run the fan-out reader while the session serves this driver."""
-        async with super().serving(), self._get_fanout().running():  # ty: ignore[unresolved-attribute]
+        async with super().serving(), self._get_fanout().running():  # ty: ignore[missing-attribute]
             yield
 
     def _get_fanout_always_on(self) -> bool:
@@ -659,7 +659,7 @@ class FanOutStreamMixin:
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()  # ty: ignore[unresolved-attribute]
+            super().__post_init__()  # ty: ignore[missing-attribute]
         self._fanout = StreamFanOut(
             source_factory=self._open_source,
             scrollback_size=self._fanout_scrollback_size,
@@ -709,7 +709,7 @@ class FanOutStreamMixin:
                 # methods in one); a plain threading.Thread has no loop to hop to.
                 run_sync_from_thread(self._fanout.kick_sync)
         if hasattr(super(), "close"):
-            super().close()  # ty: ignore[unresolved-attribute]
+            super().close()  # ty: ignore[missing-attribute]
 
     def shutdown(self):
         """Session-end teardown: stop the reader loop and release the source.
@@ -721,4 +721,4 @@ class FanOutStreamMixin:
         if self._fanout is not None:
             self._fanout.shutdown_sync()
         if hasattr(super(), "shutdown"):
-            super().shutdown()  # ty: ignore[unresolved-attribute]
+            super().shutdown()  # ty: ignore[missing-attribute]

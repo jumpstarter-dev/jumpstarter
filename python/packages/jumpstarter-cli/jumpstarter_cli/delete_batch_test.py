@@ -10,7 +10,7 @@ class TestBatchDeleteLeases:
     def test_delete_multiple_leases(self):
         config = Mock()
         assert delete_leases.callback is not None
-        delete_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+        delete_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
             config=config,
             names=("lease1", "lease2", "lease3"),
             selector=None,
@@ -27,7 +27,7 @@ class TestBatchDeleteLeases:
         config = Mock()
         with pytest.raises(click.ClickException, match="must be specified"):
             assert delete_leases.callback is not None
-            delete_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+            delete_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
                 config=config,
                 names=(),
                 selector=None,
@@ -41,7 +41,7 @@ class TestBatchDeleteLeases:
 
         config = Mock()
         assert delete_leases.callback is not None
-        delete_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+        delete_leases.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
             config=config,
             names=("lease1", "lease2"),
             selector=None,

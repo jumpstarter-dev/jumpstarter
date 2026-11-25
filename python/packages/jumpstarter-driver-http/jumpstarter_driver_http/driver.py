@@ -84,7 +84,7 @@ class HttpServer(Driver):
 
         # Retrieve the actual bound port (important when port=0)
         assert site._server is not None
-        sockets = site._server.sockets  # ty: ignore[unresolved-attribute]
+        sockets = site._server.sockets  # ty: ignore[missing-attribute]
         if sockets:
             self._bound_port = int(sockets[0].getsockname()[1])
         else:

@@ -12,7 +12,7 @@ def test_drivers_video_ustreamer():
     try:
         instance = UStreamer()
     except FileNotFoundError:
-        pytest.skip("ustreamer not available")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("ustreamer not available")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
 
     with serve(instance) as client:
         assert client.state().ok

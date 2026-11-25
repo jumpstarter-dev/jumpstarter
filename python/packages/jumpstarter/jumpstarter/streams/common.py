@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 async def _send_eof(dst: AnyByteSendStream) -> bool:
     """Half-close ``dst``; return False if its transport is unusable."""
     try:
-        await dst.send_eof()  # ty: ignore[unresolved-attribute]
+        await dst.send_eof()  # ty: ignore[missing-attribute]
     except AttributeError:
         pass  # The destination cannot half-close.
     except OSError as e:

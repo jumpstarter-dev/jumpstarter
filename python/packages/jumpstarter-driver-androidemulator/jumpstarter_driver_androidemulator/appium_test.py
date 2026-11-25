@@ -39,7 +39,7 @@ def test_appium_is_pinned_to_the_running_emulator():
         child.prepare()
     process = MagicMock()
     process.poll.return_value = None
-    emulator.children["power"]._process = process  # ty: ignore[unresolved-attribute]
+    emulator.children["power"]._process = process  # ty: ignore[missing-attribute]
     child.prepare()
     fixed = child.fixed_capabilities()
     assert fixed["appium:udid"] == "emulator-5556"
@@ -55,7 +55,7 @@ def test_power_off_stops_appium():
     child = appium_child(emulator)
     process = MagicMock()
     process.returncode = None
-    emulator.children["power"]._process = process  # ty: ignore[unresolved-attribute]
+    emulator.children["power"]._process = process  # ty: ignore[missing-attribute]
     with patch.object(child, "stop_server") as stop:
-        emulator.children["power"].off()  # ty: ignore[unresolved-attribute]
+        emulator.children["power"].off()  # ty: ignore[missing-attribute]
     stop.assert_called_once_with()

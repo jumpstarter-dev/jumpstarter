@@ -779,7 +779,7 @@ class StorageMuxClient(DriverClient):
 
 
 class StorageMuxFlasherClient(FlasherClient, StorageMuxClient):
-    def flash(  # ty: ignore[invalid-method-override]
+    def flash(  # ty: ignore[incompatible-method-override]
         self,
         path: PathBuf,
         *,

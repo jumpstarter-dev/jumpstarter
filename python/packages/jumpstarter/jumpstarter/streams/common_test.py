@@ -28,7 +28,7 @@ async def socket_pair():
 
 
 class DroppingRouter(router_pb2_grpc.RouterServiceServicer):
-    async def Stream(self, requests, context):  # ty: ignore[invalid-method-override]
+    async def Stream(self, requests, context):  # ty: ignore[lost-keyword-for-regular-parameter]
         async for request in requests:
             if request.payload == b"disconnect":
                 await context.abort(grpc.StatusCode.UNAVAILABLE, "injected outer transport loss")

@@ -29,7 +29,7 @@ class AndroidEmulatorClient(CompositeClient):
         Yields:
             An ``adbutils.AdbDevice`` connected through the tunnel.
         """
-        import adbutils  # ty: ignore[unresolved-import]
+        import adbutils  # ty: ignore[import-not-found]
 
         with self.adb.forward_adb(port=0) as (host, port):
             adb = adbutils.AdbClient(host=host, port=port)

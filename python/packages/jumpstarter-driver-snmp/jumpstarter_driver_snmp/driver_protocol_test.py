@@ -139,7 +139,7 @@ class SnmpTestAgent:
             self._stack = self._portal = None
 
     def __enter__(self) -> Self:
-        return self.start()  # ty: ignore[invalid-return-type]
+        return self.start()  # ty: ignore[invalid-explicit-return]
 
     def __exit__(self, *exc_info):
         self.stop()

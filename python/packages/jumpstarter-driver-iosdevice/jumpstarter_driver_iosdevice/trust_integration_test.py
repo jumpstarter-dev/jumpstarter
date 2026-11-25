@@ -240,7 +240,7 @@ class PairedDevice:
             elif name == "StopSession":
                 assert request["SessionID"] == "REAL-SESSION-IDENTITY"
                 await _write_lockdown(stream, response)
-                stream, remainder = await stream.unwrap()  # ty: ignore[unresolved-attribute]
+                stream, remainder = await stream.unwrap()  # ty: ignore[missing-union-attribute]
                 assert not remainder
                 reader = BufferedByteReceiveStream(stream)
                 continue

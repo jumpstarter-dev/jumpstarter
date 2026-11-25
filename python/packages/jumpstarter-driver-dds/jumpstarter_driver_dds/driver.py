@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def _build_cyclonedds_qos(qos: DdsTopicQos):  # pragma: no cover — requires native CycloneDDS
     """Build a CycloneDDS Qos object from our config model."""
-    from cyclonedds.core import Policy, Qos  # ty: ignore[unresolved-import]
+    from cyclonedds.core import Policy, Qos  # ty: ignore[import-not-found]
 
     policies = []
 
@@ -83,7 +83,7 @@ def _make_idl_type(topic_name: str, fields: list[str]):  # pragma: no cover — 
     collisions when distinct topic names sanitise to the same identifier
     (e.g. ``"sensor/temp"`` and ``"sensor-temp"``).
     """
-    from cyclonedds.idl import IdlStruct  # ty: ignore[unresolved-import]
+    from cyclonedds.idl import IdlStruct  # ty: ignore[import-not-found]
 
     sanitised = topic_name.replace("/", "_").replace("-", "_").replace(".", "_")
     hash_suffix = hashlib.md5(topic_name.encode()).hexdigest()[:8]
@@ -122,7 +122,7 @@ class DdsBackend:  # pragma: no cover — requires native CycloneDDS
         """Create a CycloneDDS DomainParticipant and mark the backend as connected."""
         if self._connected:
             raise RuntimeError("Already connected to DDS domain")
-        from cyclonedds.domain import DomainParticipant  # ty: ignore[unresolved-import]
+        from cyclonedds.domain import DomainParticipant  # ty: ignore[import-not-found]
 
         self._participant = DomainParticipant(domain_id=self._domain_id)
         self._connected = True
@@ -186,9 +186,9 @@ class DdsBackend:  # pragma: no cover — requires native CycloneDDS
             raise ValueError(f"Topic '{name}' already exists")
         _validate_field_names(fields)
 
-        from cyclonedds.pub import DataWriter  # ty: ignore[unresolved-import]
-        from cyclonedds.sub import DataReader  # ty: ignore[unresolved-import]
-        from cyclonedds.topic import Topic  # ty: ignore[unresolved-import]
+        from cyclonedds.pub import DataWriter  # ty: ignore[import-not-found]
+        from cyclonedds.sub import DataReader  # ty: ignore[import-not-found]
+        from cyclonedds.topic import Topic  # ty: ignore[import-not-found]
 
         idl_type = _make_idl_type(name, fields)
         cqos = _build_cyclonedds_qos(qos)
@@ -440,7 +440,7 @@ class Dds(Driver):
             self._backend = MockDdsBackend(domain_id=self.domain_id)
         else:  # pragma: no cover — requires native CycloneDDS
             try:
-                from cyclonedds.domain import DomainParticipant  # noqa: F401  # ty: ignore[unresolved-import]
+                from cyclonedds.domain import DomainParticipant  # noqa: F401  # ty: ignore[import-not-found]
             except ImportError as exc:
                 raise ImportError(
                     "CycloneDDS native library is required when use_mock=False. "

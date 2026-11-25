@@ -23,7 +23,7 @@ class CanMessage(BaseModel):
     error_state_indicator: bool
 
     @classmethod
-    def construct(cls, msg):  # ty: ignore[invalid-method-override]
+    def construct(cls, msg):  # ty: ignore[incompatible-method-override]
         return cls.model_construct(
             timestamp=msg.timestamp,
             arbitration_id=msg.arbitration_id,
@@ -107,7 +107,7 @@ class IsoTpAddress(BaseModel):
     tx_only: bool
 
     @classmethod
-    def validate(cls, addr: isotp.Address):  # ty: ignore[invalid-method-override]
+    def validate(cls, addr: isotp.Address):  # ty: ignore[lost-keyword-for-regular-parameter]
         return cls(
             addressing_mode=addr._addressing_mode,
             txid=addr._txid,
@@ -149,7 +149,7 @@ class IsoTpAsymmetricAddress(BaseModel):
     rx_addr: IsoTpAddress
 
     @classmethod
-    def validate(cls, addr: isotp.AsymmetricAddress):  # ty: ignore[invalid-method-override]
+    def validate(cls, addr: isotp.AsymmetricAddress):  # ty: ignore[lost-keyword-for-regular-parameter]
         return cls(
             tx_addr=IsoTpAddress.validate(addr.tx_addr),
             rx_addr=IsoTpAddress.validate(addr.rx_addr),

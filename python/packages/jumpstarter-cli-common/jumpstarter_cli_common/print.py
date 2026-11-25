@@ -37,7 +37,7 @@ def model_print(  # noqa: C901
             names = []
 
             try:
-                model.rich_add_names(names)  # ty: ignore[unresolved-attribute]
+                model.rich_add_names(names)  # ty: ignore[missing-attribute]
             except AttributeError as err:
                 raise NotImplementedError from err
 
@@ -47,7 +47,7 @@ def model_print(  # noqa: C901
             paths = []
 
             try:
-                model.rich_add_paths(paths)  # ty: ignore[unresolved-attribute]
+                model.rich_add_paths(paths)  # ty: ignore[missing-attribute]
             except AttributeError as err:
                 raise NotImplementedError from err
 
@@ -61,8 +61,8 @@ def model_print(  # noqa: C901
             )
 
             try:
-                model.rich_add_columns(table, **kwargs)  # ty: ignore[unresolved-attribute]
-                model.rich_add_rows(table, **kwargs)  # ty: ignore[unresolved-attribute]
+                model.rich_add_columns(table, **kwargs)  # ty: ignore[missing-attribute]
+                model.rich_add_rows(table, **kwargs)  # ty: ignore[missing-attribute]
             except AttributeError as err:
                 raise NotImplementedError from err
 

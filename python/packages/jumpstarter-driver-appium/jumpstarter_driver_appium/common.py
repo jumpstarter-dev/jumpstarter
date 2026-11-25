@@ -73,7 +73,7 @@ class AppiumTarget:
         Needs the ``Appium-Python-Client`` package, which Jumpstarter does not install.
         """
         self._check_active()
-        from appium.webdriver.client_config import AppiumClientConfig  # ty: ignore[unresolved-import]
+        from appium.webdriver.client_config import AppiumClientConfig  # ty: ignore[import-not-found]
 
         if self.ca_file is not None:
             kwargs.setdefault("ca_certs", str(self.ca_file))

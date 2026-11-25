@@ -421,7 +421,7 @@ class Session(
         async for v in self[UUID(request.uuid)].StreamingDriverCall(request, context):
             yield v
 
-    async def Stream(self, _request_iterator, context):  # ty: ignore[invalid-method-override]
+    async def Stream(self, _request_iterator, context):  # ty: ignore[incompatible-method-override]
         request = StreamRequestMetadata(**dict(list(context.invocation_metadata()))).request  # type: ignore[call-arg]
         logger.debug("Streaming(%s)", request)
         try:

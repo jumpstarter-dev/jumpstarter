@@ -424,7 +424,7 @@ class TestHookExecutor:
             warning_logged_in_context = context_active
             return original_handle(error_msg, on_failure, hook_type, cause)
 
-        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]
+        executor._handle_hook_failure = tracking_handle  # type: ignore[method-assign]
 
         result = await executor.execute_before_lease_hook(lease_scope)
         assert result is not None

@@ -159,7 +159,7 @@ class AndroidEmulatorPower(PowerInterface, Driver):
     def _stop_appium(self) -> None:
         appium = self.parent.children.get("appium")
         if appium is not None:
-            appium.stop_server()  # ty: ignore[unresolved-attribute]
+            appium.stop_server()  # ty: ignore[missing-attribute]
 
     @export
     def off(self) -> None:

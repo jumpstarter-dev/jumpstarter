@@ -53,7 +53,7 @@ def device_calls(monkeypatch):
         pass
 
     daemon = Daemon()
-    daemon.connect_device = connect_device  # ty: ignore[unresolved-attribute]
+    daemon.connect_device = connect_device  # ty: ignore[missing-attribute]
     monkeypatch.setattr(IosDevice, "_daemon", lambda self: daemon)
     monkeypatch.setattr(IosDevice, "info", AsyncMock(return_value=PRESENT))
     return calls

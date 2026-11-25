@@ -29,18 +29,18 @@ class _BytesStream(ObjectStream[bytes]):
 
 def test_rich_bar_disabled_when_logging():
     ps = ProgressStream(stream=_BytesStream(), logging=True)
-    assert ps._ProgressStream__prog.disable is True  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    assert ps._ProgressStream__prog.disable is True  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
 
 def test_rich_bar_enabled_when_not_logging():
     with patch.dict(os.environ, {"TERM": "xterm"}):
         ps = ProgressStream(stream=_BytesStream(), logging=False)
-    assert ps._ProgressStream__prog.disable is False  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    assert ps._ProgressStream__prog.disable is False  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
 
 async def test_logging_emits_plain_text():
     ps = ProgressStream(stream=_BytesStream(), logging=True)
-    ps._ProgressStream__last = datetime.now(tz=UTC) - timedelta(seconds=10)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    ps._ProgressStream__last = datetime.now(tz=UTC) - timedelta(seconds=10)  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
     with patch("jumpstarter.streams.progress.logger") as mock_logger:
         await ps.receive()
@@ -54,7 +54,7 @@ async def test_logging_emits_plain_text():
 async def test_no_logging_skips_log_call():
     with patch.dict(os.environ, {"TERM": "dumb"}):
         ps = ProgressStream(stream=_BytesStream(), logging=False)
-    ps._ProgressStream__last = datetime.now(tz=UTC) - timedelta(seconds=10)  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    ps._ProgressStream__last = datetime.now(tz=UTC) - timedelta(seconds=10)  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
     with patch("jumpstarter.streams.progress.logger") as mock_logger:
         await ps.receive()
@@ -76,7 +76,7 @@ async def test_aclose_stops_the_rich_bar():
     with patch.dict(os.environ, {"TERM": "xterm"}):
         ps = ProgressStream(stream=_BytesStream(), logging=False)
     await ps.receive()
-    prog = ps._ProgressStream__prog  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    prog = ps._ProgressStream__prog  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
     assert prog.live.is_started
 
     await ps.aclose()
@@ -88,7 +88,7 @@ async def test_aclose_stops_the_rich_bar_when_closing_the_stream_fails():
     with patch.dict(os.environ, {"TERM": "xterm"}):
         ps = ProgressStream(stream=_FailingCloseStream(), logging=False)
     await ps.receive()
-    prog = ps._ProgressStream__prog  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+    prog = ps._ProgressStream__prog  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]
 
     with pytest.raises(OSError, match="close failed"):
         await ps.aclose()

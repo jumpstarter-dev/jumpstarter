@@ -88,13 +88,13 @@ class PiPicoFlasher(FlasherInterface, Driver):
         hold = self.gpio_reset_hold_seconds
 
         self.logger.info("Entering BOOTSEL via GPIO reset (bootsel + run pins)")
-        bootsel.on()  # ty: ignore[unresolved-attribute]
+        bootsel.on()  # ty: ignore[missing-attribute]
         time.sleep(hold)
-        run.on()  # ty: ignore[unresolved-attribute]
+        run.on()  # ty: ignore[missing-attribute]
         time.sleep(hold)
-        run.off()  # ty: ignore[unresolved-attribute]
+        run.off()  # ty: ignore[missing-attribute]
         time.sleep(hold / 2)
-        bootsel.off()  # ty: ignore[unresolved-attribute]
+        bootsel.off()  # ty: ignore[missing-attribute]
 
     def _touch_serial_for_bootloader(self):
         serial = serial_for_url(self._serial.url, baudrate=self.bootloader_touch_baudrate)

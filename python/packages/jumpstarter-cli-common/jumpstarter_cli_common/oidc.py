@@ -192,7 +192,7 @@ class Config:
             raise click.ClickException(f"Failed to start callback server on port {port}: {e}") from None
 
         assert site._server is not None
-        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"  # ty: ignore[unresolved-attribute]
+        redirect_uri = f"http://localhost:{site._server.sockets[0].getsockname()[1]}/callback"  # ty: ignore[missing-attribute]
 
         client = self.client(redirect_uri=redirect_uri)
 

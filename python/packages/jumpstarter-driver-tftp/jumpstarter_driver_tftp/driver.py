@@ -97,7 +97,7 @@ class Tftp(Driver):
                 server = TftpServer(
                     host=self.host,
                     port=self.port,
-                    operator=self.children["storage"]._operator,  # ty: ignore[unresolved-attribute]
+                    operator=self.children["storage"]._operator,  # ty: ignore[missing-attribute]
                     logger=self.logger,
                 )
                 portal = stack.enter_context(start_blocking_portal())

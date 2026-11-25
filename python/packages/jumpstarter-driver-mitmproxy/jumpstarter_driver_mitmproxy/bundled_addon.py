@@ -534,7 +534,7 @@ class CaptureClient:
             if self._sock is None and not self._connect():  # pragma: no cover
                 return
             try:
-                self._sock.sendall(payload.encode())  # ty: ignore[unresolved-attribute]
+                self._sock.sendall(payload.encode())  # ty: ignore[missing-union-attribute]
                 return
             except OSError:
                 self.close()

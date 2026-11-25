@@ -62,12 +62,12 @@ class ThrottledStream(ObjectStream):
 
     async def receive(self):
         if hasattr(self.stream, "receive"):
-            return await self.stream.receive()  # ty: ignore[call-non-callable]
+            return await self.stream.receive()  # ty: ignore[not-callable]
         raise RuntimeError("receive() called on send-only ThrottledStream")
 
     async def send_eof(self):
         if hasattr(self.stream, "send_eof"):
-            await self.stream.send_eof()  # ty: ignore[call-non-callable]
+            await self.stream.send_eof()  # ty: ignore[not-callable]
 
     async def aclose(self):
         await self.stream.aclose()
@@ -95,7 +95,7 @@ class AsyncSerial(ObjectStream):
 
     async def send_eof(self):
         if hasattr(self.writer, "send_eof"):
-            await self.writer.send_eof()  # ty: ignore[call-non-callable]
+            await self.writer.send_eof()  # ty: ignore[not-callable]
 
     async def aclose(self):
         try:
