@@ -1106,6 +1106,25 @@ class TestReleaseOnExit:
 
         assert "Timeout while deleting lease test-lease during cleanup" in caplog.text
 
+    @pytest.mark.anyio
+    async def test_unresponsive_delete_times_out_the_release_not_the_caller(self, monkeypatch, caplog):
+        """A controller that answers GetLease but hangs on DeleteLease must also time out cleanup."""
+        monkeypatch.setattr("jumpstarter.client.lease._RELEASE_RPC_TIMEOUT_SECONDS", 0.2)
+        async with _unresponsive_controller() as channel:
+            lease = object.__new__(Lease)
+            lease.channel, lease.namespace, lease.name, lease.release = channel, "default", "test-lease", True
+            lease.svc = ClientService(channel=channel, namespace="default")
+            lease.request_async = AsyncMock(return_value=lease)
+            lease.get = AsyncMock(return_value=Mock(effective_end_time=None))
+
+            with anyio.fail_after(10), caplog.at_level(logging.INFO, logger="jumpstarter.client.lease"):
+                async with lease:
+                    pass
+
+        # The info line proves get() returned, so DeleteLease is the call that hung.
+        assert "Releasing Lease test-lease" in caplog.text
+        assert "Timeout while deleting lease test-lease during cleanup" in caplog.text
+
 
 class TestAcquireExpiredLease:
     """Tests for Ready=False detection in _acquire polling loop."""
