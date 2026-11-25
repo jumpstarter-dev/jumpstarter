@@ -3,6 +3,7 @@ package authorization
 import (
 	"context"
 	"slices"
+	"strings"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,7 +51,7 @@ func (b *BasicAuthorizer) Authorize(
 			Name:      attributes.GetName(),
 		}, &c)
 		if err != nil {
-			if apierrors.IsNotFound(err) && b.provisioning {
+			if apierrors.IsNotFound(err) && b.provisioning && b.mayProvision(attributes) {
 				c = jumpstarterdevv1alpha1.Client{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: attributes.GetNamespace(),
@@ -76,4 +77,15 @@ func (b *BasicAuthorizer) Authorize(
 	default:
 		return authorizer.DecisionDeny, "invalid object kind", nil
 	}
+}
+
+// mayProvision allows creating a missing Client only for an OIDC user asking
+// for the name derived from its username. Controller-issued identities and
+// Kubernetes service accounts open objects an admin created for them.
+func (b *BasicAuthorizer) mayProvision(attributes authorizer.Attributes) bool {
+	username := attributes.GetUser().GetName()
+	if strings.HasPrefix(username, b.prefix) || isKubernetesServiceAccount(username) {
+		return false
+	}
+	return attributes.GetName() == normalizeOIDCUsername(username)
 }
