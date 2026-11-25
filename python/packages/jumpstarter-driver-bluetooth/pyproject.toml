@@ -17,6 +17,8 @@ dependencies = [
 
 [project.entry-points."jumpstarter.drivers"]
 BluetoothBridge = "jumpstarter_driver_bluetooth.driver:BluetoothBridge"
+BluetoothControllerPort = "jumpstarter_driver_bluetooth.driver:BluetoothControllerPort"
+BluetoothRemoteController = "jumpstarter_driver_bluetooth.driver:BluetoothRemoteController"
 MockBluetooth = "jumpstarter_driver_bluetooth.driver:MockBluetooth"
 
 [tool.hatch.version]
