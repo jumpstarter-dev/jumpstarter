@@ -9,18 +9,13 @@ name is also its session name::
     config = "lab"                      # default client config (alias, path or "env")
 
     [tool.jumpstarter.client.dut]
-    exporter-config = "exporter.yaml"   # or selector / lease / exporter-class / tree
+    exporter-config = "exporter.yaml"   # or selector / lease
     resource = "client.resource"
 
     [tool.jumpstarter.client.dut.aliases]
     "dutlink.power" = "Main Power"
 
-    [tool.jumpstarter.client.dut.nodes]
-    "dutlink.power" = "jumpstarter_driver_power.client.PowerClient"
-
-Paths are relative to the TOML file. Reads use ``tomllib``; the ``nodes``
-table is written back with ``tomlkit`` so comments and ordering survive.
-Credentials never go into these files.
+Paths are relative to the TOML file. Credentials never go into these files.
 """
 
 from __future__ import annotations
@@ -31,12 +26,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import tomlkit
-import tomlkit.items
 import yaml
 
 from .configs import ENV_CONFIG, is_path_like
-from .tree import pascal_case
+from .naming import words
 
 PROJECT_FILES = ("robot.toml", "pyproject.toml")
 TABLE = ("tool", "jumpstarter", "client")
@@ -48,13 +41,9 @@ CLIENT_KEYS = (
     "exporter-config",
     "selector",
     "lease",
-    "exporter-class",
-    "driver-interface-dir",
-    "tree",
     "config",
     "resource",
     "aliases",
-    "nodes",
     "include",
     "exclude",
     "roles",
@@ -76,13 +65,9 @@ class ClientSettings:
     exporter_config: str | Path | None = None
     selector: str | None = None
     lease: str | None = None
-    exporter_class: str | None = None
-    driver_interface_dirs: list[Path] = field(default_factory=list)
-    tree: Path | None = None
     config: str | Path | None = None
     resource: Path | None = None
     aliases: dict[str, str] = field(default_factory=dict)
-    nodes: dict[str, Any] | None = None
     include: list[str] = field(default_factory=list)
     exclude: list[str] = field(default_factory=list)
     roles: bool = False
@@ -96,7 +81,7 @@ class ClientSettings:
 
     @property
     def device_name(self) -> str:
-        return pascal_case(self.name) or "Device"
+        return "".join(words(self.name)) or "Device"
 
     @property
     def resource_path(self) -> Path:
@@ -110,10 +95,6 @@ class ClientSettings:
             "lease_name": self.lease,
             "config": self.config,
         }
-
-    def nodes_ref(self) -> str:
-        where = self.project.name if self.project else "the command line"
-        return f"{where} [{'.'.join(TABLE)}.{self.name}.nodes]"
 
 
 # ---- finding and reading ----
@@ -139,8 +120,7 @@ def find_project(start: str | Path | None = None) -> Path | None:
     """The nearest ``robot.toml`` (or ``pyproject.toml`` with ``[tool.jumpstarter.client]``) upwards from ``start``.
 
     In each directory a ``robot.toml`` with client settings wins, then a
-    ``pyproject.toml`` with them, then a bare ``robot.toml`` (the file
-    ``--capture`` writes to).
+    ``pyproject.toml`` with them, then a bare ``robot.toml``.
     """
     directory = Path(start or Path.cwd()).resolve()
     for folder in (directory, *directory.parents):
@@ -206,21 +186,10 @@ def _aliases(where: str, value: Any) -> dict[str, str]:
     return {str(k): v for k, v in value.items()}
 
 
-def _nodes(where: str, value: Any) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        raise ProjectError(f"{where} must be a table of tree path = client class")
-    return dict(value)
-
-
 def _bool(where: str, value: Any) -> bool:
     if not isinstance(value, bool):
         raise ProjectError(f"{where} must be true or false")
     return value
-
-
-def _exporter_class(where: str, value: Any, base: Path) -> str:
-    path, sep, name = _string(where, value).partition("#")
-    return str(_path(path, base)) + (f"#{name}" if sep else "")
 
 
 # key → (attribute, parse(where, value, base_dir))
@@ -229,12 +198,8 @@ _PARSERS: dict[str, tuple[str, Any]] = {
     "config": ("config", lambda w, v, b: config_value(_string(w, v), b)),
     "selector": ("selector", lambda w, v, b: _string(w, v)),
     "lease": ("lease", lambda w, v, b: _string(w, v)),
-    "exporter-class": ("exporter_class", _exporter_class),
-    "driver-interface-dir": ("driver_interface_dirs", lambda w, v, b: [_path(p, b) for p in _strings(w, v)]),
-    "tree": ("tree", lambda w, v, b: _path(_string(w, v), b)),
     "resource": ("resource", lambda w, v, b: _path(_string(w, v), b)),
     "aliases": ("aliases", lambda w, v, b: _aliases(w, v)),
-    "nodes": ("nodes", lambda w, v, b: _nodes(w, v)),
     "include": ("include", lambda w, v, b: _strings(w, v)),
     "exclude": ("exclude", lambda w, v, b: _strings(w, v)),
     "roles": ("roles", lambda w, v, b: _bool(w, v)),
@@ -312,83 +277,3 @@ def token_warnings(settings: ClientSettings) -> list[str]:
         )
         return [message]
     return []
-
-
-# ---- writing the nodes table ----
-
-
-def _table(parent: Any, key: str, *, super_table: bool) -> Any:
-    if key not in parent:
-        parent[key] = tomlkit.table(is_super_table=super_table)
-    child = parent[key]
-    if not isinstance(child, (dict, tomlkit.items.Table)):
-        raise ProjectError(f"'{key}' in the project file is not a table")
-    return child
-
-
-def _toml_value(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        inline = tomlkit.inline_table()
-        inline.update(dict(value))
-        return inline
-    return value
-
-
-def _refuse_secrets(mapping: Mapping[str, Any], where: str) -> None:
-    for key, value in mapping.items():
-        if any(secret in str(key).lower() for secret in SECRET_KEYS):
-            raise ProjectError(f"refusing to write '{key}' to {where}: credentials stay out of the repository")
-        if isinstance(value, Mapping):
-            _refuse_secrets(value, where)
-
-
-def _update_nodes(nodes: Any, mapping: Mapping[str, Any]) -> None:
-    """Make ``nodes`` equal ``mapping`` in place, so unchanged entries keep their comments."""
-    for key in [k for k in nodes if k not in mapping]:
-        del nodes[key]
-    for key, value in mapping.items():
-        current = nodes.get(key)
-        if current is not None and _plain(current) == _plain(value):
-            continue
-        nodes[key] = _toml_value(value)
-
-
-def _plain(value: Any) -> Any:
-    return value.unwrap() if hasattr(value, "unwrap") else value
-
-
-def write_nodes(
-    path: str | Path,
-    name: str,
-    mapping: Mapping[str, Any],
-    *,
-    settings: Mapping[str, Any] | None = None,
-) -> Path:
-    """Write ``[tool.jumpstarter.client.<name>.nodes]`` into ``path``, creating the file or table if needed.
-
-    ``settings`` are written as the client's keys when the client table is
-    new (``selector``, ``resource``, ...). Everything else in the file is
-    left as it was.
-    """
-    path = Path(path)
-    if name in RESERVED_NAMES:
-        raise ProjectError(f"'{name}' is a setting name and cannot name a client")
-    _refuse_secrets(mapping, str(path))
-    _refuse_secrets(settings or {}, str(path))
-    document = tomlkit.parse(path.read_text()) if path.exists() else tomlkit.document()
-    table = document
-    for key in TABLE:
-        table = _table(table, key, super_table=True)
-    is_new = name not in table
-    client = _table(table, name, super_table=False)
-    if is_new:
-        for key, value in (settings or {}).items():
-            if value is not None:
-                client[key] = value
-    nodes = client.get("nodes")
-    if nodes is None or any(isinstance(_plain(v), Mapping) and "client" not in _plain(v) for v in nodes.values()):
-        client["nodes"] = tomlkit.table()  # new, or a nested layout that flat keys cannot extend
-        nodes = client["nodes"]
-    _update_nodes(nodes, mapping)
-    path.write_text(tomlkit.dumps(document))
-    return path

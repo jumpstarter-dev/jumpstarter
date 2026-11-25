@@ -10,7 +10,6 @@ logger = logging.getLogger("jumpstarter_robot.sources")
 
 CLIENT_LABEL = "jumpstarter.dev/client"
 NAME_LABEL = "jumpstarter.dev/name"
-INTERFACE_LABEL = "jumpstarter.dev/interface"
 STUB_CLIENT = "jumpstarter.client.base.StubDriverClient"
 
 
@@ -36,8 +35,6 @@ def driver_node(
     kind: NodeKind | None = None,
     required: bool = True,
     methods: list[str] | None = None,
-    interface: str | None = None,
-    driver_type: str | None = None,
     children: list[DeviceNode] | None = None,
 ) -> DeviceNode:
     """A driver node, or a composite one when its client is the composite client."""
@@ -47,8 +44,6 @@ def driver_node(
         name=path[-1] if path else "",
         path=list(path),
         kind=kind,
-        interface=interface,
-        driver_type=driver_type,
         bindings={PYTHON: client} if client else {},
         required=required,
         methods=list(methods or []),

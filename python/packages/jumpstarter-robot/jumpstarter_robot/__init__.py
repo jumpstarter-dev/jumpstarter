@@ -4,7 +4,7 @@
 - ``jumpstarter_robot.Session``: declare a named session (used by generated resources)
 - ``jumpstarter_robot.Driver``: the keywords of one driver of the tree
 
-``jmp robot generate`` (or ``jmp-robot generate``) writes a client resource
+``jmp-robot generate`` (or ``jmp-robot generate``) writes a client resource
 that imports them for a given exporter.
 
 The libraries load on first use, so importing ``jumpstarter_robot.cli`` (which

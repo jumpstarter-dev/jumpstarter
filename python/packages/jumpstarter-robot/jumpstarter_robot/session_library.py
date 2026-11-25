@@ -13,14 +13,13 @@ library instead, and imports ``Jumpstarter`` without arguments::
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from . import context, sessions
-from .errors import JumpstarterRobotError, mapped_errors
+from .errors import mapped_errors
 from .naming import title
 from jumpstarter.config.env import JMP_LEASE, JUMPSTARTER_HOST
 
@@ -95,40 +94,18 @@ def command_line_value(name: str) -> str | None:
     return text(global_value(name))
 
 
-def testbed_names(session: str) -> bool:
-    """Whether the run's testbed has an entry under ``sessions`` for ``session``."""
-    from . import testbed
+def apply_run_settings(config: SessionConfig) -> None:
+    """Let a named session fall back to the generic command-line variables.
 
-    table = global_value(testbed.TESTBED_VARIABLE) if in_run() else None
-    sessions_table = table.get("sessions") if isinstance(table, Mapping) else None
-    return isinstance(sessions_table, Mapping) and session in sessions_table
-
-
-def apply_run_settings(config: SessionConfig) -> str | None:
-    """Apply the run's testbed and command-line fallbacks to ``config``; returns the testbed's ``on_lease_end``.
-
-    Precedence, highest first: the session's own variables given with ``-v``
-    or a variable file (already in ``config``), the testbed's
-    ``${JUMPSTARTER}`` settings, the resource's or import's values, and for
-    a named session the generic ``-v JMP_SELECTOR``, ``JMP_LEASE_NAME`` and
-    ``JMP_CLIENT_CONFIG``.
+    The session's own variables given with ``-v`` or a variable file are
+    already in ``config``. A named session without a value of its own takes
+    ``-v JMP_SELECTOR``, ``JMP_LEASE_NAME`` and ``JMP_CLIENT_CONFIG``.
     """
-    from . import testbed
-    from .naming import session_variable
-
-    if not in_run():
-        return None
-    given = {
-        session_variable(variable, config.name): command_line_value(session_variable(variable, config.name))
-        for variable in testbed.RESOURCE_VARIABLES.values()
-    }
-    settings = testbed.settings_for(global_value(testbed.TESTBED_VARIABLE), config.name)
-    on_lease_end = testbed.apply(config, settings, given)
-    if config.name != sessions.DEFAULT_SESSION:
-        for attribute, variable in COMMAND_LINE_FALLBACKS:
-            if getattr(config, attribute) is None:
-                setattr(config, attribute, command_line_value(variable))
-    return on_lease_end
+    if not in_run() or config.name == sessions.DEFAULT_SESSION:
+        return
+    for attribute, variable in COMMAND_LINE_FALLBACKS:
+        if getattr(config, attribute) is None:
+            setattr(config, attribute, command_line_value(variable))
 
 
 @dataclass
@@ -231,15 +208,10 @@ def session_config(
     acquisition_timeout: Any = None,
     allow_disabled: bool = False,
     release_grace: Any = "1 s",
-    exporter_class: Any = None,
     reuse_lease: bool = True,
 ) -> SessionConfig:
     from robot.utils import timestr_to_secs
 
-    if text(exporter_class):
-        raise JumpstarterRobotError(
-            "exporter_class: leasing by ExporterClass is not supported by this Jumpstarter client yet"
-        )
     return SessionConfig(
         name=text(name) or sessions.DEFAULT_SESSION,
         exporter_config=text(exporter_config),
@@ -295,7 +267,6 @@ class Session:
         acquisition_timeout: str | None = None,
         allow_disabled: bool = False,
         release_grace: str = "1 s",
-        exporter_class: str | None = None,
         reuse_lease: bool = True,
         on_lease_end: str | None = None,
     ):
@@ -311,13 +282,11 @@ class Session:
             acquisition_timeout=acquisition_timeout,
             allow_disabled=allow_disabled,
             release_grace=release_grace,
-            exporter_class=exporter_class,
             reuse_lease=reuse_lease,
         )
         self.name = self.config.name
-        # the testbed, like every other setting it gives, wins over the import's
-        on_lease_end = apply_run_settings(self.config) or text(on_lease_end)
-        if on_lease_end:
+        apply_run_settings(self.config)
+        if text(on_lease_end):
             sessions.set_lease_end_policy(str(on_lease_end).strip(), session=self.name)
         setattr(self, context.SESSION_MARKER, self.name)
         self._factory = self.config.open

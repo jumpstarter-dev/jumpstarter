@@ -16,7 +16,7 @@ from .driver_library import Driver, class_path, instances, shell_methods
 from .errors import JumpstarterRobotError, mapped_errors
 from .keywords import load_all
 from .naming import normalize, title
-from .session_library import apply_run_settings, dry_run, duration_of, in_run, session_config, testbed_names, text
+from .session_library import apply_run_settings, dry_run, duration_of, in_run, session_config, text
 from .signatures import convert_call
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
@@ -63,10 +63,10 @@ class Jumpstarter:
 
     This library connects a Robot Framework run to Jumpstarter exporters and
     provides the keywords that work across drivers: leases and sessions,
-    serial consoles, driver contexts and streams, Appium, SSH, ADB and iOS
-    connections. Each driver's own keywords come from a `Driver` library per
+    driver contexts, streams and port forwards. Each driver's own keywords
+    come from a `Driver` library per
     driver, which the generated client resource imports
-    (``jmp robot generate``), or which this library
+    (``jmp-robot generate``), or which this library
     imports itself once it is connected.
 
     = Connecting =
@@ -133,7 +133,6 @@ class Jumpstarter:
         auto_import: bool = True,
         on_lease_end: str | None = None,
         release_grace: str = "1 s",
-        exporter_class: str | None = None,
         reuse_lease: bool = True,
     ):
         self.ROBOT_LIBRARY_LISTENER = self
@@ -148,7 +147,6 @@ class Jumpstarter:
             acquisition_timeout=acquisition_timeout,
             allow_disabled=allow_disabled,
             release_grace=release_grace,
-            exporter_class=exporter_class,
             reuse_lease=reuse_lease,
         )
         self.auto_import = auto_import
@@ -156,12 +154,8 @@ class Jumpstarter:
             # only when given: Robot Framework builds this library for every import,
             # including the ones it then ignores, so a default would reset the policy
             sessions.set_lease_end_policy(str(on_lease_end).strip())
-        # A bare import (the one in every generated resource) takes the testbed
-        # only when it names this session; otherwise a testbed's shared keys
-        # would make every resource's Jumpstarter import declare a session.
-        declared_here = self.config.wants_lease or self.config.exporter_config or testbed_names(self.config.name)
-        if declared_here and (policy := apply_run_settings(self.config)):
-            sessions.set_lease_end_policy(policy, session=self.config.name)
+        if self.config.wants_lease or self.config.exporter_config:
+            apply_run_settings(self.config)
         self._owned: set[str] = set()
         self._sets = [cls() for cls in load_all()]
         self._names = self._collect_names()
@@ -289,7 +283,8 @@ class Jumpstarter:
 
         Returns the lease name. ``config`` is a client config alias, a path
         to a client config YAML or ``env``; it defaults to the session's
-        config, then ``JMP_CLIENT_CONFIG``, then the current client. Inside
+        config, then the environment's client config, then the current
+        client. Inside
         ``jmp shell`` the shell's lease is used instead. A ``JMP_LEASE``
         environment variable attaches to that lease.
 

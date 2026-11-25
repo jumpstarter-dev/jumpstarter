@@ -10,38 +10,22 @@ dependencies = [
   "jumpstarter",
   "click>=8.1.7.2",
   "robotframework>=7.5",
-  "tomlkit>=0.13.0",
 ]
 
-# `jmp robot` too, when jumpstarter-cli is installed
+# `jmp-robot` too, when jumpstarter-cli is installed
 [project.scripts]
 jmp-robot = "jumpstarter_robot.cli:robot"
-
-[project.optional-dependencies]
-appium = [
-  "jumpstarter-driver-appium",
-  "robotframework-appiumlibrary>=3.0,<4",
-]
-ssh = ["robotframework-sshlibrary>=3.8.0"]
-android = ["adbutils>=2.8.7"]
-mobile = ["jumpstarter-robot[appium,android]"]
 
 [dependency-groups]
 dev = [
   "pytest>=8.3.2",
   "pytest-cov>=5.0.0",
-  "paramiko>=3.4.0",
-  "robotframework-sshlibrary>=3.8.0",
-  "adbutils>=2.8.7",
-  "jumpstarter-driver-appium",
-  "robotframework-appiumlibrary>=3.0,<4",
   "jumpstarter-driver-composite",
   "jumpstarter-driver-network",
   "jumpstarter-driver-opendal",
   "jumpstarter-driver-power",
   "jumpstarter-driver-pyserial",
   "jumpstarter-driver-shell",
-  "jumpstarter-driver-ssh",
 ]
 
 [tool.hatch.build.targets.wheel]

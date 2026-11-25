@@ -25,12 +25,11 @@ from typing import Any
 from . import context, sessions
 from .curation import documentation, is_exposed, matches, method_words, tags, type_overrides
 from .errors import mapped_errors
-from .extensions import extensions_for
+from .members import iter_client_members
 from .naming import keyword_name, normalize, title
 from .signatures import ArgumentSpec, argument_spec, source_of
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
-from jumpstarter.client.introspect import iter_client_members
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +46,6 @@ class KeywordSpec:
     source: str | None
     invoke: Callable[[DriverClient | None, list[Any], dict[str, Any]], Any]
     arguments: ArgumentSpec | None = None
-    needs_node: bool = True
     kind: str = "method"
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -200,8 +198,6 @@ class Driver:
                 self._add(spec)
         if is_shell(cls):
             self._build_shell(cls, base_tags)
-        for extension in extensions_for(cls):
-            self._build_extension(extension, base_tags)
         self._contexts = contexts
 
     def _wanted(self, member, cls: type) -> bool:
@@ -285,30 +281,6 @@ class Driver:
                 )
             )
 
-    def _build_extension(self, extension, base_tags: tuple[str, ...]) -> None:
-        try:
-            arguments = argument_spec(extension.function, skip=2)
-        except (TypeError, ValueError):
-            return
-
-        def invoke(node, a, k, _function=extension.function):
-            return _function(self.path, self.session_name, *a, **k)
-
-        self._add(
-            KeywordSpec(
-                name=keyword_name(self.prefix, extension.method_words),
-                args=list(arguments.args),
-                types=arguments.types,
-                doc=(extension.doc or inspect.getdoc(extension.function) or ""),
-                tags=(*base_tags, "extension", *extension.tags),
-                source=source_of(extension.function),
-                invoke=invoke,
-                arguments=arguments,
-                needs_node=False,
-                kind="extension",
-            )
-        )
-
     # ---- dynamic library API ----
 
     def get_keyword_names(self) -> list[str]:
@@ -337,7 +309,7 @@ class Driver:
         cls = self.client_class
         if cls is None:
             return f"Driver ``{self.default_path}``: client class unknown, no keywords."
-        # @robot.library(doc=...) replaces the class docstring, as it does for Robot libraries
+        # @library(doc=...) replaces the class docstring, as it does for Robot libraries
         text = getattr(cls, "ROBOT_LIBRARY_DOC", None) or inspect.getdoc(cls) or ""
         text += f"\n\nKeywords for the driver at ``{self.default_path or '(root)'}``, client ``{class_path(cls)}``."
         if getattr(self, "_contexts", None):
@@ -349,8 +321,8 @@ class Driver:
         spec = self._specs[name]
         named = dict(named or {})
         with sessions.lock(), mapped_errors(name):
-            node = self.node() if spec.needs_node else None
-            if spec.arguments is not None and spec.kind != "extension":
+            node = self.node()
+            if spec.arguments is not None:
                 if spec.kind == "generator":
                     max_items = named.pop("max_items", self.max_items)
                     args, named = spec.arguments.bind(args, named)

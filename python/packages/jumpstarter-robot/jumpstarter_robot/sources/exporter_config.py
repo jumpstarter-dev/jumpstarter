@@ -4,7 +4,7 @@ Each ``export:`` entry names a driver class; its ``client()`` classmethod
 names the client class, so the tree comes from the installed packages without
 constructing a single driver (which would open ports or start tools).
 Children that a driver builds itself are not in the config and need a live
-source (``--capture``).
+source (``--live``).
 """
 
 from __future__ import annotations
@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from ..configs import load_exporter_config
-from ..tree import COMPOSITE_CLIENT, COMPOSITE_DRIVER, DeviceNode, DeviceTree, pascal_case
+from ..naming import words
+from ..tree import COMPOSITE_CLIENT, DeviceNode, DeviceTree
 from ._common import class_path, driver_node, opaque_node
 from jumpstarter.config.exporter import (
     ExporterConfigV1Alpha1DriverInstance,
@@ -57,7 +58,6 @@ class _Walker:
                     path,
                     COMPOSITE_CLIENT,
                     kind="composite",
-                    driver_type=COMPOSITE_DRIVER,
                     children=self.children(path, instance.children),
                 )
             case ExporterConfigV1Alpha1DriverInstanceProxy():
@@ -86,7 +86,6 @@ class _Walker:
             client,
             kind=kind,
             methods=methods,
-            driver_type=instance.type,
             children=self.children(path, instance.children),
         )
 
@@ -112,7 +111,7 @@ def from_exporter_config(value: str | Path, *, base_dir: Path | None = None) -> 
     walker = _Walker(config.export)
     nodes = walker.children([], config.export)
     return DeviceTree(
-        device_name=pascal_case(config.metadata.name or "device") or "Device",
+        device_name="".join(words(config.metadata.name or "device")) or "Device",
         nodes=nodes,
         source={"kind": "exporter-config", "ref": str(value)},
         warnings=walker.warnings,

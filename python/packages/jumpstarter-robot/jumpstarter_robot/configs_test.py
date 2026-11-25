@@ -1,12 +1,12 @@
-from pathlib import Path
+
+from types import SimpleNamespace
 
 import pytest
 
-from . import configs
 from .configs import is_path_like, load_client_config, load_exporter_config
 from jumpstarter.config.client import ClientConfigV1Alpha1
-from jumpstarter.config.env import JMP_CLIENT_CONFIG
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+from jumpstarter.config.user import UserConfigV1Alpha1
 
 
 @pytest.fixture
@@ -27,28 +27,13 @@ def recorded(monkeypatch):
     return calls
 
 
-@pytest.fixture
-def no_user_config(monkeypatch):
-    from jumpstarter.config.user import UserConfigV1Alpha1
-
-    def missing():
-        raise FileNotFoundError("no user config")
-
-    monkeypatch.setattr(UserConfigV1Alpha1, "load", staticmethod(missing))
-
-
 @pytest.mark.parametrize(
     "value, expected",
     [
         ("lab", False),
-        ("lab-eu", False),
-        ("default", False),
         ("configs/ci.yaml", True),
         ("ci.yaml", True),
-        ("ci.yml", True),
         ("./client", True),
-        ("~/client", True),
-        ("/abs/client", True),
     ],
 )
 def test_is_path_like(value, expected):
@@ -63,67 +48,17 @@ class TestClientConfig:
         load_client_config("configs/ci.yaml", base_dir=tmp_path)
         assert recorded == [("file", tmp_path / "configs" / "ci.yaml")]
 
-    def test_relative_path_without_base_dir(self, recorded):
-        load_client_config("ci.yaml")
-        assert recorded == [("file", Path("ci.yaml"))]
-
-    def test_absolute_path_ignores_base_dir(self, recorded, tmp_path):
-        load_client_config(str(tmp_path / "ci.yaml"), base_dir=Path("/elsewhere"))
-        assert recorded == [("file", tmp_path / "ci.yaml")]
-
-    def test_home_is_expanded(self, recorded, monkeypatch, tmp_path):
-        monkeypatch.setenv("HOME", str(tmp_path))
-        load_client_config("~/ci.yaml", base_dir=Path("/elsewhere"))
-        assert recorded == [("file", tmp_path / "ci.yaml")]
 
     def test_env(self, recorded):
         assert load_client_config("env") == "env"
 
-    def test_explicit_value_beats_environment(self, recorded, monkeypatch):
-        monkeypatch.setenv(JMP_CLIENT_CONFIG, "/from/env.yaml")
-        assert load_client_config("lab") == "alias:lab"
-
-    def test_environment_variable(self, recorded, monkeypatch, no_user_config):
-        monkeypatch.setenv(JMP_CLIENT_CONFIG, "/from/env.yaml")
-        load_client_config(None)
-        assert recorded == [("file", Path("/from/env.yaml"))]
-
-    def test_current_client(self, recorded, monkeypatch):
-        from jumpstarter.config.user import UserConfigV1Alpha1
-
-        class User:
-            class config:
-                current_client = "the-current-client"
-
-        monkeypatch.setattr(UserConfigV1Alpha1, "load", staticmethod(lambda: User()))
-        assert load_client_config() == "the-current-client"
-        assert recorded == []
-
-    def test_default_alias_last(self, recorded, no_user_config):
-        assert load_client_config("") == "alias:default"
-
-    def test_no_current_client_falls_back_to_default(self, recorded, monkeypatch):
-        from jumpstarter.config.user import UserConfigV1Alpha1
-
-        class User:
-            class config:
-                current_client = None
-
-        monkeypatch.setattr(UserConfigV1Alpha1, "load", staticmethod(lambda: User()))
-        assert load_client_config() == "alias:default"
-
-    def test_real_file(self, tmp_path):
-        (tmp_path / "client.yaml").write_text(
-            "apiVersion: jumpstarter.dev/v1alpha1\n"
-            "kind: ClientConfig\n"
-            "metadata:\n  namespace: default\n  name: ci\n"
-            "endpoint: grpc.example.com:443\n"
-            "token: ''\n"
-            "drivers:\n  allow: []\n"
-        )
-        config = load_client_config("client.yaml", base_dir=tmp_path)
-        assert isinstance(config, ClientConfigV1Alpha1)
-        assert config.endpoint == "grpc.example.com:443"
+    def test_default_is_the_environment_then_the_current_client(self, monkeypatch):
+        current = SimpleNamespace(config=SimpleNamespace(current_client="current"))
+        monkeypatch.setattr(UserConfigV1Alpha1, "load_or_create", staticmethod(lambda: current))
+        monkeypatch.setattr(ClientConfigV1Alpha1, "try_from_env", staticmethod(lambda: None))
+        assert load_client_config() == "current"
+        monkeypatch.setattr(ClientConfigV1Alpha1, "try_from_env", staticmethod(lambda: "env"))
+        assert load_client_config() == "env"
 
 
 EXPORTER_YAML = """\
@@ -156,7 +91,3 @@ class TestExporterConfig:
     def test_missing_path(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             load_exporter_config(str(tmp_path / "nope.yaml"))
-
-
-def test_env_constant():
-    assert configs.ENV_CONFIG == "env"

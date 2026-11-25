@@ -31,7 +31,6 @@ from anyio.from_thread import start_blocking_portal
 from .configs import load_client_config, load_exporter_config
 from .errors import JumpstarterRobotError
 from jumpstarter.client import DriverClient, client_from_path
-from jumpstarter.client.base import resolve_root_child
 from jumpstarter.client.selectors import parse_label_selector
 from jumpstarter.config.env import JMP_LEASE, JUMPSTARTER_HOST
 from jumpstarter.utils.env import env_with_metadata
@@ -267,6 +266,24 @@ class Session:
                 # The exporter needs a moment to see the release before the
                 # next lease of the same board; jumpstarter-testing does the same.
                 time.sleep(self.release_grace)
+
+
+def resolve_root_child(root: DriverClient, name: str) -> DriverClient:
+    """Resolve the first segment of a driver tree path against the client root.
+
+    The named export entry is either a child of the root composite (the
+    exporter's tree), the root client itself (a config-served single entry),
+    or, for a bare single-driver ``serve()`` whose root carries no name label
+    and no children, the root unambiguously.
+    """
+    if name in root.children:
+        return root.children[name]
+    root_name = root.labels.get("jumpstarter.dev/name")
+    if root_name == name:
+        return root
+    if root_name is None and not root.children:
+        return root
+    raise KeyError(f"driver {name!r} not found under the exporter root")
 
 
 def _abandon(stack: ExitStack) -> None:

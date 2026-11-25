@@ -12,14 +12,13 @@ import pytest
 from robot.running.namespace import IMPORTER
 
 from .testing import reset
-from jumpstarter.config.env import JMP_CLIENT_CONFIG, JUMPSTARTER_HOST
+from jumpstarter.config.env import JUMPSTARTER_HOST
 
 
 @pytest.fixture(autouse=True)
 def fresh_sessions(monkeypatch):
     """Every test starts with no sessions, factories, scoped resources or shell."""
     monkeypatch.delenv(JUMPSTARTER_HOST, raising=False)
-    monkeypatch.delenv(JMP_CLIENT_CONFIG, raising=False)
     monkeypatch.delenv("JMP_LEASE", raising=False)
     _forget_drivers()
     yield

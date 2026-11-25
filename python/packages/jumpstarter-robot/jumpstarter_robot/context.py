@@ -1,6 +1,6 @@
 """Services shared by the keyword sets: scoped resources, output files and results.
 
-Consoles, port forwards, Appium servers and driver contexts stay open across
+Port forwards and driver contexts stay open across
 keywords. Each is registered with a scope (``test``, ``suite`` or ``global``)
 and with its session, and is closed at the end of that scope or before the
 session's connection goes away, whichever comes first.

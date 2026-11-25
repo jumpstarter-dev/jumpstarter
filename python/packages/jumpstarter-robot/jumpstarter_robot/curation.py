@@ -1,8 +1,7 @@
 """Read keyword curation from client classes.
 
-Driver authors curate keywords with ``jumpstarter.client.decorators.robot``
-or Robot Framework's own ``robot.api.deco``; both set the same attributes,
-which is all this module looks at.
+Driver authors curate keywords with Robot Framework's own ``robot.api.deco``
+decorators, which set the attributes this module looks at.
 """
 
 from __future__ import annotations
@@ -12,12 +11,12 @@ import inspect
 from collections.abc import Iterable
 from typing import Any
 
+from .members import ClientMember
 from .naming import title
-from jumpstarter.client.introspect import ClientMember
 
 
 def auto_keywords(cls: type) -> bool:
-    """Whether undecorated public methods become keywords (``@robot.library`` turns it off)."""
+    """Whether undecorated public methods become keywords (``@library(auto_keywords=False)`` turns it off)."""
     return bool(getattr(cls, "ROBOT_AUTO_KEYWORDS", True))
 
 

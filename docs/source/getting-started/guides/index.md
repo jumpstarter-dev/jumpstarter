@@ -11,8 +11,8 @@ development workflow.
   KubeVirt cluster using the `kubevirt.jumpstarter.dev` provisioner
 - [Appium UI Automation](ui-automation.md): Drive iOS and Android targets
   through one Appium interface
-- [Robot Framework](robot-framework.md): Write and run hardware and mobile app
-  tests with Robot Framework keywords
+- [Robot Framework](robot-framework.md): Write and run hardware tests with
+  Robot Framework keywords
 
 ```{toctree}
 :maxdepth: 1
