@@ -1,6 +1,6 @@
 # Drivers
 
-This section documents the drivers from the Jumpstarter packages directory. Each
+This section documents the {term}`driver`s from the Jumpstarter packages directory. Each
 driver is contained in a separate package in the form of
 `jumpstarter-driver-{name}` and provides specific functionality for interacting
 with different hardware components and systems.
@@ -31,7 +31,7 @@ The driver-specific keys of each `config:` block come from the driver class.
 `jmp driver schema` lists them for every driver installed in the local Python
 environment, and `-o json` or `-o yaml` returns them as JSON Schema, together
 with the driver's client class, for editor completion and validation of
-exporter configs:
+{term}`exporter config`s:
 
 ```console
 $ jmp driver schema TcpNetwork -o yaml
@@ -44,7 +44,7 @@ function:
 
 ### System Control
 
-Drivers that control the power state and basic operation of devices:
+Drivers that control the power state and basic operation of {term}`device`s:
 
 - {doc}`CoPilot <copilot>` (`jumpstarter-driver-copilot`) - BayLibre CoPilot GPIO, relay and supply control
 - {doc}`Power <power>` (`jumpstarter-driver-power`) - Power control for devices
@@ -67,10 +67,10 @@ Drivers that provide various communication interfaces:
 - {doc}`BT Peer <bt-peer>` (`jumpstarter-driver-bt-peer`) - Bluetooth peer device powered by bumble
 - {doc}`CAN <can>` (`jumpstarter-driver-can`) - Controller Area Network communication
 - {doc}`DDS <dds>` (`jumpstarter-driver-dds`) - DDS (Data Distribution Service) pub/sub communication using Eclipse CycloneDDS
-- {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP file server on the exporter
+- {doc}`HTTP <http>` (`jumpstarter-driver-http`) - HTTP file server on the {term}`exporter`
 - {doc}`mitmproxy <mitmproxy>` (`jumpstarter-driver-mitmproxy`) - HTTP/HTTPS interception, mocking, and traffic recording
-- {doc}`DUT Network <dut-network>` (`jumpstarter-driver-dut-network`) - DUT network isolation with DHCP, DNS, NAT, and VLAN sub-interfaces
-- {doc}`Network <network>` (`jumpstarter-driver-network`) - TCP, UDP, Unix socket and other network connections tunneled to the client
+- {doc}`DUT Network <dut-network>` (`jumpstarter-driver-dut-network`) - {term}`DUT` network isolation with DHCP, DNS, NAT, and VLAN sub-interfaces
+- {doc}`Network <network>` (`jumpstarter-driver-network`) - TCP, UDP, Unix socket and other network connections tunneled to the {term}`client`
 - {doc}`PySerial <pyserial>` (`jumpstarter-driver-pyserial`) - Serial port communication
 - {doc}`SSH <ssh>` (`jumpstarter-driver-ssh`) - SSH wrapper driver
 - {doc}`SSH MITM <ssh-mitm>` (`jumpstarter-driver-ssh-mitm`) - SSH proxy with server-side private key storage

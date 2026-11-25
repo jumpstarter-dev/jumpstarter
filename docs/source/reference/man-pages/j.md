@@ -1,8 +1,8 @@
 # j
 
-The `j` command is available within the exporter shell (launched
-via `jmp shell`). It provides access to driver CLI interfaces configured in your
-exporter.
+The `j` command is available within the {term}`exporter shell` (launched
+via `jmp shell`). It provides access to {term}`driver` CLI interfaces configured in your
+{term}`exporter`.
 
 Usage:
 

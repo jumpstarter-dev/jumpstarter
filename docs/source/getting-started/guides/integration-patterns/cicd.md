@@ -97,7 +97,7 @@ flowchart TB
 
 This architecture leverages a self-hosted runner with directly attached system:
 
-1. The self-hosted runner has physical {term}`device`s connected directly to it
+1. The self-hosted runner has physical devices connected directly to it
 2. Jumpstarter runs in {term}`local mode` on the runner, controlling the attached system
 3. Code changes trigger CI jobs which are dispatched to the runner
 4. Tests execute on the runner using Jumpstarter to interface with the system

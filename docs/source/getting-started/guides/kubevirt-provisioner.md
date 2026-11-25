@@ -1,19 +1,19 @@
 # KubeVirt Provisioner
 
-The `kubevirt.jumpstarter.dev` provisioner creates virtual machines on a remote
+The `kubevirt.jumpstarter.dev` {term}`provisioner` creates virtual machines on a remote
 [KubeVirt](https://kubevirt.io/) / [OpenShift Virtualization](https://docs.openshift.com/container-platform/latest/virt/about_virt/about-virt.html)
 cluster and manages them through the Jumpstarter {term}`ExporterSet` lifecycle.
 
 This guide walks through configuring a two-cluster setup where:
 
-- A **management cluster** (e.g. kind) runs the Jumpstarter operator and
-  lightweight exporter pods.
+- A **management cluster** (e.g. kind) runs the Jumpstarter {term}`operator` and
+  lightweight {term}`exporter` pods.
 - A **target cluster** (e.g. OpenShift with CNV) runs the actual VMs.
 
 ## Prerequisites
 
 - Jumpstarter operator installed on the management cluster, with
-  `kubevirt.jumpstarter.dev` enabled in the Jumpstarter CR's
+  `kubevirt.jumpstarter.dev` enabled in the Jumpstarter {term}`CR`'s
   `spec.exporterSets.provisioners` list
 - A KubeVirt-capable target cluster (OpenShift Virtualization or upstream
   KubeVirt)
@@ -23,7 +23,7 @@ This guide walks through configuring a two-cluster setup where:
   on Nodes
 - The exporter image available to the management cluster:
   `quay.io/jumpstarter-dev/jumpstarter` by default, which includes the KubeVirt
-  drivers. Override it with `images.exporter` in the VirtualTargetClass or
+  {term}`driver`s. Override it with `images.exporter` in the {term}`VirtualTargetClass` or
   ExporterSet.
 
 For flashing, CDI must be installed and its HTTPS upload proxy must be reachable
@@ -75,7 +75,7 @@ kubectl create secret generic kubevirt-credentials \
 
 ### 2. Create a VirtualTargetClass
 
-The {term}`VirtualTargetClass` defines the provisioner backend and shared
+The VirtualTargetClass defines the provisioner backend and shared
 parameters for all VMs in the pool.
 
 #### Minimal example (containerDisk)
@@ -140,7 +140,7 @@ spec:
 
 ### 3. Create an ExporterSet
 
-The {term}`ExporterSet` references the VirtualTargetClass and defines how many
+The ExporterSet references the VirtualTargetClass and defines how many
 replicas (VMs) to maintain:
 
 ```yaml
@@ -316,7 +316,7 @@ power. A flash whose setup fails or is interrupted discards its own volumes, so
 re-running the flash is the retry.
 
 An interrupted flash needs no manual recovery: the next flash, or the next
-lease, cleans it up. The next flash discards uncommitted replacement volumes,
+{term}`lease`, cleans it up. The next flash discards uncommitted replacement volumes,
 and if activation already succeeded it preserves the new disks and finishes
 cleaning up the old ones. A second flash started while the first is unfinished
 preempts it, releasing the volumes and claims the first one staged before creating

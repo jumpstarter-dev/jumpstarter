@@ -8,7 +8,7 @@ session, letting a teammate watch a serial console, or handing a CI-held lease
 to a human for inspection.
 
 This guide covers {term}`distributed mode`; sharing is coordinated by the
-controller and therefore does not apply to {term}`local mode` or {term}`direct mode`
+{term}`controller` and therefore does not apply to {term}`local mode` or {term}`direct mode`
 connections.
 
 ## Owners vs. shared clients
@@ -17,7 +17,7 @@ Sharing splits capabilities into two roles:
 
 | Capability | Owner | Shared client |
 | --- | --- | --- |
-| Connect / dial the exporter (`jmp shell`, driver calls) | Yes | Yes |
+| Connect / dial the exporter (`jmp shell`, {term}`driver` calls) | Yes | Yes |
 | Observe serial consoles | Yes | Yes |
 | List/inspect the lease (`jmp get leases`) | Yes | Yes |
 | Add or remove shared clients | Yes | No |
@@ -119,11 +119,11 @@ each entry is currently active.
 
 - The controller immediately stops granting the removed client **new**
   connections.
-- A shared client's **live** `jmp shell` session polls its own access and exits
+- A shared client's **live** `jmp shell` {term}`session` polls its own access and exits
   on its own within a short interval (currently 15 seconds), so there is a
   bounded window during which an already-open session can still be used. Its
   shell is sent `SIGHUP`, as when the lease ends.
-- Removal does **not** forcibly tear down a router stream the exporter has
+- Removal does **not** forcibly tear down a {term}`router` stream the exporter has
   already established.
 
 Transferring the lease (`jmp update lease my-lease --to-client client-carol`)

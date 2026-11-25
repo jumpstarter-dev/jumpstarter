@@ -81,7 +81,7 @@ This section covers working with and modifying the bootc image for development p
 ### Build the Bootc Image
 
 From the repository root, first generate the
-{term}`operator` installer that the image embeds,
+operator installer that the image embeds,
 `controller/deploy/operator/dist/install.yaml`, which is not checked in. This
 needs Go; `IMG` selects the operator image to install:
 

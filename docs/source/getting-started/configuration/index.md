@@ -7,9 +7,9 @@ This section explains how to configure Jumpstarter for your environment.
 - [Loading Order](loading-order.md): Understanding how config files are
   prioritized from different sources (environment variables, command line,
   system and user config files)
-- [Authentication](authentication.md): Setting up OIDC and managing tokens
+- [Authentication](authentication.md): Setting up {term}`OIDC` and managing tokens
 - [Observability](observability.md): Prometheus autodiscovery and cluster log-shipper integration
-  integration for Controller and Router
+  integration for {term}`Controller` and {term}`Router`
 
 For a list of supported configuration options including an explanation please
 refer to the [MAN pages](../../reference/man-pages/index.md).

@@ -2,7 +2,7 @@
 
 ## Labeling Strategy
 
-Develop a consistent labeling strategy for your exporters to make device
+Develop a consistent labeling strategy for your {term}`exporter`s to make {term}`device`
 selection straightforward:
 
 - **System Properties**: `arch=arm64`, `cpu=cortex-a53`
@@ -24,6 +24,6 @@ Implement these practices to ensure efficient use of shared systems:
 When deploying Jumpstarter in a multi-user environment:
 
 - Use role-based access control to limit which users can access which devices
-- Restrict driver access to prevent untrusted code execution
+- Restrict {term}`driver` access to prevent untrusted code execution
 - Isolate the Jumpstarter network from production systems
 - Rotate JWT tokens regularly for enhanced security

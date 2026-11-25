@@ -42,7 +42,7 @@ We welcome bug fixes, features, and improvements to the core codebase.
 
 ### Drivers
 
-To create a new driver scaffold, run from the repository root:
+To create a new {term}`driver` scaffold, run from the repository root:
 
 ```console
 $ ./python/__templates__/create_driver.sh driver_package DriverClass "Your Name" "your.email@example.com"

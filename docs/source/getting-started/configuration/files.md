@@ -7,8 +7,8 @@ Jumpstarter follows a specific hierarchy when loading configurations. See
 [Loading Order](loading-order.md) for details on how configurations from
 different sources are prioritized.
 
-Jumpstarter saves the user, client, and {term}`exporter` config files
-atomically and with mode `600`, since client and {term}`exporter` configs hold
+Jumpstarter saves the user, {term}`client`, and {term}`exporter` config files
+atomically and with mode `600`, since client and {term}`exporter config`s hold
 tokens.
 
 ## User Config
@@ -31,10 +31,10 @@ config:
 
 ## Client Config
 
-**File**: All valid client config files with a `.yaml` extension.  
+**File**: All valid {term}`client config` files with a `.yaml` extension.  
 **Location**: `/home/<user>/.config/jumpstarter/clients/*.yaml`  
 **Description**: Stores client configs including endpoints, access
-tokens, and driver settings.
+tokens, and {term}`driver` settings.
 
 **Format**:
 
@@ -69,7 +69,7 @@ leases:
 - `JUMPSTARTER_FORCE_SYSTEM_CERTS` - Set to `1` to force system CA certificates
 - `JMP_RETRY_TIMEOUT` - Retry timeout in seconds for unreachable exporters (overrides config, default: 300)
 - `JMP_DIAL_TIMEOUT` - Dial timeout in seconds for slow exporters (overrides config, default: 60)
-- `JMP_OIDC_CALLBACK_PORT` - Local port for the OIDC callback during `jmp login` (useful for SSH tunneling; default: OS-assigned)
+- `JMP_OIDC_CALLBACK_PORT` - Local port for the {term}`OIDC` callback during `jmp login` (useful for SSH tunneling; default: OS-assigned)
 - `JMP_OIDC_DEVICE_FLOW` - Set to `1` to log in with the OAuth 2.0 Device Authorization Grant instead of a local callback, also when the CLI re-authenticates automatically (see [Authentication](authentication.md))
 - `JMP_GRPC_PASSPHRASE` - Shared passphrase for authenticating against passphrase-protected exporters
 - `NO_COLOR` - Set to any value (including empty) to disable ANSI color sequences in the `jmp shell` prompt (see [no-color.org](https://no-color.org/); does not affect status icons)
@@ -81,11 +81,11 @@ only supply values that the loaded client config file leaves out. When neither
 `JMP_NAMESPACE` are set, the CLI builds the client config from these variables
 instead of loading the current client. See [Loading Order](loading-order.md).
 
-**Exporter Shell Variables** (automatically set by `jmp shell`):
+**{term}`Exporter Shell` Variables** (automatically set by `jmp shell`):
 
-- `JMP_LEASE` - Active lease name (enables reconnection via `JMP_LEASE=<name> jmp shell`)
+- `JMP_LEASE` - Active {term}`lease` name (enables reconnection via `JMP_LEASE=<name> jmp shell`)
 - `JMP_EXPORTER` - Name of the connected exporter
-- `JMP_EXPORTER_LABELS` - Connected exporter's labels as comma-separated `key=value` pairs
+- `JMP_EXPORTER_LABELS` - Connected exporter's {term}`label`s as comma-separated `key=value` pairs
 
 **CLI Commands**:
 
@@ -112,10 +112,10 @@ destination.
 
 ## Exporter Config
 
-**File**: All valid {term}`exporter` config files with a `.yaml` extension  
+**File**: All valid exporter config files with a `.yaml` extension  
 **Location**: `~/.config/jumpstarter/exporters/*.yaml` (per-user) or `/etc/jumpstarter/exporters/*.yaml` (system-wide)
 
-**Description**: Defines {term}`exporter` settings including connection details and
+**Description**: Defines exporter settings including connection details and
 driver configs.
 
 Exporter configs created via the CLI default to the per-user location. Both the per-user and
@@ -167,9 +167,9 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
     onFailure: warn
 ```
 
-The optional `hooks` section configures lifecycle scripts that run at {term}`lease`
+The optional `hooks` section configures lifecycle scripts that run at lease
 boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
-{term}`hook` configuration, environment variables, and failure handling.
+hook configuration, environment variables, and failure handling.
 
 If the controller's Status stream fails or ends, and no new update arrives
 within `statusStreamRetryTimeout` seconds, `jmp run` exits with status `75`
@@ -185,11 +185,11 @@ to the Kubernetes API is restored.
 **Environment Variables**:
 
 - `JUMPSTARTER_GRPC_INSECURE` / `JMP_GRPC_INSECURE` - Set to `1` to disable TLS verification
-- `JMP_NAMESPACE` - Namespace in the {term}`controller`, when `metadata` in the config file sets none
-- `JMP_NAME` - {term}`Exporter` name, when `metadata` in the config file sets none
+- `JMP_NAMESPACE` - Namespace in the controller, when `metadata` in the config file sets none
+- `JMP_NAME` - Exporter name, when `metadata` in the config file sets none
 - `JMP_DISABLE_COMPRESSION` - Set to `1` to disable stream compression (gzip, xz, bz2, zstd) for driver data transfers
 
-The {term}`exporter` reads its endpoint and token only from the config file. It
+The exporter reads its endpoint and token only from the config file. It
 renews an internal token before it expires and writes the new value back to the
 `token` field of the file; see [Exporters](../../introduction/exporters.md).
 
@@ -208,13 +208,13 @@ Clients and exporters reach the network through an HTTP proxy when the standard
 proxy environment variables are set:
 
 - `http_proxy` - Proxy for `http://` URLs
-- `https_proxy` - Proxy for `https://` URLs and for {term}`gRPC` connections
+- `https_proxy` - Proxy for `https://` URLs and for gRPC connections
 - `no_proxy` - Comma-separated hostnames, domain suffixes and addresses to reach directly
 
-This covers the {term}`gRPC` connection to the {term}`controller`, `jmp login`,
+This covers the gRPC connection to the controller, `jmp login`,
 and the HTTP requests made by Jumpstarter and its drivers, such as an exporter
 downloading an image from an `http://` or `https://` URL passed to a flasher.
-Set the lowercase names: {term}`gRPC` ignores `HTTP_PROXY`, `HTTPS_PROXY` and
+Set the lowercase names: gRPC ignores `HTTP_PROXY`, `HTTPS_PROXY` and
 `NO_PROXY`, which the HTTP clients also accept.
 
 ```{code-block} console
@@ -225,7 +225,7 @@ $ export no_proxy=localhost,127.0.0.1,.lab.example.com,192.168.1.20
 
 An HTTP request goes through the proxy set for the scheme of its URL, unless its
 host is listed in `no_proxy`: with only `https_proxy` set, `http://` URLs are
-reached directly. On an exporter, list in `no_proxy` the devices and services of
+reached directly. On an exporter, list in `no_proxy` the {term}`device`s and services of
 the local network that drivers reach over HTTP, such as cameras, power switches
 or image servers. List each address: some HTTP clients do not understand CIDR
 ranges such as `192.168.1.0/24` and would send those requests to the proxy.
@@ -256,9 +256,9 @@ $ jmp run --exporter my-exporter --exit-on-lease-end
 
 ### Running as a Service
 
-For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the {term}`exporter` process alive and restart it when it exits, for example after a {term}`lease` ends with `exitOnLeaseEnd` set or when something goes wrong.
+For production deployments, it is recommended to use a service manager such as [`systemd`](https://systemd.io/) to keep the exporter process alive and restart it when it exits, for example after a lease ends with `exitOnLeaseEnd` set or when something goes wrong.
 
-Containerized {term}`exporter`s can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
+Containerized exporters can be installed as [`systemd`](https://systemd.io/) services using [`podman-systemd`](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html).
 
 Create a `systemd` service file at `/etc/containers/systemd/my-exporter.container` with the following content:
 

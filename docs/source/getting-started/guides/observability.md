@@ -1,7 +1,7 @@
 # Observability
 
 The Jumpstarter {term}`controller` and {term}`router` expose Prometheus metrics
-and write structured logs. Exporters record metrics and structured logs as
+and write structured logs. {term}`Exporter`s record metrics and structured logs as
 well, but they often run outside the cluster, on lab hosts. The optional
 telemetry service, `jumpstarter-telemetry`, collects metrics and logs from
 exporters, and logs from `jmp shell`, so that neither needs Prometheus or Loki
@@ -11,7 +11,7 @@ service pushes the logs to Loki.
 This guide lists the signals, how to turn them on and how to consume them. The
 Telemetry endpoints section of
 [Production](../installation/service/production.md) explains how to expose the
-telemetry service to exporters and clients and how to provide its TLS
+telemetry service to exporters and {term}`client`s and how to provide its TLS
 certificate. The design is described in
 [JEP-0013](../../contributing/jeps/JEP-0013-observability-telemetry-logs.md);
 this guide describes what is implemented.
@@ -20,9 +20,9 @@ this guide describes what is implemented.
 
 | Source | Metrics | Logs |
 |--------|---------|------|
-| {term}`Controller` | `/metrics` on port 8080: lease acquisitions | JSON lines |
-| {term}`Router` | `/metrics` on port 8080: runtime metrics only | JSON lines |
-| {term}`Exporter` | Driver operations and stream traffic, collected by the telemetry service | Written by `jmp run`, streamed to clients during a {term}`lease`, sent to the telemetry service |
+| Controller | `/metrics` on port 8080: {term}`lease` acquisitions | JSON lines |
+| Router | `/metrics` on port 8080: runtime metrics only | JSON lines |
+| Exporter | {term}`Driver` operations and stream traffic, collected by the telemetry service | Written by `jmp run`, streamed to clients during a lease, sent to the telemetry service |
 | `jmp shell` | None | Sent to the telemetry service |
 | Telemetry service | `/metrics` on port 8080: exporter metrics and its own counters | Forwards what it receives to Loki, or writes it to its own log |
 
@@ -82,11 +82,11 @@ spec:
 ```
 
 The examples on this page use the `Jumpstarter` resource from Production,
-`jumpstarter` in the `jumpstarter-lab` namespace. The operator names the
+`jumpstarter` in the `jumpstarter-lab` namespace. The {term}`operator` names the
 telemetry Deployment after it, `<name>-telemetry`.
 
 With `baseDomain` set and an Ingress or Route API in the cluster, the
-{term}`operator` exposes telemetry at `telemetry.<baseDomain>`. To expose it
+operator exposes telemetry at `telemetry.<baseDomain>`. To expose it
 another way, set `spec.telemetry.grpc.endpoints` as described in
 [Production](../installation/service/production.md). Exporters must be able to
 verify the telemetry certificate; see [Security](#security).
@@ -173,7 +173,7 @@ Jumpstarter metrics.
 | `jumpstarter_stream_bytes_total` | Counter | `exporter`, `driver_type`, `direction` |
 | `jumpstarter_active_sessions` | Gauge | `exporter` |
 
-- `operation` is the {term}`driver` method a client called, for example `on`
+- `operation` is the driver method a client called, for example `on`
   or `flash`, and `result` is `success` or `failure`.
 - `driver_type` is the category the driver class declares, such as `power`,
   `storage` or `network`. Drivers that declare none report `other`.
@@ -181,13 +181,13 @@ Jumpstarter metrics.
   `timeout`, `connection_error`, `device_error` or `internal_error`.
 - `direction` is `tx` for bytes the exporter sends to the client and `rx` for
   bytes it receives, on driver streams such as consoles and on file transfers.
-- `jumpstarter_active_sessions` counts open lease sessions.
+- `jumpstarter_active_sessions` counts open lease {term}`session`s.
 - Samples carry exemplars with `client` and `lease_id` when the exporter knows
   them.
 
 The exporter does not accept scrapes from the network: the telemetry service
 collects these metrics over `MetricsStream`. For debugging on the exporter
-host, `jmp run` also serves them on a random port on `127.0.0.1` and logs the
+{term}`host`, `jmp run` also serves them on a random port on `127.0.0.1` and logs the
 address at startup as `Serving metrics server at http://127.0.0.1:<port>/metrics`.
 
 ### Telemetry service
@@ -412,7 +412,7 @@ example, every exporter log line from one CI run:
 
 ## Security
 
-- **TLS.** The telemetry service accepts gRPC only over TLS. Exporters and
+- **TLS.** The telemetry service accepts {term}`gRPC` only over TLS. Exporters and
   `jmp shell` verify it against the CA certificate that the controller returns
   with the endpoint, or against the system trust store when there is none. The
   controller returns the CA of the cert-manager issuer, or the `ca.crt` of
@@ -428,7 +428,7 @@ example, every exporter log line from one CI run:
   that exporter or client, is valid only for telemetry calls, and expires
   after an hour at most, never later than the credential that requested it.
   Exporters and `jmp shell` renew it halfway to expiry. Exporter and client
-  credentials themselves, including OIDC tokens, are not accepted.
+  credentials themselves, including {term}`OIDC` tokens, are not accepted.
 - **Identity.** Telemetry sets `namespace`, and `exporter` or `client`, on
   each log entry from the token, and drops entries that claim another
   identity. Only exporter tokens can open a `MetricsStream`, and only under

@@ -9,7 +9,7 @@
 
 ## Driver Call Errors
 
-Driver client methods raise these exceptions when the exporter rejects or fails
+{term}`Driver` client methods raise these exceptions when the {term}`exporter` rejects or fails
 a driver call.
 
 ```{eval-rst}

@@ -1,20 +1,20 @@
 # Drivers
 
-Jumpstarter uses a modular driver model to build abstractions around the
+Jumpstarter uses a modular {term}`driver` model to build abstractions around the
 interfaces used to interact with target devices, both physical hardware and
 virtual systems.
 
 An [{term}`Exporter`](exporters.md) uses drivers to "export" these interfaces from a
-{term}`host` machine to the clients via {term}`gRPC`. Drivers can be thought
-of as a simplified API for an interface or device type.
+{term}`host` machine to the {term}`client`s via {term}`gRPC`. Drivers can be thought
+of as a simplified API for an interface or {term}`device` type.
 
 ## Architecture
 
 Drivers in Jumpstarter follow a client/server architecture where:
 
-- Driver implementations run on the {term}`exporter` side and interact directly with
-  hardware or virtual {term}`device`s
-- Driver clients run on the client side and communicate with drivers via {term}`gRPC`
+- Driver implementations run on the exporter side and interact directly with
+  hardware or virtual devices
+- Driver clients run on the client side and communicate with drivers via gRPC
 - Interface classes define the contract between implementations and clients
 
 The architecture follows a pattern with these key components:
@@ -33,26 +33,26 @@ The architecture follows a pattern with these key components:
   clients to interact with the driver either locally or remotely over the
   network.
 
-When a client requests a {term}`lease` and connects to an {term}`exporter`, a {term}`session` is created
-for all tests the client needs to execute. Within this {term}`session`, the specified
+When a client requests a {term}`lease` and connects to an exporter, a {term}`session` is created
+for all tests the client needs to execute. Within this session, the specified
 `Driver` subclass is instantiated for each configured interface. These driver
-instances live throughout the {term}`session`'s duration, maintaining state and
+instances live throughout the session's duration, maintaining state and
 executing setup/teardown logic.
 
-The {term}`session` calls `reset()` on the root driver when it starts, and
+The session calls `reset()` on the root driver when it starts, and
 `shutdown()` followed by `close()` when it ends; the base `Driver`
 implementations pass each call on to the child drivers. Background work that
-should run for as long as the {term}`session` serves a driver belongs in the
-driver's `serving()` async context manager. The {term}`session` enters it for
+should run for as long as the session serves a driver belongs in the
+driver's `serving()` async context manager. The session enters it for
 every driver before it accepts calls. When it stops serving, it cancels the
 work started there in a task group and waits for it to finish, before
 `shutdown()` runs. Code after the `yield` runs cancelled, so cleanup that
 awaits must shield itself. An exception raised before the `yield` makes the
-{term}`session` fail to start. If the background work fails later, the
-{term}`session` logs the error and keeps serving.
+session fail to start. If the background work fails later, the
+session logs the error and keeps serving.
 
 On the client side, a `DriverClient` subclass is instantiated for each exported
-interface. Since clients may run on different machines than {term}`exporter`s,
+interface. Since clients may run on different machines than exporters,
 `DriverClient` classes are loaded dynamically, and only when their class path
 matches the client's driver allow list or the client allows all drivers. A
 driver that is not allowed, or whose client package is not installed, gets a
@@ -93,7 +93,7 @@ Some categories of drivers include:
 - [Test and Measurement](../reference/package-apis/drivers/index.md#test-and-measurement):
   Capture and decode signals, such as logic analyzer traces.
 - [Utility](../reference/package-apis/drivers/index.md#utility): Provide
-  utility functions, such as shell driver commands on an {term}`exporter`.
+  utility functions, such as shell driver commands on an exporter.
 
 ### Composite Drivers
 
@@ -120,7 +120,7 @@ MyHarness         # Custom composite driver for the entire target device harness
 
 ## Configuration
 
-Drivers are configured using a YAML exporter config file, which specifies the
+Drivers are configured using a YAML {term}`exporter config` file, which specifies the
 drivers to load and the parameters for each. Drivers are distributed as Python
 packages making it easy to develop and install your own drivers.
 
@@ -159,7 +159,7 @@ export:
 
 ## Communication
 
-Drivers expose their methods over {term}`gRPC` using three RPC styles (see
+Drivers expose their methods over gRPC using three RPC styles (see
 [RPC life cycle](https://grpc.io/docs/what-is-grpc/core-concepts/#rpc-life-cycle)
 for details on gRPC counterparts):
 
@@ -212,23 +212,23 @@ In {term}`distributed mode`, authentication is handled through JWT tokens:
 
 - **Client Authentication**: Clients authenticate to the {term}`controller` using JWT
   tokens, which establishes their identity and permissions
-- **Exporter Authentication**: Similarly, {term}`exporter`s authenticate to the
-  {term}`controller` with their own tokens
-- **Driver Access Control**: The {term}`controller` enforces access control by only
-  allowing authorized clients to acquire {term}`lease`s on {term}`exporter`s and their drivers
-- **Driver allowlist**: Client configs can specify which driver packages
+- **Exporter Authentication**: Similarly, exporters authenticate to the
+  controller with their own tokens
+- **Driver Access Control**: The controller enforces access control by only
+  allowing authorized clients to acquire leases on exporters and their drivers
+- **Driver allowlist**: {term}`Client config`s can specify which driver packages
   are allowed to be loaded, preventing unintended execution of untrusted code
 
 ### Driver Package Security
 
-When using {term}`distributed mode`, driver security considerations include:
+When using distributed mode, driver security considerations include:
 
 - **Package Verification**: Clients can verify that only trusted driver packages
   are loaded by configuring allowlists
-- **Access Policies**: [ExporterAccessPolicy](../reference/crds/exporteraccesspolicy.md)
-  resources control which clients can lease which {term}`exporter`s, and for how long
-- **{term}`Session` Isolation**: Each {term}`lease` gets its own {term}`session` with new
-  driver instances, so driver state does not carry over from one {term}`lease` to the next
+- **{term}`Access Policies <access policy>`**: [ExporterAccessPolicy](../reference/crds/exporteraccesspolicy.md)
+  resources control which clients can lease which exporters, and for how long
+- **Session Isolation**: Each lease gets its own session with new
+  driver instances, so driver state does not carry over from one lease to the next
 
 ## Custom Drivers
 

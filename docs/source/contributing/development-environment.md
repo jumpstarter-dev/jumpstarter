@@ -6,8 +6,8 @@ You can use
 or your favorite OS/distro to develop Jumpstarter. The following examples
 are for Fedora.
 
-Jumpstarter is programmed in Python, Go and Rust, the Jumpstarter controller is
-written in Go, while the core and drivers are written in Python. The
+Jumpstarter is programmed in Python, Go and Rust, the Jumpstarter {term}`controller` is
+written in Go, while the core and {term}`driver`s are written in Python. The
 `jumpstarter-exec` remote command execution bridge is written in Rust.
 
 ## Python Environment

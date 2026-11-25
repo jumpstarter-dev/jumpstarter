@@ -1,9 +1,9 @@
 # Off-Cluster QEMU Provisioner
 
-The `qemu-ssh.jumpstarter.dev` provisioner runs QEMU virtual targets on remote
-lab hosts outside the Kubernetes cluster. It connects to hosts via SSH and
+The `qemu-ssh.jumpstarter.dev` {term}`provisioner` runs QEMU virtual targets on remote
+lab hosts outside the Kubernetes cluster. It connects to {term}`host`s via SSH and
 deploys containers using Podman quadlets, giving you the same container-based
-exporter + runtime pattern as in-cluster QEMU but on dedicated hardware with
+{term}`exporter` + runtime pattern as in-cluster QEMU but on dedicated hardware with
 direct KVM access.
 
 **When to use this provisioner:**
@@ -32,8 +32,8 @@ Each remote host must have:
 
 The cluster must have:
 
-- Jumpstarter operator installed
-- The `qemu-ssh.jumpstarter.dev` provisioner enabled in the Jumpstarter CR
+- Jumpstarter {term}`operator` installed
+- The `qemu-ssh.jumpstarter.dev` provisioner enabled in the Jumpstarter {term}`CR`
 
 ## Step 1: Enable the provisioner
 
@@ -72,7 +72,7 @@ kubectl create secret generic lab-ssh-key \
 The key must be in the `ssh-privatekey` field, the field name of the standard
 `kubernetes.io/ssh-auth` type; the provisioner does not check the Secret type.
 The SSH user and port are set with `host.user` and `host.port` in the
-VirtualTargetClass or ExporterSet parameters (not in the Secret).
+{term}`VirtualTargetClass` or {term}`ExporterSet` parameters (not in the Secret).
 
 ## Step 3: Create a VirtualTargetClass
 
@@ -158,10 +158,10 @@ spec:
 ```
 
 By default the provisioner auto-aliases the QEMU children as root-level refs
-`power`, `storage`, and `serial` so clients can
+`power`, `storage`, and `serial` so {term}`client`s can
 use `client.power` like on real hardware. Set `parameters.exposeRootDrivers:
 false` to keep a nested-only export map (`client.qemu.power`,
-`client.qemu.flasher`, `client.qemu.console`). The `tcp` driver is also
+`client.qemu.flasher`, `client.qemu.console`). The `tcp` {term}`driver` is also
 auto-injected (SSH host-forwarding on port 2222).
 
 ## How it works
@@ -173,7 +173,7 @@ When the ExporterSet scales up:
    credentials Secret name) on the Exporter CR - before touching the remote
    host, so cleanup can always find the instance
 3. Connects to the remote host via SSH
-4. Writes the exporter config YAML to `/etc/jumpstarter/exporters/`
+4. Writes the {term}`exporter config` YAML to `/etc/jumpstarter/exporters/`
 5. Creates Podman quadlet `.container` files under `/etc/containers/systemd/`
    for both the **runtime** (QEMU) and **exporter** containers
 6. Creates a shared Podman volume for inter-container communication
@@ -248,7 +248,7 @@ Both containers communicate via Unix sockets on the shared Podman volume
 
 ## Leasing targets
 
-Users lease off-cluster targets the same way as any other target - the
+Users {term}`lease` off-cluster targets the same way as any other target - the
 placement is transparent:
 
 ```bash

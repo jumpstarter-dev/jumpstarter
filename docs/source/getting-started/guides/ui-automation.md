@@ -2,7 +2,7 @@
 
 Jumpstarter gives every UI-automation target the same
 [Appium](https://appium.io/docs/en/latest/) client interface, whatever its
-platform: physical devices, emulators and simulators, on Android or iOS, local
+platform: physical {term}`device`s, emulators and simulators, on Android or iOS, local
 or remote. A test asks the target for an Appium endpoint and opens WebDriver
 sessions on it; it does not change when the target does.
 
@@ -16,7 +16,7 @@ Jumpstarter is used:
   XCUITest for iOS, with further drivers for desktop and TV platforms. Tests use
   the same client calls whichever device they drive, so one suite covers every
   target, and every Jumpstarter target can offer the same interface.
-- **Python support.** Jumpstarter clients are written in Python, and the Appium
+- **Python support.** Jumpstarter {term}`client`s are written in Python, and the Appium
   project maintains an official Python client,
   [Appium-Python-Client](https://github.com/appium/python-client), built on
   Selenium's Python bindings. It installs with `pip`, works with pytest and other
@@ -24,7 +24,7 @@ Jumpstarter is used:
   directly. Clients in other languages, such as Java, JavaScript, Ruby or .NET,
   can connect too.
 - **Nothing to install on the client.** Appium and its platform drivers run on
-  the exporter, next to the device, so clients need only a WebDriver client
+  the {term}`exporter`, next to the device, so clients need only a WebDriver client
   library: no Appium, Node.js or platform SDKs.
 - **Open and established.** Appium is open source under the Apache 2.0 licence,
   hosted by the OpenJS Foundation, and widely used, so existing Appium tests,
@@ -33,7 +33,7 @@ Jumpstarter is used:
 ## How it works
 
 Each target driver adds an `appium` child when the exporter configures one. The
-exporter runs Appium for the lease, next to the device, and the client reaches it
+exporter runs Appium for the {term}`lease`, next to the device, and the client reaches it
 over the lease through verified HTTPS. Clients need neither Appium nor the
 device's tools.
 
@@ -79,7 +79,7 @@ Hub, replace `root.phone.appium.serve()` with
 `appium:automationName` and `appium:udid`. Add your own, for example
 `appium:bundleId` or `appium:appPackage`, before opening a session.
 
-If your client config allow-lists driver packages under `drivers.allow`,
+If your {term}`client config` allow-lists driver packages under `drivers.allow`,
 add `jumpstarter_driver_appium.*`, or the `appium` child cannot load.
 
 Install [Appium-Python-Client](https://github.com/appium/python-client) to run
@@ -171,7 +171,7 @@ export:
 ```
 
 macOS exporters for simulators install Appium and its XCUITest driver on the
-host in the same way. Each driver's page lists its own options.
+{term}`host` in the same way. Each driver's page lists its own options.
 
 ## Security
 

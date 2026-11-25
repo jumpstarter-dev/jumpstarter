@@ -1,13 +1,13 @@
 # Authentication
 
-Jumpstarter uses internally issued JWT tokens to authenticate clients and
+Jumpstarter uses internally issued JWT tokens to authenticate {term}`client`s and
 {term}`exporter`s by default. You can also configure Jumpstarter to use external OpenID
-Connect (OIDC) providers.
+Connect ({term}`OIDC`) providers.
 
 When installing with the {term}`operator`, authentication is configured directly on the
 `Jumpstarter` Custom Resource, under `spec.authentication`.
 
-For {term}`operator` installation context, see
+For operator installation context, see
 [Production](../installation/service/production.md).
 
 To use OIDC with your Jumpstarter installation:
@@ -37,7 +37,7 @@ To avoid collisions:
 1. Use a single OIDC provider per Jumpstarter installation, or
 2. Ensure usernames are unique across all configured OIDC providers, or
 3. Use different username claim mappings that include provider-specific prefixes, or
-4. Pre-create the resource (Client/{term}`Exporter`) with explicit username mappings when conflicts exist
+4. Pre-create the resource (Client/Exporter) with explicit username mappings when conflicts exist
 
 ## Examples
 
@@ -71,12 +71,12 @@ Set up Keycloak for Jumpstarter authentication:
    certificateAuthority when using a self-signed certificate. The username will be
    prefixed with "keycloak:" (e.g., keycloak:example-user).
 
-3. Create clients and {term}`exporter`s with the `jmp admin create` commands. Be sure to
+3. Create clients and exporters with the `jmp admin create` commands. Be sure to
    prefix usernames with `keycloak:` as configured in the claim mappings. Name each
    resource after the username without its prefix, as described in
    [Username Collisions](#username-collisions): except for Kubernetes service
    accounts, the {term}`controller` rejects requests from an OIDC user whose client
-   or {term}`exporter` name differs.
+   or exporter name differs.
 
    ```console
    $ jmp admin create client developer-1 --insecure-tls --oidc-username keycloak:developer-1
@@ -107,7 +107,7 @@ Set up Keycloak for Jumpstarter authentication:
    $ jmp login --client <client alias> [other parameters] --token <token>
    ```
 
-   For {term}`exporter`s, use similar login command but with the `--exporter` flag:
+   For exporters, use similar login command but with the `--exporter` flag:
 
    ```console
    $ jmp login --exporter <exporter alias> \
@@ -360,7 +360,7 @@ for CLI-based OAuth flows that listen on random ports.
 
 Add Dex as a JWT issuer on your `Jumpstarter` resource. Enable
 `autoProvisioning` so that a client is created automatically for each user on
-their first request to the {term}`controller`:
+their first request to the controller:
 
 ```yaml
 spec:
@@ -400,7 +400,7 @@ For example:
 $ jmp login myuser@jumpstarter-login.apps.example.org:443
 ```
 
-Use the GitHub username in lowercase as `<client-name>`: the {term}`controller`
+Use the GitHub username in lowercase as `<client-name>`: the controller
 derives the client name from the username, see
 [Username Collisions](#username-collisions).
 
@@ -409,7 +409,7 @@ approval, the user is authenticated as `github:<github-username>` in Jumpstarter
 
 With `autoProvisioning` enabled, no prior `jmp admin create client` step is
 needed: the client resource is created automatically on the first request to the
-{term}`controller`.
+controller.
 
 See the `jmp login` [man page](../../reference/man-pages/jmp.md) for the full
 list of options.
@@ -516,7 +516,7 @@ Follow these steps to set up Dex for service account authentication:
              prefix: "dex:"
    ```
 
-4. Create clients and {term}`exporter`s with appropriate OIDC usernames. Prefix the full
+4. Create clients and exporters with appropriate OIDC usernames. Prefix the full
    service account name with "dex:" as configured in the claim mappings:
 
    ```console
@@ -539,7 +539,7 @@ Follow these steps to set up Dex for service account authentication:
        --token $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
    ```
 
-   For {term}`exporter`s:
+   For exporters:
 
    ```console
    $ jmp login --exporter <exporter alias> \
@@ -554,7 +554,7 @@ Follow these steps to set up Dex for service account authentication:
 ## Managing Tokens
 
 `jmp login` requests the `offline_access` scope by default and stores the
-refresh token in the client config when the provider returns one; pass
+refresh token in the {term}`client config` when the provider returns one; pass
 `--no-offline-access` to skip it. When the config already holds a refresh token
 and none of `--token`, `--username` or `--password` is given, `jmp login` first
 renews the token with it and keeps requesting `offline_access`, so
@@ -582,7 +582,7 @@ messages go to stderr, so JSON output on stdout stays parseable, and the new
 tokens are saved to the client config file that was loaded, including one
 passed with `--client-config`.
 
-The {term}`controller` records the expiry of a client's internal token in the
+The controller records the expiry of a client's internal token in the
 `status.tokenExpiresAt` field of its `Client` resource, and sets the
 `TokenExpiring` condition to `True` once fewer than 30 days remain.
 

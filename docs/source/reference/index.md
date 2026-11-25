@@ -7,7 +7,7 @@ covers:
 - [Package APIs](package-apis/index.md): API documentation for Jumpstarter
   packages and components
 - [CRDs](crds/index.md): Field reference for all Jumpstarter Custom Resource Definitions
-- [gRPC Protocol](grpc/index.md): Reference for the Jumpstarter gRPC protocol
+- [gRPC Protocol](grpc/index.md): Reference for the Jumpstarter {term}`gRPC` protocol
   definitions
 
 ```{toctree}

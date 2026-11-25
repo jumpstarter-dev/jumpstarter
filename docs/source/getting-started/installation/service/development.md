@@ -2,7 +2,7 @@
 
 Install Jumpstarter on local Kubernetes clusters using kind or minikube. Ideal
 for learning about the {term}`service` quickly or for validating Jumpstarter
-drivers in CI/CD pipelines. For production deployments, see
+{term}`driver`s in CI/CD pipelines. For production deployments, see
 [Production](production.md).
 
 ## Prerequisites
@@ -10,7 +10,7 @@ drivers in CI/CD pipelines. For production deployments, see
 - Docker or Podman installed
 - kind or minikube installed
 - `kubectl` installed and configured
-- Administrator access to your cluster (required for CRD installation)
+- Administrator access to your cluster (required for {term}`CRD` installation)
 
 ## Install
 
@@ -133,7 +133,7 @@ appropriate for your local environment (for example, `nip.io` based hostnames).
 ## Uninstall
 
 To remove Jumpstarter but keep the cluster, delete the `Jumpstarter` resource
-that `jmp admin create cluster` created. The operator and cert-manager stay
+that `jmp admin create cluster` created. The {term}`operator` and cert-manager stay
 installed:
 
 ```{code-block} console

@@ -24,7 +24,7 @@
 
 Jumpstarter is a free and open source framework for testing and developing
 software on real and virtual hardware. Developers, test scripts, CI pipelines,
-and AI agents reach devices through the same programmatic interfaces, whether a
+and AI agents reach {term}`device`s through the same programmatic interfaces, whether a
 board sits on your desk, in a shared lab, or runs as a virtual device. Tests stay
 ordinary pytest or shell scripts with no job language to learn, and every
 component runs on infrastructure you control.

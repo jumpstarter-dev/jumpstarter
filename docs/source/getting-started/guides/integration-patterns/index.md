@@ -7,7 +7,7 @@ workflows.
   CI/CD systems
 - [Development](development.md): Local and cloud-native development setups
 - [Agentic](agentic.md): Give AI assistants that support local {term}`MCP`
-  servers access to hardware, under your identity and access policies
+  servers access to hardware, under your identity and {term}`access policies <access policy>`
 - [Best Practices](practices.md): Labeling, security, and resource management
 
 ```{toctree}

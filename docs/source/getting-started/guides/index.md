@@ -8,7 +8,7 @@ development workflow.
 - [Integration Patterns](integration-patterns/index.md): Incorporate Jumpstarter
   into your existing workflows and systems
 - [KubeVirt Provisioner](kubevirt-provisioner.md): Create VMs on a remote
-  KubeVirt cluster using the `kubevirt.jumpstarter.dev` provisioner
+  KubeVirt cluster using the `kubevirt.jumpstarter.dev` {term}`provisioner`
 - [Appium UI Automation](ui-automation.md): Drive iOS and Android targets
   through one Appium interface
 - [Observability](observability.md): Metrics, logs, and the optional telemetry

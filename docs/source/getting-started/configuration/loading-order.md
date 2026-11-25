@@ -9,8 +9,8 @@ Jumpstarter loads configuration from the following sources, in order of
 precedence (highest to lowest):
 
 1. **Command-line arguments** - Highest priority, override all other settings
-2. **Config files** - Client and {term}`exporter` configs in
-   `${HOME}/.config/jumpstarter/`, and {term}`exporter` configs in
+2. **Config files** - {term}`Client` and {term}`exporter` configs in
+   `${HOME}/.config/jumpstarter/`, and {term}`exporter config`s in
    `/etc/jumpstarter/exporters/`
 3. **Environment variables** - Supply settings that the config file
    leaves out
@@ -21,7 +21,7 @@ also replace the current client entirely, as described below.
 
 ## Client Config Hierarchy
 
-For client operations, Jumpstarter selects the client config in this
+For client operations, Jumpstarter selects the {term}`client config` in this
 order:
 
 1. **Command-line options** `--client <alias>` or `--client-config <path>`
@@ -37,14 +37,14 @@ The `jmp shell` options `--retry-timeout` and `--dial-timeout` override the
 
 ## Exporter Config Hierarchy
 
-For {term}`exporter` operations, `jmp run` loads the configuration named by one
+For exporter operations, `jmp run` loads the configuration named by one
 of these command-line options:
 
 1. `--exporter <alias>` loads `${HOME}/.config/jumpstarter/exporters/<alias>.yaml`,
    or `/etc/jumpstarter/exporters/<alias>.yaml` when the user file does not exist
 2. `--exporter-config <path>` loads that file
 
-The {term}`exporter` reads its endpoint and token only from the file.
+The exporter reads its endpoint and token only from the file.
 `JMP_NAMESPACE` and `JMP_NAME` are used only when `metadata` in the file leaves
 them out.
 
@@ -72,7 +72,7 @@ Here's a practical example of how configuration overrides work:
    $ jmp shell --selector example.com/board=rpi4 --dial-timeout 3m
    ```
 
-Jumpstarter waits up to three minutes for the {term}`exporter` to become ready,
+Jumpstarter waits up to three minutes for the exporter to become ready,
 because the command-line option has the highest priority. Without
 `--dial-timeout` it waits 120 seconds, the value from the environment.
 
@@ -83,7 +83,7 @@ Choose the appropriate configuration method based on your needs:
 - **Development**: Use user config files for personal settings
 - **CI/CD Pipelines**: Use environment variables for automation
 - **One-off Tasks**: Use command-line arguments for temporary changes
-- **System Defaults**: Use `/etc/jumpstarter/exporters/` for {term}`exporter`
+- **System Defaults**: Use `/etc/jumpstarter/exporters/` for exporter
   configs shared across users
 
 This hierarchical approach allows Jumpstarter to be flexible across different
