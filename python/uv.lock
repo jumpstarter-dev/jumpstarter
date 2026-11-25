@@ -4327,6 +4327,7 @@ dev = [
 name = "jumpstarter-robot"
 source = { editable = "packages/jumpstarter-robot" }
 dependencies = [
+    { name = "click" },
     { name = "jumpstarter" },
     { name = "robotframework" },
 ]
@@ -4364,6 +4365,7 @@ dev = [
 requires-dist = [
     { name = "adbutils", marker = "extra == 'android'", specifier = ">=2.8.7" },
     { name = "adbutils", marker = "extra == 'mobile'", specifier = ">=2.8.7" },
+    { name = "click", specifier = ">=8.1.7.2" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-appium", marker = "extra == 'appium'", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-appium", marker = "extra == 'mobile'", editable = "packages/jumpstarter-driver-appium" },

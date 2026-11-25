@@ -5,8 +5,8 @@ test runs to Jumpstarter {term}`exporter`s. The package makes keywords from
 the client class of each driver, such as `Dut Power On` and `Storage Flash`.
 It also gives keywords for {term}`lease`s and sessions.
 
-A test file imports one `Driver` library for each driver. Your editor reads
-these imports and shows each keyword. A lease is not necessary.
+A generator writes a client resource file for each exporter. Your editor reads
+this file and shows each keyword. A lease is not necessary.
 
 For a step-by-step introduction, refer to the
 [Robot Framework](../../../getting-started/guides/robot-framework.md) guide.
@@ -23,10 +23,8 @@ keywords come from the client classes of these packages.
 
 ## Libraries
 
-The package has three Robot Framework libraries. Import them in a test file,
-or in a
-[resource file](https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#resource-files)
-that your test files share.
+The package has three Robot Framework libraries. A client resource imports all
+three. A test file can also import them directly.
 
 ### `jumpstarter_robot.Jumpstarter`
 
@@ -45,7 +43,7 @@ If the import has no arguments, it only gives the keywords.
 | `duration` | `30 minutes` | The duration of a new lease, as a Robot Framework time string. |
 | `acquisition_timeout` | | The maximum time to wait for a new lease. |
 | `allow_disabled` | `False` | `True` also permits an exporter that an administrator disabled. |
-| `auto_import` | `True` | `True` imports a `Driver` library for each driver after the session connects. Refer to [Use without `Driver` imports](#use-without-driver-imports). |
+| `auto_import` | `True` | `True` imports a `Driver` library for each driver after the session connects. Refer to [Use without a client resource](#use-without-a-client-resource). |
 | `on_lease_end` | | What to do when a lease ends during the test run: `fatal` or `fail`. Refer to [When a lease ends](#when-a-lease-ends). |
 | `release_grace` | `1 s` | The time to wait after the release of a lease. The exporter then sees the release before the next lease. |
 | `reuse_lease` | `True` | `True` uses an active lease of this client that has the same selector. Refer to [Use an active lease again](#use-an-active-lease-again). |
@@ -54,11 +52,11 @@ Robot Framework ignores a second import of a library that has different
 arguments. Thus one `Jumpstarter` import declares one session at most. Use
 `jumpstarter_robot.Session` to declare more sessions.
 
-### Use without `Driver` imports
+### Use without a client resource
 
 With `auto_import`, the library connects when Robot Framework imports it.
 Then it imports a `Driver` library for each driver of the exporter. The
-keyword names are the same as with a `Driver` import (`Dut Power On`).
+keyword names are the same as in a client resource (`Dut Power On`).
 
 ```robotframework
 *** Settings ***
@@ -78,13 +76,12 @@ its name to the prefix (`Sim Dut Power On`). `List Driver Keywords` gives the
 names in use.
 
 These keywords exist only during the test run. Your editor cannot show them.
-Import a `Driver` library for each driver if you want completion in your
-editor.
+Make a client resource if you want completion in your editor.
 
 ### `jumpstarter_robot.Session`
 
-This library declares one session with a name. Thus one test file can declare
-many sessions:
+This library declares one session with a name. A client resource uses it, and
+thus one test file can declare many sessions:
 
 ```robotframework
 Library    jumpstarter_robot.Jumpstarter
@@ -99,11 +96,6 @@ same as the session arguments of `Jumpstarter`: `exporter_config`, `selector`,
 `on_lease_end` applies only to this session.
 
 An empty value (`${EMPTY}`) is the same as no value.
-
-A session other than `default` can have no selector, lease name or client
-config. Then it uses the variables `${JMP_SELECTOR}`, `${JMP_LEASE_NAME}` and
-`${JMP_CLIENT_CONFIG}` from the command line, such as
-`robot -v JMP_SELECTOR:board=rpi5 tests/`.
 
 Each session gets two keywords that have its name. For the session `rpi4`:
 
@@ -143,19 +135,19 @@ Library    jumpstarter_robot.Driver    dut.power    client=jumpstarter_driver_po
 #### Keyword names
 
 A keyword name is the prefix and then the words of the method name. The
-default prefix is the full path of the driver.
+generator uses the full path of the driver as the prefix.
 
 | Driver path | Method | Keyword |
 | --- | --- | --- |
 | `dut.power` | `cycle` | `Dut Power Cycle` |
 | `storage` | `flash` | `Storage Flash` |
 
-To use a different prefix, give the `prefix` argument. It replaces all words
-of the path. For example, `prefix=Device Power` for `dutlink.power` gives
+To use a different prefix, set an alias. An alias replaces all words of the
+path. For example, the alias `Device Power` for `dutlink.power` gives
 `Device Power On`.
 
-A role library uses the name of the role as its default prefix. The role
-`power` gives `Power On`.
+With `roles = true`, a role library uses the name of the role as its prefix.
+The role `power` gives `Power On`.
 
 You can also use the full name of Robot Framework, with the `AS` name of the
 library: `rpi4.dutlink.power.Dutlink Power Cycle`.
@@ -235,7 +227,7 @@ A keyword without a `session` argument uses the first of these:
 2. The only session that the test file declares.
 3. The session `default`.
 
-Thus a test file that declares one session does not give a session
+Thus a test file that imports one client resource does not give a session
 name.
 
 ### Which client config a session uses
@@ -420,6 +412,145 @@ its `scope`, when its session closes, or with `Close ADB Device`.
 | `ADB Pull` | `remote, local=None` | Copies `remote` from the device to `local`. Returns the local path. |
 | `ADB Get Property` | `name` | Returns the system property `name`. |
 | `ADB Wait For Boot` | `timeout=180s` | Waits until the device completes its startup. |
+## Make client resources
+
+`jmp-robot generate` writes a client resource. This `.resource` file imports
+`Jumpstarter`, declares a session with `Session`, and imports a `Driver`
+library for each driver.
+
+The same input always gives the same file, and the file contains no
+credentials. Thus you can commit it.
+
+```console
+$ jmp-robot generate                          # every client of robot.toml
+$ jmp-robot generate --client rpi4            # one client
+$ jmp-robot generate --exporter-config exporter.yaml -o client.resource
+$ jmp shell --selector board=rpi4 -- jmp-robot generate --live
+```
+
+Without a source on the command line, the generator makes a resource for each
+client of the nearest project file.
+
+- If a client has an `exporter-config`, the generator reads the drivers from
+  that file. A connection is not necessary.
+- If a client has only a `selector` or a `lease`, the generator reads the
+  drivers from the exporter. With `--live`, it does this for all clients.
+- To read from the exporter, the generator uses the `jmp shell` that it runs
+  in. If there is no shell, it gets a lease with the `selector` or `lease` of
+  the client.
+
+| Option | Description |
+| --- | --- |
+| `--project FILE` | The project file. The default is the nearest `robot.toml` or `pyproject.toml` that has client settings. |
+| `--client NAME` | Makes the resource of this client only. You can give this option more than once. |
+| `--live` | Reads the drivers from the exporter. |
+| `--exporter-config CONFIG` | An exporter config, as a path or an alias. |
+| `--selector SELECTOR` | Gets a lease with this label selector. |
+| `--lease NAME` | Uses this lease. |
+| `--config CONFIG` | The client config for the lease: an alias, a path or `env`. |
+| `-o`, `--output FILE` | The resource file to write. |
+| `--session NAME` | The session name. The default is the client name, or `default`. |
+| `--alias PATH=PREFIX` | The keyword prefix for a driver. You can give this option more than once. |
+| `--roles` | Makes role libraries for groups of drivers that are the same. |
+| `--include GLOB`, `--exclude GLOB` | Includes or excludes the drivers whose path matches. You can give these options more than once. |
+
+You cannot use `--exporter-config`, `--selector` and `--lease` together.
+
+Two drivers can get the same keyword name, because Robot Framework ignores
+spaces and underscores. For example, `a_b.c` and `a.b_c` both give `A B C`.
+Then the generator fails and gives the names of the drivers. Set an alias for
+one of them.
+
+Exit codes: `0` for success, `2` for an incorrect command or configuration.
+
+### The client resource file
+
+```robotframework
+*** Settings ***
+Documentation    Generated by `jmp-robot generate` from a live exporter (device Rpi4, session rpi4). Do not edit: regenerating overwrites it.
+Library    jumpstarter_robot.Jumpstarter    auto_import=False
+Library    jumpstarter_robot.Session    rpi4    exporter_config=${JMP_RPI4_EXPORTER_CONFIG}    selector=${JMP_RPI4_SELECTOR}    lease_name=${JMP_RPI4_LEASE_NAME}    config=${JMP_RPI4_CLIENT_CONFIG}    AS    session.rpi4
+Library    jumpstarter_robot.Driver    dutlink.power    client=jumpstarter_driver_power.client.PowerClient    prefix=Main Power    session=rpi4    AS    rpi4.dutlink.power
+
+*** Variables ***
+${JMP_RPI4_EXPORTER_CONFIG}    ${EMPTY}
+${JMP_RPI4_SELECTOR}    board=rpi4
+${JMP_RPI4_LEASE_NAME}    ${EMPTY}
+${JMP_RPI4_CLIENT_CONFIG}    lab
+```
+
+Variables tell the session how to connect. Thus you can use the same resource
+with a different exporter:
+
+```console
+$ robot -v JMP_RPI4_SELECTOR:board=rpi5 tests/
+$ robot -v JMP_RPI4_LEASE_NAME:<lease> tests/
+```
+
+- The `default` session uses `${JMP_EXPORTER_CONFIG}`, `${JMP_SELECTOR}`,
+  `${JMP_LEASE_NAME}` and `${JMP_CLIENT_CONFIG}`.
+- A session with a different name has its own variables, such as
+  `${JMP_RPI4_SELECTOR}`. Thus one test file can import the resources of many
+  sessions.
+- If such a session has no selector, lease name or client config, it uses the
+  `default` variables from the command line, such as `-v JMP_SELECTOR`.
+- Paths are relative to the resource file (`${CURDIR}/exporter.yaml`).
+- With roles, a list variable gives the devices for `Use Device`:
+  `@{DEVICES}` for the `default` session and `@{RPI4_DEVICES}` for the session
+  `rpi4`.
+- The `AS` name of a library is the driver path. For a session that is not
+  `default`, the session name comes first.
+
+## Project settings
+
+The generator reads `[tool.jumpstarter.client]` from `robot.toml` or from
+`pyproject.toml`. It looks in the current directory first, and then in each
+parent directory. In each directory, it uses the first of these:
+
+1. A `robot.toml` that has client settings.
+2. A `pyproject.toml` that has client settings.
+3. A `robot.toml` without client settings.
+
+```toml
+[tool.jumpstarter.client]          # defaults for every client below
+config = "lab"                     # client config alias, path or "env"
+roles = true
+
+[tool.jumpstarter.client.rpi4]     # one client; its name is also the session name
+selector = "board=rpi4"
+resource = "client-rpi4.resource"
+
+[tool.jumpstarter.client.rpi4.aliases]   # driver path = keyword prefix
+"dutlink.power" = "Main Power"
+```
+
+Keys of `[tool.jumpstarter.client]`. These apply to all clients:
+
+| Key | Description |
+| --- | --- |
+| `config` | The client config: an alias, a path or `env`. |
+| `roles` | `true` makes role libraries for groups of drivers that are the same. |
+| `include` | A glob, or a list of globs. The generator includes only the driver paths that match. |
+| `exclude` | A glob, or a list of globs. The generator excludes the driver paths that match. |
+
+Keys of `[tool.jumpstarter.client.<name>]`:
+
+| Key | Description |
+| --- | --- |
+| `exporter-config` | An exporter config, as a path or an alias. By default, the resource then uses {term}`local mode`. |
+| `selector` | The label selector of the lease. |
+| `lease` | The name of an existing lease. |
+| `config` | The client config: an alias, a path or `env`. This replaces the default. |
+| `resource` | The resource file to write. The default is `client-<name>.resource`. |
+| `aliases` | A table of driver path (or role) and keyword prefix. |
+| `include`, `exclude`, `roles` | The same as above, for this client only. |
+
+Paths are relative to the project file. A value without a path separator and
+without a `.yaml` suffix is an alias.
+
+You cannot use the name of a setting as the name of a client. The generator
+refuses keys that look like credentials (`token`, `password`, `secret`). It
+writes a warning if a client config file in the project contains a token.
 
 ## Change the keywords of a driver
 
@@ -437,37 +568,41 @@ decorators of Robot Framework on the client class:
 ## Completion with RobotCode
 
 [RobotCode](https://robotcode.io/) reads the keywords of each library that a
-test file imports. Thus a `Driver` import gives completion and documentation
-for each keyword of that driver. A lease is not necessary.
+test file imports. Thus a client resource gives completion and documentation
+for each driver keyword. A lease is not necessary.
 
 1. Select the Python interpreter of the environment that has
    `jumpstarter-robot` and the driver packages (**Python: Select
    Interpreter**).
-2. Import a `Driver` library for each driver, with its `client` class. A
-   resource file is a good location for these imports.
-3. Import that resource file in each test file
+2. Import the client resource in each test file
    (`Resource    client.resource`).
-4. After you install a new version of a driver package, run **RobotCode: Clear
-   Cache and Restart Language Servers**.
+3. Put `paths`, `python-path` and `output-dir` in `robot.toml`, with the
+   `[tool.jumpstarter.client]` settings.
+4. After you make the resource again, run **RobotCode: Clear Cache and Restart
+   Language Servers**.
 
 To run tests from your editor on a board with a lease:
 
 1. Make the lease one time:
    `jmp create lease -l board=rpi4 --duration 4h`.
-2. Give the session the same selector (`selector=board=rpi4`).
+2. Give the session the same selector. Set `selector` for the client, or set
+   `JMP_RPI4_SELECTOR = "board=rpi4"` in the `[variables]` of RobotCode.
 
 Each test run then uses that lease and does not release it. Refer to
 [Use an active lease again](#use-an-active-lease-again).
 
 ## Limits
 
-- The keywords come from the client classes that are installed. A `Driver`
-  import fails if its client class is not installed.
+- The keywords come from the client classes that are installed. If the client
+  of a driver is not installed, the generator ignores that driver. This also
+  applies if `drivers.allow` in the client config does not permit the client.
+- An exporter config lists only the drivers that it configures. Some drivers
+  make their own child drivers. To include these child drivers, use `--live`.
 - An `async` client method and a context manager get no keyword.
 - `Call Driver` converts text arguments to the types of the client method.
 - In `jmp shell`, each session uses the exporter of the shell.
 - Keywords from `auto_import` exist only after the session connects.
   `robot --dryrun` does not connect, and thus it cannot find these keywords.
-  Test files that import `Driver` libraries operate correctly with `--dryrun`.
+  Test files that use a client resource operate correctly with `--dryrun`.
 - A keyword holds a lock while it communicates with an exporter. Thus keywords
   from different threads run one at a time.
