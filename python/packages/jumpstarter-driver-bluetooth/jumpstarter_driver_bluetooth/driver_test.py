@@ -139,6 +139,9 @@ def test_with_a_bridge_and_a_device_view_one_client_does_all_of_it():
         assert state["link"] == client.status()
         assert client.set_enabled(False)["adapter"]["enabled"] is False
         assert client.factory_reset()["bonds"] == []
+        # a half that kept the key of its pairing is not a device that has a bond: the device is believed
+        driver._link._half.bonded = lambda: True  # ty: ignore
+        assert client.get_bluetooth_state()["bonds"] == []
         assert client.start_capture()["capturing"] is True
         assert client.read_capture()[:8] == b"btsnoop\x00"
         assert client.read_packets() == [] and client.stop_capture()["kept"] > 0

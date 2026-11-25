@@ -1,6 +1,7 @@
+import anyio
 import pytest
 
-from .android import SCRIPT, SNOOP_MODE, AndroidBluetooth, parse_state
+from .android import ASK_MODE, SCRIPT, SNOOP_MODE, AndroidBluetooth, parse_state
 from .capture import REDACTED
 from .capture_test import ACL, CONNECTED, DISCONNECTED, LINK_KEY, RECEIVED, RESET, RESET_DONE, SENT, btsnoop
 from .identity import MARK
@@ -33,6 +34,36 @@ AdapterProperties
 AdapterState
   Transitions:
 """
+# The same of a device with Android 17, as a Cuttlefish phone that is paired with a head unit said it: the
+# headings have their counts, a device says whether it is linked now, and there are the devices it only met.
+ANDROID_17 = """Bluetooth Status:
+  State:         ON
+  Address:       XX:XX:XX:XX:00:00
+  Name:          Cuttlefish x86_64 phone 64-bit only
+  Inner app:     com.android.bluetooth
+
+AdapterProperties
+  Name: Cuttlefish x86_64 phone 64-bit only
+  Address: XX:XX:XX:XX:00:00
+  ConnectionState: STATE_CONNECTED
+  MaxConnectedAudioDevices: 5
+  A2dpOffloadEnabled: true
+  Discovering: false
+  DiscoveryEndMs: 1795568858446
+
+BluetoothRemoteDevices
+  Bonded devices: 2
+    XX:XX:XX:XX:00:01(Public ) => XX:XX:XX:XX:00:01(Public ) [BR/EDR] [0x260420] [Pairing Algorithm BR/EDR: 2 LE: N/A] [ACL BR/EDR:Y LE:N] [ Encryption status(BR/EDR): EncryptionStatus{keySize=16, algorithm=1] LE: N/A] Cuttlefish x86_64 auto 64-bit only
+        [BR/EDR UUIDs]: 0000110a-0000-1000-8000-00805f9b34fb 0000110b-0000-1000-8000-00805f9b34fb
+    XX:XX:XX:XX:AB:CD(Public ) => XX:XX:XX:XX:AB:CD(Public ) [ DUAL ] [0x240404] [Pairing Algorithm BR/EDR: 2 LE: N/A] [ACL BR/EDR:N LE:N] [ Encryption status(BR/EDR): N/A LE: N/A] Kirk's headphones
+
+  Other devices: 2
+    XX:XX:XX:XX:EF:01(Public ) => XX:XX:XX:XX:XX:XX(Unknown) [  LE  ] [0x001F00] [Pairing Algorithm BR/EDR: N/A LE: N/A] [ACL BR/EDR:N LE:Y] [ Encryption status(BR/EDR): N/A LE: N/A] A tag
+    XX:XX:XX:XX:EF:02(Random ) => XX:XX:XX:XX:XX:XX(Unknown) [  LE  ] [0x001F00] [Pairing Algorithm BR/EDR: N/A LE: N/A] [ACL BR/EDR:N LE:N] [ Encryption status(BR/EDR): N/A LE: N/A]
+
+BluetoothActiveDeviceManager
+  Audio mode: 0
+"""  # noqa: E501
 OFF = "Bluetooth Status\n  enabled: false\n  state: OFF\n  address: 3C:5A:B4:01:02:03\n  name: Pixel 9\n"
 
 
@@ -80,6 +111,31 @@ def test_what_a_device_does_not_say_is_not_known():
     assert nothing["adapter"]["enabled"] is None and nothing["adapter"]["name"] is None and nothing["bonds"] is None
 
 
+def test_android_17_says_of_each_device_it_knows_whether_it_is_linked_now():
+    state = parse_state(said(manager=ANDROID_17, user="0", snoop="full"))
+    assert state["adapter"]["state"] == "ON" and state["adapter"]["name"] == "Cuttlefish x86_64 phone 64-bit only"
+    head_unit = {
+        "address": "XX:XX:XX:XX:00:01", "type": "BR/EDR", "class_of_device": 0x260420,
+        "name": "Cuttlefish x86_64 auto 64-bit only",
+    }  # fmt: skip
+    assert state["bonds"] == [
+        {**head_unit, "connected": True},
+        {
+            "address": "XX:XX:XX:XX:AB:CD", "type": "DUAL", "class_of_device": 0x240404,
+            "name": "Kirk's headphones", "connected": False,
+        },
+    ]  # fmt: skip
+    # Whom it is linked to: the bonded device that is, and a device it has only met.
+    assert state["connections"] == [
+        {**head_unit, "bonded": True},
+        {"address": "XX:XX:XX:XX:EF:01", "type": "LE", "class_of_device": 0x1F00, "name": "A tag", "bonded": False},
+    ]
+    # Nothing bonded, nothing linked: said so, with the count.
+    alone = ANDROID_17.split("  Bonded devices:")[0] + "  Bonded devices: 0\n\n  Other devices: 0\n\nBluetoothActive\n"
+    state = parse_state(said(manager=alone.replace("STATE_CONNECTED", "STATE_DISCONNECTED")))
+    assert state["bonds"] == [] and state["connections"] == []
+
+
 class Device:
     """A stand-in for `adb`: an Android device with a Bluetooth stack that writes a snoop log."""
 
@@ -88,6 +144,8 @@ class Device:
         self.on = True
         self.root = True  # a userdebug build
         self.mode = ""
+        self.mode_is_roots = False  # Android 17: the shell user is not told the log's mode
+        self.filters = False  # a userdebug build: with no mode set, the stack writes a filtered log
         self.reset_known = True
         self.logs: dict[str, bytes] = {}
         self.bonds = ADAPTER
@@ -96,17 +154,22 @@ class Device:
 
     def restart(self) -> None:
         """The stack starts: the log of the run before is put aside, and a new one is written (or none)."""
-        log = "/data/misc/bluetooth/logs/btsnoop_hci.log"
-        if log in self.logs:
-            self.logs[log + ".last"] = self.logs.pop(log)
-        if self.mode == "full":
-            self.started += 100
-            self.logs[log] = btsnoop((SENT, RESET), (RECEIVED, RESET_DONE), start=self.started)
-        else:
+        log = self.log()
+        if self.mode != "full" and not (self.mode == "" and self.filters):
             self.logs.clear()  # (a stack that starts with its log disabled deletes what there was)
+            return
+        before = self.logs.pop(log, None)
+        self.logs.clear()  # (and the logs of another mode)
+        if before is not None:
+            self.logs[log + ".last"] = before
+        self.started += 100
+        self.logs[log] = btsnoop((SENT, RESET), (RECEIVED, RESET_DONE), start=self.started)
+
+    def log(self) -> str:
+        return "/data/misc/bluetooth/logs/btsnoop_hci.log" + ("" if self.mode == "full" else ".filtered")
 
     def say(self, *packets: tuple[int, bytes]) -> None:
-        log = "/data/misc/bluetooth/logs/btsnoop_hci.log"
+        log = self.log()
         whole = btsnoop(*packets, start=self.started + 1)
         self.logs[log] = self.logs[log] + whole[16:]
 
@@ -128,13 +191,17 @@ class Device:
             elif command == "cmd bluetooth_manager factoryReset":
                 if not self.reset_known:
                     raise RuntimeError("Unknown command: factoryReset")
-                self.bonds, self.on = ADAPTER.split("    XX:")[0] + "\nAdapterState\n", False
+                # (the stack is stopped and started; the log's mode is emptied with everything else)
+                self.bonds, self.mode = ADAPTER.split("    XX:")[0] + "\nAdapterState\n", ""
+                self.restart()
             return b""
         if command == SCRIPT:
             manager = MANAGER.split("AdapterProperties")[0] + self.bonds if self.on else OFF
             return said(manager=manager, snoop=self.mode).encode()
-        if command == f"getprop {SNOOP_MODE}":
+        if command == ASK_MODE:
             return self.mode.encode() + b"\n"
+        if command == f"getprop {SNOOP_MODE}":
+            return b"\n" if self.mode_is_roots else self.mode.encode() + b"\n"
         if command.startswith("cmd bluetooth_manager disable"):
             self.on = False
         elif command.startswith("cmd bluetooth_manager enable"):
@@ -211,7 +278,8 @@ def test_the_hci_is_recorded_with_androids_own_snoop_log():
         status = client.start_capture()
         assert status == {
             "capturing": True, "mode": "full", "changed_mode": True, "mode_before": "",
-            "path": "/data/misc/bluetooth/logs/btsnoop_hci.log", "kept": 0,
+            "path": "/data/misc/bluetooth/logs/btsnoop_hci.log",
+            "file": "/data/misc/bluetooth/logs/btsnoop_hci.log", "kept": 0,
         }  # fmt: skip
         assert device.shells[-4:-1] == [
             f"su 0 sh -c 'setprop {SNOOP_MODE} \"full\"'",
@@ -274,3 +342,42 @@ def test_a_device_that_already_records_is_not_restarted_and_its_log_is_marked(tm
         # Stopping leaves the mode alone unless it is asked to put it back, and there is nothing to put back.
         assert client.stop_capture()["mode"] == "full"
         assert client.stop_capture(restore=True)["mode"] == "full"
+
+
+def test_the_logs_mode_is_asked_as_root_which_android_17_asks_for():
+    device = Device()
+    device.mode, device.mode_is_roots = "full", True
+    device.restart()
+    with serve(android(device)) as client:
+        assert client.get_bluetooth_state()["adapter"]["snoop_log_mode"] == "full"
+        # A device that records already is seen to: it is not restarted, and its links stay.
+        status = client.start_capture()
+        assert status["mode"] == "full" and status["changed_mode"] is False
+        assert not any("disable" in shell for shell in device.shells)
+
+
+def test_a_recording_goes_on_after_a_factory_reset_which_empties_the_logs_mode():
+    device = Device()
+    device.filters = True
+    with serve(android(device)) as client:
+        client.start_capture()
+        device.say((RECEIVED, CONNECTED))
+        assert [packet["name"] for packet in client.read_packets()] == ["HCI_CONNECTION_COMPLETE_EVENT"]
+
+        # The driver's own reset sets the mode again, and the stack starts once more with it: a new log.
+        assert client.factory_reset()["adapter"]["snoop_log_mode"] == "full"
+        assert device.mode == "full" and list(device.logs) == ["/data/misc/bluetooth/logs/btsnoop_hci.log"]
+        device.say((RECEIVED, CONNECTED), (RECEIVED, LINK_KEY))
+        assert client.wait_for_event("link_key_notification", timeout=5)["index"] == 3
+        assert client.capture_status()["file"] == "/data/misc/bluetooth/logs/btsnoop_hci.log"
+
+        # A reset behind the driver (a suite's own `adb shell`): the stack writes its build's filtered log
+        # under another name, and that is what there is to read. The status says so.
+        await_reset = "su 0 sh -c 'cmd bluetooth_manager factoryReset'"
+        anyio.run(device.adb, ["-s", "127.0.0.1:6520", "shell", await_reset])
+        device.say((RECEIVED, DISCONNECTED))
+        assert client.wait_for_event("disconnection_complete", timeout=5)["index"] == 2
+        status = client.capture_status()
+        assert status["mode"] == "" and status["file"] == "/data/misc/bluetooth/logs/btsnoop_hci.log.filtered"
+        assert client.read_capture()[:8] == b"btsnoop\x00"
+        assert client.stop_capture()["kept"] == len(device.logs[status["file"]])

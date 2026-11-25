@@ -171,9 +171,16 @@ class Bluetooth(BluetoothDriver):
         state = await (self._link.get_bluetooth_state() if self._link else super().get_bluetooth_state())
         if self._view is not None:
             asked = await self._view.get_bluetooth_state()
-            for part in ("adapter", "connections", "bonds", "error"):
-                if asked.get(part) is not None:
-                    state[part] = asked[part]
+            if "error" in asked:
+                # A device that does not answer: the link still says what it knows, and that is said.
+                state["error"] = asked["error"]
+            else:
+                # What the device itself says takes the place of what the link knew, and so does what it
+                # does not say: a link that kept a key is not a device that has a bond. Only whom the device
+                # is linked to is the link's to say, where the device's stack does not.
+                state["adapter"], state["bonds"] = asked["adapter"], asked["bonds"]
+                if asked["connections"] is not None:
+                    state["connections"] = asked["connections"]
         return {**state, "capabilities": self.capabilities()}
 
     @export

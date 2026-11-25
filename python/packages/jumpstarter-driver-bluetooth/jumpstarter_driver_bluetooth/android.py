@@ -23,20 +23,68 @@ from jumpstarter.driver import export
 # The questions of `identity`, and two more: who is in front (an Android Automotive device runs its system
 # as user 0 and its person as another), and how the stack records its HCI.
 SNOOP_MODE = "persist.bluetooth.btsnooplogmode"
-QUESTIONS = (*identity.QUESTIONS, "am get-current-user", f"getprop {SNOOP_MODE}")
+# The mode is asked as root where there is a root: on Android 17 the shell user may not read the property, and
+# is told nothing ("Access denied finding property"), which reads as a log that is off.
+ASK_MODE = f"su 0 getprop {SNOOP_MODE} 2>/dev/null || getprop {SNOOP_MODE}"
+QUESTIONS = (*identity.QUESTIONS, "am get-current-user", ASK_MODE)
 SCRIPT = f"; echo {identity.MARK}; ".join(QUESTIONS)
 
 MANAGER = "cmd bluetooth_manager"
 CONNECTION = re.compile(r"(?m)^\s*ConnectionState:\s*(\w+)\s*$")
 DISCOVERING = re.compile(r"(?m)^\s*Discovering:\s*(true|false)\s*$")
-BONDED = re.compile(r"(?m)^\s*Bonded devices:\s*$")
-# `    XX:XX:XX:XX:AB:CD [BR/EDR][ 0x5A020C ] Pixel 9`, as AdapterProperties prints a bonded device. Its
-# address is given with only its last two bytes. A device known under two addresses has ` => ` and the second.
-BOND = re.compile(
-    r"^\s+(?P<address>(?:[0-9A-Fa-fX]{2}:){5}[0-9A-Fa-fX]{2})(?:\s*=>\s*(?P<identity>(?:[0-9A-Fa-fX]{2}:){5}[0-9A-Fa-fX]{2}))?"
-    r"\s*\[(?P<type>[^\]]*)\]\[\s*0x(?P<class>[0-9A-Fa-f]+)\s*\]\s?(?P<name>.*)$"
+# The devices the stack knows, as it lists them: those it is bonded with, and (Android 17) the others it has met.
+# A heading may have the count after it (`Bonded devices: 1`, Android 17) or not.
+BONDED = re.compile(r"(?m)^(?P<indent>[ \t]*)Bonded devices:[ \t]*\d*[ \t]*$")
+OTHERS = re.compile(r"(?m)^(?P<indent>[ \t]*)Other devices:[ \t]*\d*[ \t]*$")
+_ADDRESS = r"(?:[0-9A-Fa-fX]{2}:){5}[0-9A-Fa-fX]{2}"
+# One device of such a list. Its address is given with only its last two bytes; a device known under two
+# addresses has ` => ` and the second. Up to Android 16:
+#     XX:XX:XX:XX:AB:CD [BR/EDR][ 0x5A020C ] Pixel 9
+# Android 17 says more, and is the first to say whether the device is linked now (`ACL`):
+#     XX:XX:XX:XX:00:01(Public ) => XX:XX:XX:XX:00:01(Public ) [BR/EDR] [0x260420] [Pairing Algorithm BR/EDR: 2
+#     LE: N/A] [ACL BR/EDR:Y LE:N] [ Encryption status(BR/EDR): EncryptionStatus{keySize=16, algorithm=1] LE:
+#     N/A] Cuttlefish x86_64 auto 64-bit only            (one line; and a line of its services under it)
+DEVICE = re.compile(
+    rf"^\s+(?P<address>{_ADDRESS})(?:\([^)]*\))?(?:\s*=>\s*(?P<identity>{_ADDRESS})(?:\([^)]*\))?)?"
+    r"\s*\[(?P<type>[^\]]*)\]\s*\[\s*0x(?P<class>[0-9A-Fa-f]+)\s*\](?P<rest>.*)$"
 )
+ACL = re.compile(r"\[ACL BR/EDR:(?P<classic>[YN]) LE:(?P<le>[YN])\]")
+UNKNOWN_ADDRESS = "XX:XX:XX:XX:XX:XX"
 CHUNK = 48 * 1024
+
+
+def _listed(manager: str, heading: re.Pattern) -> list[dict] | None:
+    """The devices under a heading of the stack's list. None: the heading is not there."""
+    found = heading.search(manager)
+    if not found:
+        return None
+    devices = []
+    for line in manager[found.end() :].splitlines()[1:]:
+        if not line.strip():
+            continue
+        if len(line) - len(line.lstrip()) <= len(found["indent"]):
+            break  # the next heading
+        device = DEVICE.match(line)
+        if not device:
+            continue  # (more of the device above: its services)
+        address, second, rest = device["address"].upper(), (device["identity"] or "").upper(), device["rest"]
+        linked = ACL.search(rest)
+        if linked:
+            # What follows the class is in brackets too, and the name is after the last of them.
+            name = "" if rest.rstrip().endswith("]") else rest.rsplit("]", 1)[1]
+        else:
+            name = rest
+        devices.append(
+            {
+                "address": address,
+                **({"identity_address": second} if second and second not in (address, UNKNOWN_ADDRESS) else {}),
+                "type": device["type"].strip(),
+                "class_of_device": int(device["class"], 16),
+                "name": name.strip(),
+                **({"connected": "Y" in (linked["classic"], linked["le"])} if linked else {}),
+            }
+        )
+    return devices
 
 
 def parse_state(output: str) -> dict:
@@ -60,26 +108,20 @@ def parse_state(output: str) -> dict:
         "android_user": int(user) if user.isdigit() else None,
         "snoop_log_mode": snoop or None,
     }
-    bonds: list[dict] | None = None
-    if listed := BONDED.search(manager):
-        bonds = []
-        for line in manager[listed.end() :].splitlines()[1:]:
-            bond = BOND.match(line)
-            if not bond:
-                if line.strip():
-                    break
-                continue
-            bonds.append(
-                {
-                    "address": bond["address"].upper(),
-                    **({"identity_address": bond["identity"].upper()} if bond["identity"] else {}),
-                    "type": bond["type"].strip(),
-                    "class_of_device": int(bond["class"], 16),
-                    "name": bond["name"].strip(),
-                }
-            )
-    # The stack says whether it has a link, not to whom.
-    connections = [] if adapter["connection_state"] == "DISCONNECTED" else None
+    bonds, others = _listed(manager, BONDED), _listed(manager, OTHERS)
+    known = [
+        {**device, "bonded": bonded} for bonded, devices in ((True, bonds), (False, others)) for device in devices or []
+    ]
+    if any("connected" in device for device in known):
+        # (Android 17) the stack says of each device it knows whether it is linked now.
+        connections = [
+            {name: value for name, value in device.items() if name != "connected"}
+            for device in known
+            if device.get("connected")
+        ]
+    else:
+        # Before that it says whether it has a link, not to whom.
+        connections = [] if adapter["connection_state"] == "DISCONNECTED" else None
     return {"adapter": adapter, "connections": connections, "bonds": bonds}
 
 
@@ -114,6 +156,8 @@ class AndroidBluetooth(BluetoothDriver):
     # Where the recording starts in the log: the time of the log's first record, and how many it had.
     _mark: tuple[float, int] = field(init=False, default=(0.0, 0), repr=False)
     _kept: bytes | None = field(init=False, default=None, repr=False)
+    # The log that was read last: the device's own name for it.
+    _file: str = field(init=False, default="", repr=False)
 
     def __post_init__(self):
         super().__post_init__()
@@ -165,7 +209,9 @@ class AndroidBluetooth(BluetoothDriver):
         """The device is asked now. ``adapter`` also has ``connection_state`` (whether the adapter has a link:
         the stack does not list them), ``discovering``, ``android_user`` (who is in front: on Android
         Automotive that is not the system user the adapter belongs to) and ``snoop_log_mode``. ``bonds`` have
-        ``name``, ``class_of_device``, ``type`` and an ``address`` of which Android gives the last two bytes.
+        ``name``, ``class_of_device``, ``type`` and an ``address`` of which Android gives the last two bytes;
+        from Android 17 also ``connected``, and ``connections`` are then the devices that are (before that
+        the stack does not say to whom it is linked: None when it is, empty when it is not).
         A device that does not answer has ``error``, and nothing else is known of it."""
         state: dict = {"capabilities": self.capabilities(), "adapter": None, "connections": None, "bonds": None}
         try:
@@ -192,7 +238,15 @@ class AndroidBluetooth(BluetoothDriver):
 
         This runs ``cmd bluetooth_manager factoryReset`` as root (a ``userdebug`` or ``eng`` build). The
         command is not in the AOSP sources of Android 14 to 16; a device whose Bluetooth does not have it
-        says so, and is left as it was."""
+        says so, and is left as it was.
+
+        The reset also empties the snoop log's mode (seen on Android 17: the stack then starts with its
+        build's own mode, and deletes the log it had). A mode that was set is set again, which starts the
+        stack once more: a recording goes on, in a new log."""
+        try:
+            before = await self._mode()
+        except Exception:  # noqa: BLE001 - the reset says what is wrong with the device, if anything is
+            before = ""
         try:
             await self._shell(f"{MANAGER} factoryReset", root=True)
         except Exception as error:
@@ -200,12 +254,14 @@ class AndroidBluetooth(BluetoothDriver):
                 f"the device's Bluetooth was not reset ('{MANAGER} factoryReset', as root): {error}"
             ) from error
         await self._switch(True)
+        if before and await self._mode() != before:
+            await self._set_mode(before)
         return await self.get_bluetooth_state()
 
     # The snoop log.
 
     async def _mode(self) -> str:
-        return (await self._shell(f"getprop {SNOOP_MODE}")).strip()
+        return (await self._shell(ASK_MODE)).strip()
 
     async def _set_mode(self, mode: str) -> None:
         """The stack reads the mode when it starts, so it is started again: every link it has is dropped."""
@@ -216,12 +272,24 @@ class AndroidBluetooth(BluetoothDriver):
     async def _pull(self, path: str) -> bytes:
         return await self._run(["-s", self.adb, "exec-out", f"su 0 cat {path} 2>/dev/null"])
 
+    async def _pull_log(self, last: bool = False) -> bytes:
+        """The device's log, or the one of the run before. In mode ``full`` it is `snoop_log`. A stack whose
+        mode was put back behind this driver (a factory reset of the device's Bluetooth empties it) writes
+        what its build writes by itself, which on a ``userdebug`` build is a filtered log beside it: that is
+        read then, so that a recording does not end with the reset. `capture_status` says which was read."""
+        for kind in ("", ".filtered"):
+            path = self.snoop_log + kind + (".last" if last else "")
+            if data := await self._pull(path):
+                self._file = path
+                return data
+        return b""
+
     async def _log(self, last: bool = False) -> bytes:
         if last:
-            return await self._pull(self.snoop_log + ".last")
+            return await self._pull_log(last=True)
         if self._kept is not None and not self._capturing:
             return self._kept
-        return await self._pull(self.snoop_log)
+        return await self._pull_log()
 
     @staticmethod
     def _records(data: bytes) -> list[Record]:
@@ -242,7 +310,7 @@ class AndroidBluetooth(BluetoothDriver):
         if before != "full":
             await self._set_mode("full")
             self._mode_before = before
-        records = self._records(await self._pull(self.snoop_log))
+        records = self._records(await self._pull_log())
         self._mark = (records[0].time, len(records)) if records else (0.0, 0)
         self._kept, self._capturing = None, True
         return await self.capture_status()
@@ -254,7 +322,7 @@ class AndroidBluetooth(BluetoothDriver):
         The mode stays ``full``: putting it back restarts the device's Bluetooth once more, and a stack that
         starts with its log disabled deletes the log. ``restore`` does put it back, after the log was taken."""
         if self._capturing:
-            self._kept = await self._pull(self.snoop_log)
+            self._kept = await self._pull_log()
             self._capturing = False
         if restore and self._mode_before is not None:
             await self._set_mode(self._mode_before or "disabled")
@@ -264,14 +332,16 @@ class AndroidBluetooth(BluetoothDriver):
     @export
     async def capture_status(self) -> dict:
         """``capturing``; ``mode``, as the device has it now; ``changed_mode``: `start_capture` set it (and
-        what it was is ``mode_before``); ``path`` of the log on the device; ``kept``: the bytes taken by
-        `stop_capture`."""
+        what it was is ``mode_before``); ``path`` of the log on the device, and ``file``: the log that was
+        read last (the device writes a filtered log under another name when its mode is not ``full``);
+        ``kept``: the bytes taken by `stop_capture`."""
         return {
             "capturing": self._capturing,
             "mode": await self._mode(),
             "changed_mode": self._mode_before is not None,
             "mode_before": self._mode_before or "",
             "path": self.snoop_log,
+            "file": self._file,
             "kept": len(self._kept) if self._kept is not None else 0,
         }
 

@@ -546,8 +546,13 @@ What Android gives, and what it does not:
 
 - A bonded device's address is given with its last two bytes only (`XX:XX:XX:XX:17:01`): that is how the
   stack prints it. Its name, class and type (`BR/EDR`, `LE`, `DUAL`) are whole.
-- The stack says whether the adapter has a link (`adapter.connection_state`), not to whom: `connections` is
-  `[]` when it has none and `None` when it has.
+- Up to Android 16 the stack says whether the adapter has a link (`adapter.connection_state`), not to whom:
+  `connections` is `[]` when it has none and `None` when it has (with a `link`, the link then says whom it
+  joined). Android 17 says of every device it knows whether it is linked now: a bond has `connected`, and
+  `connections` are the devices that are, bonded or not (`bonded`).
+- With a `link`, what the device says takes the place of what the link knows, and so does what it does not
+  say: a bridge half that kept the key of a pairing is not a device that has a bond. A device whose Bluetooth
+  is off lists no bonds, and `bonds` is `None`.
 - `adapter.android_user` is who is in front. On Android Automotive that is not the system user (0) the
   adapter belongs to; the address is read as user 0.
 - A device that does not answer (off, booting) has `error` in its state, and nothing else is known of it.
@@ -555,7 +560,12 @@ What Android gives, and what it does not:
   was when new: every bond goes, and so does whatever else the stack kept. It needs root (a `userdebug` or
   `eng` build). `factoryReset` is not among the shell commands of `bluetooth_manager` in the AOSP sources of
   Android 14 to 16 (those are `enable`, `disable`, `enable-ble`, `disable-ble` and `wait-for-state`): a
-  device that does not have it says so, the call fails, and the device is left as it was.
+  device that does not have it says so, the call fails, and the device is left as it was. Android 17 (a
+  Cuttlefish `userdebug` build) has it, and there it takes about a second.
+- **A factory reset empties the snoop log's mode** too (Android 17): the stack starts again with its build's
+  own mode and deletes the log it had. `factory_reset()` sets the mode again if one was set, which starts the
+  stack once more, so a recording goes on in a new log. A reset done behind the driver (`adb shell cmd
+  bluetooth_manager factoryReset` in a suite) leaves the build's mode: see [Inspection](#inspection).
 
 ## Inspection
 
@@ -585,7 +595,8 @@ How it records:
 - The log's mode is the system property `persist.bluetooth.btsnooplogmode`, and has to be `full`. The stack
   reads it only when it starts. **`start_capture` sets it and switches the device's Bluetooth off and on** if
   it was anything else: the device's links are dropped (its bonds stay). A device that is already in `full`
-  mode is not restarted. To have no restart in a suite, make the device with the property set.
+  mode is not restarted. To have no restart in a suite, make the device with the property set. The mode is
+  read as root: on Android 17 the shell user is not told it.
 - The log is `/data/misc/bluetooth/logs/btsnoop_hci.log` on the device (`snoop_log`), and the log of the run
   before is beside it with `.last`. Both are read as root: a `userdebug` or `eng` build.
 - `read_capture` gives the file as the device wrote it: btsnoop version 1 with H4 packets, which Wireshark and
@@ -598,6 +609,10 @@ How it records:
 - An event is named as a test would say it: `connection_complete`, `Connection Complete` and
   `HCI_CONNECTION_COMPLETE_EVENT` are the same. Keyword arguments narrow it by field, however deep the field
   is (`status="SUCCESS"` finds a command's return parameters). `since` takes an `index`.
+- A device whose mode is not `full` any more (its Bluetooth was reset behind the driver) writes what its
+  build writes by itself. On a `userdebug` build that is a *filtered* log, `btsnoop_hci.log.filtered`: every
+  command and event, with what the profiles say cut short. It is read in place of the full log, so the
+  recording does not end; `capture_status()` has the log that was read in `file`, and the device's `mode`.
 - `stop_capture` takes the log and keeps it on the exporter, for `read_capture` and `read_packets` afterwards.
   It leaves the mode `full`. `stop_capture(restore=True)` puts the mode back and restarts Bluetooth once more;
   the log is taken first, because a stack that starts with its log disabled deletes it.
