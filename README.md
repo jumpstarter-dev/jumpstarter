@@ -16,7 +16,7 @@ component runs on infrastructure you control.
 ## Highlights
 
 - 🧪 **Unified Testing** - One interface for real boards and virtual targets alike
-- 🔌 **Hardware Abstraction** - Drive UART, CAN, GPIO, power, video, and USB through drivers
+- 🔌 **Hardware Abstraction** - 60+ drivers: power, serial, CAN, flashing, phones, emulators
 - 🐍 **Python-Powered** - Plain pytest or shell scripts, with no job language to learn
 - 🌐 **Collaborative** - Lease hardware across teams with OIDC sign-on and access policies
 - ⚙️ **Automation Ready** - Built-in MCP server; agents act with your identity and policies
