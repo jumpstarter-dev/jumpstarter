@@ -17,13 +17,12 @@ from __future__ import annotations
 import inspect
 import itertools
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, AbstractContextManager, ExitStack
 from dataclasses import dataclass
 from typing import Any
 
 import anyio
-from anyio.from_thread import BlockingPortal
 from robot.api import Failure, logger
 from robot.api.deco import keyword
 from robot.utils import timestr_to_secs
@@ -114,33 +113,6 @@ def _enter(node: DriverClient, method: str, args: tuple, kwargs: dict, stack: Ex
     if isinstance(manager, AbstractAsyncContextManager):
         return context.enter_cancellable(node.portal, manager, stack)
     raise Failure(f"{type(node).__name__}.{method} did not return a context manager; use Call Driver instead")
-
-
-# How long an interrupted keyword waits for its cancelled task to finish in the portal
-CANCEL_GRACE = 5.0
-
-
-def _call_cancellable(portal: BlockingPortal, func: Callable[..., Awaitable[Any]], *args: Any) -> Any:
-    """``portal.call(func, *args)`` that cancels ``func`` when the keyword is interrupted.
-
-    ``portal.call`` returns on an RF timeout or Ctrl-C but leaves ``func``
-    running in the portal: a stream being read stays open on the exporter.
-    """
-    finished = threading.Event()
-
-    async def run() -> Any:
-        try:
-            return await func(*args)
-        finally:
-            finished.set()
-
-    future = portal.start_task_soon(run)
-    try:
-        return future.result()
-    except BaseException:
-        future.cancel()
-        finished.wait(CANCEL_GRACE)
-        raise
 
 
 def _register(
@@ -395,7 +367,7 @@ class ContextKeywords:
             _, node = resolve(path, session)
             if limit == 0:
                 return []
-            items = _call_cancellable(node.portal, _collect, node, name, args, limit, seconds)
+            items = context.call_cancellable(node.portal, _collect, node, name, args, limit, seconds)
             if limit is not None and len(items) < limit:
                 logger.info(f"{path}.{name}: timed out after {len(items)} of {limit} items")
             return [_robot_value(item, stem=name) for item in items]

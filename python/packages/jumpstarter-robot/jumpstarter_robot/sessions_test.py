@@ -12,6 +12,7 @@ from . import sessions
 from .sessions import LeaseEnded, NoSession, Session, matching_lease
 from .testing import use_session_factory
 from jumpstarter.client import DriverClient
+from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.client.grpc import Lease, LeaseList
 from jumpstarter.common.utils import serve
 from jumpstarter.config.env import JUMPSTARTER_HOST
@@ -49,11 +50,9 @@ class TestRegistry:
         assert sessions.opened("lab") is first
         assert "lab" in sessions.names()
 
-
     def test_no_session(self):
         with pytest.raises(NoSession, match="no Jumpstarter session 'default'"):
             sessions.get()
-
 
     def test_default_and_switch(self, tree):
         assert sessions.default_name() == "default"
@@ -73,6 +72,78 @@ class TestRegistry:
         with pytest.raises(ValueError, match="on_lease_end"):
             sessions.set_lease_end_policy("ignore")
 
+    def test_close_all_closes_every_session_after_a_failure(self, tree):
+        first, second, third = (sessions.install(Session.from_client(tree, name)) for name in "abc")
+        for session in (first, third):
+            session._stack.callback(lambda name=session.name: 1 // 0)
+        with pytest.raises(ExceptionGroup, match="failed to close") as errors:
+            sessions.close_all()
+        assert len(errors.value.exceptions) == 2
+        assert not (first.alive or second.alive or third.alive)
+
+    def test_reset_clears_everything_after_a_failed_close(self, tree):
+        sessions.install(Session.from_client(tree, "lab"))._stack.callback(lambda: 1 // 0)
+        sessions.register_factory("lab", Counter(tree, "lab"))
+        sessions.set_default("lab")
+        sessions.set_lease_end_policy("fail")
+        with pytest.raises(ZeroDivisionError):
+            sessions.reset()
+        assert sessions.names() == []
+        assert sessions.default_name() == "default"
+        assert sessions.lease_end_policy() == "fatal"
+
+
+class TestDeclarations:
+    """Which connection a later declaration of the same session name replaces."""
+
+    @pytest.fixture
+    def running(self, monkeypatch):
+        suite = SimpleNamespace(id="s1-s1")
+        monkeypatch.setattr(sessions, "_running_suite", lambda: suite.id)
+        return suite
+
+    def declare(self, tree, target):
+        sessions.register_factory("rig", Counter(tree, "rig"), target)
+
+    @pytest.mark.parametrize("declared", ["a", None])
+    def test_another_suite_gets_its_own_target(self, tree, running, declared):
+        if declared:
+            self.declare(tree, declared)
+        opened = sessions.install(Session.from_client(tree, "rig"), target="a")
+        running.id = "s1-s2"
+        self.declare(tree, "a")
+        assert opened.alive  # the same target
+        self.declare(tree, "b")
+        assert not opened.alive
+
+    def test_another_suite_does_not_inherit_keyword_arguments(self, tree, running):
+        self.declare(tree, "a")
+        opened = sessions.install(Session.from_client(tree, "rig"), target="override")
+        self.declare(tree, "a")
+        assert opened.alive  # the suite that opened it chose the override
+        running.id = "s1-s1-s4"
+        self.declare(tree, "a")
+        assert opened.alive  # and its children use it
+        running.id = "s1-s10"
+        self.declare(tree, "a")
+        assert not opened.alive
+
+    def test_a_session_already_connected_to_the_target_stays(self, tree, running):
+        running.id = "s1"
+        self.declare(tree, "a")
+        opened = sessions.install(Session.from_client(tree, "rig"), target="b")
+        running.id = "s1-s1"
+        self.declare(tree, "b")
+        assert opened.alive
+
+    def test_child_suites_keep_what_a_parent_acquired(self, tree, running):
+        running.id = "s1"
+        opened = sessions.install(Session.from_client(tree, "rig"), target="leased")
+        running.id = "s1-s2"
+        self.declare(tree, "local")
+        assert opened.alive
+
+
 class TestShellFallback:
     def test_shell_used_when_nothing_registered(self, tree, monkeypatch):
         monkeypatch.setenv(JUMPSTARTER_HOST, "/tmp/nowhere.sock")
@@ -80,6 +151,7 @@ class TestShellFallback:
         with use_session_factory(shell=shell):
             assert sessions.get("lab").exporter == "exp-1"
         assert shell.calls == [("lab", {})]
+
 
 class TestSession:
     def test_check_alive(self, tree):
@@ -90,7 +162,6 @@ class TestSession:
         assert not session.alive
         with pytest.raises(LeaseEnded, match="closed"):
             session.check_alive()
-
 
     def test_resolve(self, tree):
         session = Session.from_client(tree)
@@ -109,6 +180,7 @@ class TestSession:
             session.resolve("dut.nope.deeper")
         assert "driver 'dut.nope' (from path 'dut.nope.deeper')" in error.value.args[0]
         assert "['power']" in error.value.args[0]
+
 
 class FakeControllerLease:
     def __init__(self, client, release):
@@ -139,7 +211,9 @@ class FakeClientConfig:
         self.release = release
         self.calls = []
         self.lease = None
-        self.metadata = SimpleNamespace(name="me")
+        self.endpoint = "grpc.example.com:443"
+        self.metadata = SimpleNamespace(name="me", namespace="default")
+        self.ended = set()
         self.listed = list(listed)
         self.listings = 0
 
@@ -151,6 +225,8 @@ class FakeClientConfig:
     @asynccontextmanager
     async def lease_async(self, selector, exporter_name, lease_name, duration, portal, **kwargs):
         self.calls.append((selector, exporter_name, lease_name, duration, kwargs))
+        if lease_name in self.ended:
+            raise LeaseError(f"lease {lease_name} has already ended")
         self.lease = FakeControllerLease(self.client, self.release and not lease_name)
         if lease_name:
             self.lease.name = lease_name  # attaching keeps the lease's own name
@@ -204,6 +280,7 @@ class TestFromExporterConfig:
             session.close()
         assert not session.alive
 
+
 STARTED = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
 
 
@@ -237,6 +314,24 @@ class TestMatchingLease:
         assert self.match(leases, "board=rpi4,lab=eu") is None
         assert self.match([listed("l1", "board=rpi4")], "board=rpi5") is None
 
+    @pytest.mark.parametrize("empty", ["lab=", "lab==", "lab!="])
+    def test_empty_values_are_requirements(self, empty):
+        assert self.match([listed("l1", "board=rpi4")], f"board=rpi4,{empty}") is None
+        assert self.match([listed("l1", f"{empty},board=rpi4")], f"board=rpi4,{empty}") == "l1"
+
+    def test_selectors_that_cannot_be_read_match_nothing(self):
+        for selector in ("board=rpi4,lab in", "board=rpi4,lab~eu", "lab in (eu"):
+            assert self.match([listed("l1", selector), listed("l2", "board=rpi4")], selector) is None
+        assert self.match([listed("l1", "board=rpi4,lab~eu")], "board=rpi4") is None
+
+    def test_the_controllers_empty_selector(self):
+        lease = listed("l1", "<none>", exporter_name="rpi4-01")
+        assert self.match([lease], None, "rpi4-01") == "l1"
+        assert self.match([lease], "board=rpi4", "rpi4-01") is None
+
+    def test_contradictory_values_are_kept(self):
+        assert self.match([listed("l1", "board=rpi4")], "board=rpi5,board=rpi4") is None
+
 
 class TestLeaseReuse:
     @pytest.fixture
@@ -264,10 +359,43 @@ class TestLeaseReuse:
         assert session.owns_lease is True
         session.close()
 
-
     def test_attach_only_never_acquires(self, config):
         config.listed = [listed("narrow", "board=rpi4,lab=us")]
         expected = r"no active lease of client 'me' matches board=rpi4.*jmp create lease -l board=rpi4"
         with pytest.raises(NoSession, match=expected):
             Session.from_lease("lab", selector="board=rpi4", acquire=False)
         assert config.calls == []
+
+    def test_recovery_command_quotes_the_selector(self, config):
+        with pytest.raises(NoSession, match=r"jmp create lease -l 'board in \(rpi4,rpi5\)' --duration"):
+            Session.from_lease("lab", selector="board in (rpi4,rpi5)", acquire=False)
+
+    def test_acquires_when_the_reused_lease_has_ended(self, config):
+        config.listed, config.ended = [listed("gone", "board=rpi4")], {"gone"}
+        session = Session.from_lease("lab", selector="board=rpi4", duration=timedelta(minutes=5), release_grace=0)
+        assert [call[:4] for call in config.calls] == [
+            (None, None, "gone", timedelta(minutes=5)),
+            ("board=rpi4", None, None, timedelta(minutes=5)),
+        ]
+        assert session.owns_lease is True
+        session.close()
+
+    def test_attach_only_fails_when_the_reused_lease_has_ended(self, config):
+        config.listed, config.ended = [listed("gone", "board=rpi4")], {"gone"}
+        with pytest.raises(LeaseError, match="has already ended"):
+            Session.from_lease("lab", selector="board=rpi4", acquire=False)
+        assert len(config.calls) == 1
+
+    @pytest.mark.parametrize(
+        ("endpoint", "namespace", "free"),
+        [("grpc.example.com:443", "default", False), ("other:443", "default", True), (None, "west", True)],
+    )
+    def test_a_lease_is_held_by_its_controller_and_namespace(self, config, tree, endpoint, namespace, free):
+        holder = Session.from_client(tree, "holder")
+        holder.lease_name, holder.lease_scope = "lab-1", (endpoint, namespace)
+        sessions.install(holder)
+        config.listed = [listed("lab-1", "board=rpi4")]
+        session = Session.from_lease("lab", selector="board=rpi4", release_grace=0)
+        assert session.owns_lease is not free
+        assert session.lease_scope == ("grpc.example.com:443", "default")
+        session.close()

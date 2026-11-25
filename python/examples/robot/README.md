@@ -19,7 +19,7 @@ explains this example.
 2. Run the tests:
 
    ```console
-   $ cd python/examples/robot
+   $ cd examples/robot
    $ uv run robot -d results tests/
    ```
 

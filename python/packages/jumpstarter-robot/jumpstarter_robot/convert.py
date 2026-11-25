@@ -38,6 +38,8 @@ def _plain(value: Any) -> Any:
     if isinstance(value, BaseModel):
         return _plain(value.model_dump(mode="python"))
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        if not _is_data(value):
+            return value  # holds a live object, as in to_robot
         return {f.name: _plain(getattr(value, f.name)) for f in dataclasses.fields(value)}
     if isinstance(value, Mapping):
         return {key: _plain(item) for key, item in value.items()}
@@ -51,7 +53,7 @@ def to_robot(value: Any, *, max_items: int = 1000, save_image: Callable[[Any], P
 
     pydantic models and dataclasses become ``DotDict`` so both
     ``${result.stdout}`` and ``${result}[stdout]`` work; generators are read up
-    to ``max_items`` and closed, which also cancels the driver-side stream; PIL
+    to ``max_items`` and closed (see ``context.bounded_streams``); PIL
     images are saved through ``save_image`` and the path returned.
     """
     from robot.utils import DotDict

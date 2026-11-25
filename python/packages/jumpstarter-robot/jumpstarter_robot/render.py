@@ -27,7 +27,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -111,8 +111,11 @@ class Plan:
 # ---- selecting nodes ----
 
 
-def _selected(path: str, session: str, include: Sequence[str], exclude: Sequence[str]) -> bool:
-    candidates = (path, f"{session}.{path}")
+def _selected(
+    path: str, session: str, include: Sequence[str], exclude: Sequence[str], roles: Sequence[str] = ()
+) -> bool:
+    """Whether the filters keep the driver at ``path``; roles also match by their relative path."""
+    candidates = [name for p in (path, *roles) for name in (p, f"{session}.{p}")]
 
     def hit(patterns: Sequence[str]) -> bool:
         return any(fnmatch.fnmatchcase(c, p) for c in candidates for p in patterns)
@@ -134,11 +137,14 @@ def _signature(node: DeviceNode) -> tuple:
     )
 
 
-def find_role_groups(tree: DeviceTree) -> list[list[DeviceNode]]:
+def find_role_groups(
+    tree: DeviceTree, keep: Callable[[list[DeviceNode]], list[DeviceNode]] = list
+) -> list[list[DeviceNode]]:
     """Sets of identical subtrees under different parents (``dut1``/``dut2`` with the same drivers).
 
     A group needs two or more members with at least one typed descendant;
-    groups nested inside an already chosen group are left to it.
+    groups nested inside an already chosen group are left to it. ``keep``
+    filters the members of each group, or drops it with [].
     """
     by_signature: dict[tuple, list[DeviceNode]] = {}
     for node in tree.walk():
@@ -152,6 +158,8 @@ def find_role_groups(tree: DeviceTree) -> list[list[DeviceNode]]:
     covered: list[list[str]] = []
     for group in groups:
         if any(node.path[: len(c)] == c for node in group for c in covered):
+            continue
+        if not (group := keep(group)):
             continue
         chosen.append(group)
         covered.extend(node.path for node in group)
@@ -278,26 +286,62 @@ def plan(
         for n in tree.walk()
         if n.kind == "opaque"
     ]
-    groups, roles_by_path = _role_libraries(find_role_groups(tree) if roles else [])
+    roles_of: dict[str, list[str]] = {}  # a driver may be in an outer and a nested candidate group
+
+    def selected(node: DeviceNode) -> bool:
+        return _selected(node.dotted, session, include, exclude, roles_of.get(node.dotted, ()))
+
+    def in_role(node: DeviceNode) -> bool:
+        return _wanted(node) and (node.kind != "composite" or _has_keywords(node, session))
+
+    def keep(group: list[DeviceNode]) -> list[DeviceNode]:
+        for member in group:
+            for node in member.walk():
+                if node is not member:
+                    roles_of.setdefault(node.dotted, []).append(_role(node, member))
+        return _filter_group(group, lambda n: selected(n) and in_role(n))
+
+    groups, roles_by_path = _role_libraries(find_role_groups(tree, keep) if roles else [], in_role, selected)
     covered = [member.path for group in groups for member in group]
     plain = [
         n
         for n in tree.walk()
-        if _wanted(n)
-        and not any(n.path[: len(c)] == c and len(n.path) > len(c) for c in covered)
-        and _selected(n.dotted, session, include, exclude)
+        if _wanted(n) and not any(n.path[: len(c)] == c and len(n.path) > len(c) for c in covered) and selected(n)
     ]
     imports = [_driver_import(n, list(n.path) or [n.name], aliases, session) for n in plain]
     imports += [
-        _driver_import(node, role.split("."), aliases, session, role=role)
-        for role, (node, _) in roles_by_path.items()
-        if _selected(role, session, include, exclude)
+        _driver_import(node, role.split("."), aliases, session, role=role) for role, (node, _) in roles_by_path.items()
     ]
-    imports = [item for item in imports if _has_keywords(item, tree, session)]
+    imports = [
+        item
+        for item in imports
+        if (node := tree.find(item.path) if item.path else None) is None
+        or node.kind != "composite"
+        or _has_keywords(node, session)
+    ]
     _check_aliases(imports)
     if check:
         _resolve_collisions(imports, session, reserved_keywords(session))
     return Plan(imports=imports, skipped=skipped, devices=[[n.dotted for n in group] for group in groups])
+
+
+def _role(node: DeviceNode, member: DeviceNode) -> str:
+    """The path of ``node`` relative to the group member it is in."""
+    return ".".join(node.path[len(member.path) :])
+
+
+def _filter_group(group: list[DeviceNode], selected: Callable[[DeviceNode], bool]) -> list[DeviceNode]:
+    """The members of ``group`` the filters keep, or [] when they no longer share the same roles.
+
+    Members without a selected driver leave the group. When the filters keep
+    different drivers of the others, or only one member, those get their own
+    libraries instead of roles.
+    """
+    roles = [(m, {_role(n, m) for n in m.walk() if n is not m and selected(n)}) for m in group]
+    kept = [(m, own) for m, own in roles if own]
+    if len(kept) < 2 or any(own != kept[0][1] for _, own in kept):
+        return []
+    return [m for m, _ in kept]
 
 
 def _role_key(node: DeviceNode) -> tuple:
@@ -306,24 +350,29 @@ def _role_key(node: DeviceNode) -> tuple:
 
 def _role_libraries(
     groups: Sequence[list[DeviceNode]],
+    in_role: Callable[[DeviceNode], bool],
+    selected: Callable[[DeviceNode], bool],
 ) -> tuple[list[list[DeviceNode]], dict[str, tuple[DeviceNode, str]]]:
     """The groups that get role libraries, and each role (relative path) → (its default node, its group).
 
     `Use Device` binds roles by relative path, so two groups can share a role
-    only when it is the same driver in both. A group that would give a role
-    another client class keeps plain per-node libraries instead.
+    only when it is the same driver in both, and neither may have a role of
+    the other that the filters removed from it. A group that would break this
+    keeps plain per-node libraries instead.
     """
     kept: list[list[DeviceNode]] = []
     roles: dict[str, tuple[DeviceNode, str]] = {}
+    hidden: set[str] = set()
     for group in groups:
         first = group[0]
-        own = {
-            ".".join(node.path[len(first.path) :]): node
-            for node in first.walk()
-            if node is not first and _wanted(node)
-        }
+        every = {_role(n, first): n for n in first.walk() if n is not first and in_role(n)}
+        own = {role: node for role, node in every.items() if selected(node)}
+        removed = every.keys() - own.keys()
+        if hidden & own.keys() or removed & roles.keys():
+            continue
         if any(role in roles and _role_key(roles[role][0]) != _role_key(node) for role, node in own.items()):
             continue
+        hidden |= removed
         kept.append(group)
         members = ".".join(n.dotted for n in group)
         for role, node in own.items():
@@ -331,12 +380,9 @@ def _role_libraries(
     return kept, roles
 
 
-def _has_keywords(item: DriverImport, tree: DeviceTree, session: str) -> bool:
-    node = tree.find(item.path.split(".")) if item.path else None
-    if node is None or node.kind != "composite":
-        return True
-    item.keywords = _keywords(item, session)
-    return bool(item.keywords)
+def _has_keywords(node: DeviceNode, session: str) -> bool:
+    """Whether the client of a composite node adds keywords of its own."""
+    return bool(_keywords(_driver_import(node, list(node.path) or [node.name], {}, session), session))
 
 
 def _check_aliases(imports: Sequence[DriverImport]) -> None:
@@ -435,9 +481,7 @@ def render_resource(
     source_args = dict(source_args or {})
     _check_secrets(source_args)
     resource_dir = Path(resource_dir or Path.cwd())
-    planned = planned or plan(
-        tree, session=session, aliases=aliases, roles=roles, include=include, exclude=exclude
-    )
+    planned = planned or plan(tree, session=session, aliases=aliases, roles=roles, include=include, exclude=exclude)
     lines = [
         "*** Settings ***",
         _line(

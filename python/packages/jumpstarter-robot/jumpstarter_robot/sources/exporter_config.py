@@ -52,33 +52,38 @@ class _Walker:
     def node(self, path: list[str], instance: Any, seen: tuple[str, ...] = ()) -> DeviceNode:
         match instance:
             case ExporterConfigV1Alpha1DriverInstanceBase():
-                return self.base(path, instance)
+                return self.base(path, instance, seen)
             case ExporterConfigV1Alpha1DriverInstanceComposite():
                 return driver_node(
                     path,
                     COMPOSITE_CLIENT,
                     kind="composite",
-                    children=self.children(path, instance.children),
+                    children=self.children(path, instance.children, seen),
                 )
             case ExporterConfigV1Alpha1DriverInstanceProxy():
                 return self.proxy(path, instance.ref, seen)
         return opaque_node(path, f"unknown export entry {type(instance).__name__}", self.warnings)
 
-    def children(self, path: list[str], children: Export) -> list[DeviceNode]:
-        return [self.node([*path, name], child.root) for name, child in children.items()]
+    def children(self, path: list[str], children: Export, seen: tuple[str, ...] = ()) -> list[DeviceNode]:
+        return [self.node([*path, name], child.root, seen) for name, child in children.items()]
 
-    def base(self, path: list[str], instance: ExporterConfigV1Alpha1DriverInstanceBase) -> DeviceNode:
+    def base(
+        self, path: list[str], instance: ExporterConfigV1Alpha1DriverInstanceBase, seen: tuple[str, ...]
+    ) -> DeviceNode:
         from jumpstarter.common.exceptions import MissingDriverError
         from jumpstarter.common.importlib import import_class
 
+        # an opaque parent keeps its children: their drivers may well be installed
+        children = self.children(path, instance.children, seen)
         try:
             driver_class = import_class(instance.type, [], True)
         except (MissingDriverError, ImportError, AttributeError) as e:
-            return opaque_node(path, f"driver {instance.type} cannot be imported here ({e})", self.warnings)
+            reason = f"driver {instance.type} cannot be imported here ({e})"
+            return opaque_node(path, reason, self.warnings, children=children)
         try:
             client = class_path(str(driver_class.client()))
         except Exception as e:  # noqa: BLE001 - any failure leaves the node untyped, with the reason
-            return opaque_node(path, f"{instance.type}.client() failed: {e}", self.warnings)
+            return opaque_node(path, f"{instance.type}.client() failed: {e}", self.warnings, children=children)
         methods = list((instance.config.get("methods") or {}).keys()) if _is_named(driver_class, "Shell") else []
         kind = "composite" if _is_named(driver_class, "Composite") and client == COMPOSITE_CLIENT else "driver"
         return driver_node(
@@ -86,7 +91,7 @@ class _Walker:
             client,
             kind=kind,
             methods=methods,
-            children=self.children(path, instance.children),
+            children=children,
         )
 
     def proxy(self, path: list[str], reference: str, seen: tuple[str, ...]) -> DeviceNode:

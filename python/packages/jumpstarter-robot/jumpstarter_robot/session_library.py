@@ -13,14 +13,14 @@ library instead, and imports ``Jumpstarter`` without arguments::
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from . import context, sessions
-from .errors import mapped_errors
-from .naming import title
+from .errors import JumpstarterRobotError, mapped_errors
+from .naming import normalize, session_tag, title
 from jumpstarter.config.env import JMP_LEASE, JUMPSTARTER_HOST
 
 
@@ -143,15 +143,24 @@ class SessionConfig:
 
     @property
     def declaration(self) -> tuple:
-        """What this config connects to; two configs for the same target compare equal."""
-        return (
-            self.exporter_config,
-            self.selector,
-            self.exporter_name,
-            self.lease_name,
-            self.config,
-            str(self.config_dir) if self.config_dir else None,
-        )
+        """What this config connects to; two configs for the same target compare equal.
+
+        It holds only what `open` uses: a lease wins over the exporter config,
+        and a named lease over the selector.
+        """
+        base_dir = str(self.config_dir) if self.config_dir else None
+        if named := self.lease_name or os.environ.get(JMP_LEASE):
+            return "lease", named, self.config, base_dir
+        if self.wants_lease:
+            selector = sessions.selector_key(self.selector)
+            selector = self.selector if selector is None else selector
+            return "lease", selector, self.exporter_name, self.config, base_dir
+        return self.local_target
+
+    @property
+    def local_target(self) -> tuple:
+        """What this config's local exporter is, whatever the environment names."""
+        return "local", self.exporter_config, str(self.config_dir) if self.config_dir else None
 
     def describe(self) -> str:
         if os.environ.get(JUMPSTARTER_HOST):
@@ -227,6 +236,28 @@ def session_config(
     )
 
 
+def target_of(config: SessionConfig, /, **overrides: Any) -> tuple:
+    """What ``config`` connects to with keyword arguments in place of its own, in the form of a declaration."""
+    return replace(config, **{k: v for k, v in overrides.items() if v is not None}).declaration
+
+
+def check_distinct(name: str) -> None:
+    """Refuse a session whose name Robot Framework cannot tell from another one of the suite.
+
+    ``board-a`` and ``board_a`` would share the resource variables
+    ``${JMP_BOARD_A_...}``, so one session would use the other's exporter.
+    A library Robot Framework reuses from an earlier suite has the same
+    arguments as there, so it is checked when it is first imported.
+    """
+    key = normalize(session_tag(name))
+    for other in context.suite_session_names():
+        if other != name and normalize(session_tag(other)) == key:
+            raise JumpstarterRobotError(
+                f"sessions '{name}' and '{other}' have the same variable and keyword names in Robot Framework; "
+                "rename one of them"
+            )
+
+
 class Session:
     """Declares one named Jumpstarter session.
 
@@ -285,6 +316,7 @@ class Session:
             reuse_lease=reuse_lease,
         )
         self.name = self.config.name
+        check_distinct(self.name)
         apply_run_settings(self.config)
         if text(on_lease_end):
             sessions.set_lease_end_policy(str(on_lease_end).strip(), session=self.name)

@@ -8,19 +8,28 @@ session's connection goes away, whichever comes first.
 
 from __future__ import annotations
 
+import _thread
+import contextvars
 import itertools
 import logging
 import threading
-from collections.abc import Callable
+import time
+import weakref
+from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future
-from contextlib import AbstractAsyncContextManager, ExitStack
+from contextlib import AbstractAsyncContextManager, ExitStack, contextmanager
+from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
+from queue import Empty, SimpleQueue
 from typing import Any, Literal
 
+import anyio
 from anyio.from_thread import BlockingPortal
 
 from . import sessions
 from .convert import to_robot as _to_robot
+from jumpstarter.client import DriverClient
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +121,7 @@ def end_suite(suite_id: str) -> None:
 
 def end_run() -> None:
     _close_where(lambda scope, _: True)
+    sessions.end_run()
 
 
 def output_dir() -> Path:
@@ -222,3 +232,194 @@ def enter_cancellable(portal: BlockingPortal, manager: AbstractAsyncContextManag
         raise
     stack.push(blocking.__exit__)
     return value
+
+
+# How long an interrupted keyword waits for its call in the portal to stop.
+CANCEL_GRACE = 5.0
+
+
+def _in_thread(call: Callable[[], Any]) -> SimpleQueue[tuple[Any, BaseException | None]]:
+    """Start ``call`` in a thread; its result or exception arrives in the queue.
+
+    An RF timeout or Ctrl-C raises in the main thread wherever it is. Inside
+    the locks of a ``Future`` or ``Thread`` that can leave a lock held for
+    good, which blocks the portal's event loop. ``SimpleQueue`` has no such
+    lock, so this is what the main thread waits on.
+    """
+    outcome: SimpleQueue[tuple[Any, BaseException | None]] = SimpleQueue()
+    run_in_context = contextvars.copy_context().run
+
+    def run() -> None:
+        try:
+            result = run_in_context(call)
+        except BaseException as e:  # noqa: BLE001 - raised or logged by whoever reads the queue
+            outcome.put((None, e))
+        else:
+            outcome.put((result, None))
+
+    _thread.start_new_thread(run, ())
+    return outcome
+
+
+def _wait(outcome: SimpleQueue[tuple[Any, BaseException | None]], deadline: float) -> None:
+    """Wait for a cleanup until ``deadline``; it never replaces the error being handled."""
+    try:
+        _, error = outcome.get(timeout=max(0.0, deadline - time.monotonic()))
+    except Empty:
+        return
+    if error is not None:
+        logger.debug("cannot stop a driver call", exc_info=error)
+
+
+class _PortalCall:
+    """One async call in a portal that another thread can cancel."""
+
+    def __init__(self, portal: BlockingPortal, func: Callable[..., Awaitable[Any]], args: tuple):
+        self.portal, self.func, self.args = portal, func, args
+        self.scopes: list[anyio.CancelScope] = []
+        self.interrupted = threading.Event()
+        self.done = threading.Event()
+
+    async def run(self) -> Any:
+        with anyio.CancelScope() as scope:
+            self.scopes.append(scope)
+            try:
+                return None if self.interrupted.is_set() else await self.func(*self.args)
+            finally:
+                self.done.set()
+
+    def stop(self) -> None:
+        self.portal.call(self._cancel)
+        if self.scopes:
+            self.done.wait(CANCEL_GRACE)
+        else:
+            self.done.set()  # run() has not started, and does nothing once it does
+
+    def _cancel(self) -> None:
+        for scope in self.scopes:
+            scope.cancel()
+
+
+def call_cancellable(
+    portal: BlockingPortal,
+    func: Callable[..., Awaitable[Any]],
+    *args: Any,
+    stuck: threading.Event | None = None,
+) -> Any:
+    """``portal.call(func, *args)`` that cancels ``func`` when the keyword is interrupted.
+
+    ``portal.call`` returns on an RF timeout or Ctrl-C but leaves ``func``
+    running in the portal: a stream being read stays open on the exporter.
+    ``stuck`` is set when it did not stop within ``CANCEL_GRACE``.
+    """
+    call = _PortalCall(portal, func, args)
+    try:
+        result, error = _in_thread(lambda: portal.call(call.run)).get()
+    except BaseException:
+        call.interrupted.set()
+        if not call.done.is_set():
+            _wait(_in_thread(call.stop), time.monotonic() + CANCEL_GRACE)
+            if stuck is not None and not call.done.is_set():
+                stuck.set()
+        raise
+    if error is not None:
+        raise error
+    return result
+
+
+async def _cancel_stream(stream: Any) -> None:
+    """End a driver stream on the exporter by cancelling a read of it.
+
+    gRPC cancels the call when a pending read is cancelled; closing
+    ``streamingcall_async`` leaves it running until the connection closes.
+    """
+    with anyio.CancelScope() as scope:
+        scope.cancel()
+        async for _ in stream:  # items already received; the cancellation lands on the next read
+            pass
+    with anyio.CancelScope(shield=True):
+        await stream.aclose()
+
+
+@dataclass(eq=False)
+class _Stream:
+    """A driver stream a keyword reads through a generator."""
+
+    node: DriverClient
+    stream: Any
+    generator: weakref.ref | None = None
+    reading: bool = False  # from the first read until the stream ends by itself
+    stuck: threading.Event = field(default_factory=threading.Event)
+
+    def items(self) -> Generator[Any]:
+        # No ``finally``: it would run in the finalizer of a dropped generator,
+        # where Python discards an RF timeout. See _end_dropped.
+        while True:
+            self.reading = True
+            try:
+                item = call_cancellable(self.node.portal, self.stream.__anext__, stuck=self.stuck)
+            except StopAsyncIteration:
+                self.reading = False
+                return
+            yield item
+
+    def dropped(self) -> bool:
+        generator = None if self.generator is None else self.generator()
+        return generator is None or generator.gi_frame is None
+
+
+# A generator that is still alive keeps its stream, also after the keyword.
+_streams: list[_Stream] = []
+
+
+def _end_dropped() -> list[SimpleQueue]:
+    """Start ending the streams whose generators were closed or dropped."""
+    outcomes = []
+    for entry in list(_streams):
+        if not entry.dropped():
+            continue
+        # a stuck read was cancelled already
+        if entry.reading and not entry.stuck.is_set():
+            outcomes.append(_in_thread(partial(entry.node.portal.call, _cancel_stream, entry.stream)))
+        _streams.remove(entry)
+    return outcomes
+
+
+def _registered_streamingcall(node: DriverClient, ending: list[SimpleQueue]):
+    def streamingcall(method, *args):
+        ending[:] = [outcome for outcome in ending if outcome.empty()]
+        ending.extend(_end_dropped())  # a client may poll with many short streams
+        entry = _Stream(node, node.streamingcall_async(method, *args))
+        generator = entry.items()
+        entry.generator = weakref.ref(generator)
+        _streams.append(entry)
+        return generator
+
+    return streamingcall
+
+
+@contextmanager
+def bounded_streams(node: DriverClient | None) -> Generator[None]:
+    """Within this block, a driver stream of ``node`` ends on the exporter once its generator is closed or dropped.
+
+    Keywords read at most ``max_items`` of a generator. The client's own
+    ``streamingcall`` would leave the rest of the stream running.
+    """
+    patched = []
+    ending = _end_dropped()
+    pending = [] if node is None else [node]
+    while pending:
+        client = pending.pop()
+        pending.extend(getattr(client, "children", {}).values())
+        own = getattr(type(client), "streamingcall", None) is not DriverClient.streamingcall
+        if not own and "streamingcall" not in vars(client):
+            client.streamingcall = _registered_streamingcall(client, ending)
+            patched.append(client)
+    try:
+        yield
+    finally:
+        for client in patched:
+            del client.streamingcall
+        deadline = time.monotonic() + CANCEL_GRACE
+        for outcome in [*ending, *_end_dropped()]:
+            _wait(outcome, deadline)

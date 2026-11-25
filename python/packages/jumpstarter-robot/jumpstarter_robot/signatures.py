@@ -60,8 +60,17 @@ class ArgumentSpec:
             return list(args), dict(kwargs)
         bound = self.signature.bind_partial(*args, **kwargs)
         for name, adapter in self.coercers.items():
-            if name in bound.arguments:
-                bound.arguments[name] = _coerce(name, adapter, bound.arguments[name])
+            if name not in bound.arguments:
+                continue
+            value = bound.arguments[name]
+            match self.signature.parameters[name].kind:
+                case inspect.Parameter.VAR_POSITIONAL:
+                    value = tuple(_coerce(name, adapter, item) for item in value)
+                case inspect.Parameter.VAR_KEYWORD:
+                    value = {key: _coerce(key, adapter, item) for key, item in value.items()}
+                case _:
+                    value = _coerce(name, adapter, value)
+            bound.arguments[name] = value
         return list(bound.args), dict(bound.kwargs)
 
 

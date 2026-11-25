@@ -98,3 +98,14 @@ def test_source():
     source = source_of(FakeClient.flash)
     assert source is not None and source.rpartition(":")[0].endswith("signatures_test.py")
     assert source_of(len) is None
+
+
+def test_variadic_models_are_built_one_by_one():
+    def configure(self, *options: Options, **named: Options): ...
+
+    spec = argument_spec(configure, skip=1)
+    args, kwargs = spec.bind(['{"retries": 3}', Options(retries=4)], {"extra": {"retries": 5}})
+    assert args == [Options(retries=3), Options(retries=4)]
+    assert kwargs == {"extra": Options(retries=5)}
+    with pytest.raises(Failure, match="argument 'extra'"):
+        spec.bind([], {"extra": "nope"})

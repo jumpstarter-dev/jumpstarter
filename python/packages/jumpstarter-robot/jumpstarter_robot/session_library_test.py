@@ -39,8 +39,6 @@ def local(trees):
 
 
 class TestHelpers:
-
-
     def test_session_config(self):
         config = session_config(
             "",
@@ -100,7 +98,6 @@ class TestSessionLibrary:
         assert sessions.opened("android") is None
         library.close()
         assert sessions.names() == []
-
 
     def test_connect_failure_is_a_test_failure(self):
         from robot.api import Failure
@@ -173,3 +170,22 @@ class TestSessionsPerSuite:
         assert trees["ios"].children["device"].children["power"].status() == "on"
         assert sessions.opened("android") is None and sessions.opened("ios") is None
         assert sessions.names() == []
+
+
+def test_declarations_of_the_same_target_are_equal(monkeypatch):
+    def declaration(**kwargs):
+        return session_config("rig", **kwargs).declaration
+
+    lease = declaration(selector="board=b,lab=x")
+    assert lease == declaration(selector="lab=x, board=b")
+    assert lease == declaration(selector="board=b,lab=x", exporter_config="exporter.yaml")
+    assert lease != declaration(selector="board=b")
+    assert declaration(selector="a~b") != declaration(selector="a~c")  # unreadable, so compared as text
+    assert declaration(lease_name="l1") == declaration(lease_name="l1", selector="board=b")
+    assert declaration(exporter_config="a.yaml") != declaration(exporter_config="b.yaml")
+    local = session_config("rig", exporter_config="a.yaml").local_target
+    assert declaration(exporter_config="a.yaml") == local
+    monkeypatch.setenv("JMP_LEASE", "l1")
+    assert declaration(selector="board=b") == declaration(lease_name="l1")
+    # Start Local Exporter serves the config all the same
+    assert session_config("rig", exporter_config="a.yaml").local_target == local

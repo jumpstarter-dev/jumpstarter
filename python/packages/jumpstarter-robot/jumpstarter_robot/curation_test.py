@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from robot.api import deco
 
-from .curation import matches
+from .curation import matches, type_overrides
 from .driver_library import Driver
+from .members import iter_client_members
 from jumpstarter.client import DriverClient
 
 
@@ -57,3 +58,17 @@ def test_matches():
     assert matches("power_on", ["power_*"])
     assert not matches("power_on", ["off"])
     assert not matches("power_on", None)
+
+
+def test_positional_types_skip_the_receiver_of_class_methods():
+    class Client(DriverClient):
+        @classmethod
+        @deco.keyword(types=[int])
+        def configure(cls, count: str): ...
+
+        @staticmethod
+        @deco.keyword(types=[int])
+        def convert(value: str): ...
+
+    found = {m.name: type_overrides(m) for m in iter_client_members(Client)}
+    assert found == {"configure": {"count": int}, "convert": {"value": int}}

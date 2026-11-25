@@ -94,3 +94,45 @@ def test_unknown_alias_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(ExporterConfigV1Alpha1, "BASE_PATH", tmp_path)
     with pytest.raises(FileNotFoundError):
         from_exporter_config("no-such-alias")
+
+
+def test_a_proxy_to_its_own_ancestor_is_circular(tmp_path):
+    body = """\
+    export:
+      group:
+        children:
+          power:
+            type: jumpstarter_driver_power.driver.MockPower
+          loop:
+            ref: group
+      first:
+        ref: group.power
+      second:
+        ref: group.power
+    """
+    tree = from_exporter_config(write_config(tmp_path, body))
+    assert get_node(tree, "first").client == get_node(tree, "second").client == POWER
+    assert get_node(tree, "group.loop.power").client == POWER
+    loop = get_node(tree, "group.loop.loop")
+    assert loop.kind == "opaque" and "circular" in (loop.reason or "")
+
+
+@pytest.mark.parametrize("fails_in", ["import", "client"])
+def test_an_unavailable_parent_keeps_its_children(tmp_path, monkeypatch, fails_in):
+    if fails_in == "client":
+        from jumpstarter_driver_composite.driver import Composite
+
+        monkeypatch.setattr(Composite, "client", classmethod(lambda cls: 1 // 0))
+    parent = "missing_package.driver.Board" if fails_in == "import" else "jumpstarter_driver_composite.driver.Composite"
+    body = f"""\
+    export:
+      board:
+        type: {parent}
+        children:
+          power:
+            type: jumpstarter_driver_power.driver.MockPower
+    """
+    tree = from_exporter_config(write_config(tmp_path, body))
+    assert get_node(tree, "board").kind == "opaque"
+    assert get_node(tree, "board.power").client == POWER
+    assert len(tree.warnings) == 1

@@ -69,3 +69,19 @@ def test_images_are_saved_under_the_output_dir(tmp_path, monkeypatch):
     assert path.read_bytes() == b"\x89PNG"
     image = FakeImage()
     assert to_robot(image) is image  # without somewhere to save it, unchanged
+
+
+def test_live_dataclasses_survive_inside_containers():
+    @dataclasses.dataclass
+    class Connection:
+        socket: object
+
+    @dataclasses.dataclass
+    class Plain:
+        level: int
+
+    connection = Connection(object())
+    result = to_robot({"connection": connection, "plain": Plain(1), "list": [connection]})
+    assert result.connection is connection
+    assert result.plain.level == 1
+    assert result.list[0] is connection

@@ -15,6 +15,8 @@ from __future__ import annotations
 import atexit
 import logging
 import os
+import re
+import shlex
 import sys
 import threading
 import time
@@ -31,6 +33,7 @@ from anyio.from_thread import start_blocking_portal
 from .configs import load_client_config, load_exporter_config
 from .errors import JumpstarterRobotError
 from jumpstarter.client import DriverClient, client_from_path
+from jumpstarter.client.exceptions import LeaseError
 from jumpstarter.client.selectors import parse_label_selector
 from jumpstarter.config.env import JMP_LEASE, JUMPSTARTER_HOST
 from jumpstarter.utils.env import env_with_metadata
@@ -62,11 +65,16 @@ class Session:
     exporter: str = ""
     labels: dict[str, str] = field(default_factory=dict)
     lease_name: str | None = None
+    # the controller endpoint and namespace of the lease; None when unknown
+    lease_scope: tuple[Any, Any] | None = None
     owns_lease: bool = False
     release_grace: float = 0.0
     lease: Any = None
-    # what the declaration that opened this session asked for (see register_factory)
+    # the declaration in effect when this session opened, what it connects to,
+    # and the suite that opened it (see register_factory)
     declared: Any = None
+    target: Any = None
+    suite: str | None = None
     _stack: ExitStack = field(default_factory=ExitStack)
     _closers: list[Callable[[], None]] = field(default_factory=list)
     _closed: bool = False
@@ -133,25 +141,38 @@ class Session:
                 raise NoSession(_no_lease(name, client_config.metadata.name, selector, exporter_name, reuse))
             if reused is not None:
                 _announce(f"Jumpstarter: reusing lease {reused} for session '{name}'")
-                # the controller compares the selector as text; the match is already exact
-                lease_name, selector = reused, None
+
             # A named lease is attached to as it is. Given a selector as well, the
             # client creates a new lease when the two differ as text, and then
             # never releases it, because a name was given.
-            attach = named or reused is not None
-            lease = stack.enter_context(
-                portal.wrap_async_context_manager(
-                    client_config.lease_async(
-                        None if attach else selector or None,
-                        None if attach else exporter_name or None,
-                        lease_name or None,
-                        duration,
-                        portal,
-                        acquisition_timeout=acquisition_timeout,
-                        allow_disabled=allow_disabled,
+            def enter(selector: str | None, exporter_name: str | None, lease_name: str | None) -> Any:
+                return stack.enter_context(
+                    portal.wrap_async_context_manager(
+                        client_config.lease_async(
+                            selector or None,
+                            exporter_name or None,
+                            lease_name or None,
+                            duration,
+                            portal,
+                            acquisition_timeout=acquisition_timeout,
+                            allow_disabled=allow_disabled,
+                        )
                     )
                 )
-            )
+
+            if named:
+                lease = enter(None, None, lease_name)
+            elif reused is None:
+                lease = enter(selector, exporter_name, None)
+            else:
+                try:
+                    lease = enter(None, None, reused)
+                except LeaseError as e:
+                    if not acquire:
+                        raise
+                    # it ended after it was listed, so no existing lease fits any more
+                    logger.warning("cannot reuse lease %s, acquiring a new one: %s", reused, e)
+                    lease = enter(selector, exporter_name, None)
             stack.enter_context(lease.monitor())
             client = stack.enter_context(lease.connect())
         except BaseException:
@@ -164,6 +185,7 @@ class Session:
             exporter=lease.exporter_name,
             labels=dict(lease.exporter_labels),
             lease_name=lease.name,
+            lease_scope=_lease_scope(client_config),
             owns_lease=bool(lease.release),
             release_grace=release_grace,
             lease=lease,
@@ -308,22 +330,37 @@ def _announce(message: str) -> None:
         robot_logger.console(message)
 
 
-def _selector_key(selector: str | None) -> tuple[dict[str, str], set[tuple[str, str, frozenset[str]]]]:
-    """A label selector in a form where equivalent selectors compare equal.
+_SELECTOR_PARTS = re.compile(r",(?![^()]*\))")
+# ``key=`` and ``key!=`` compare with the empty value, which parse_label_selector drops
+_EMPTY_VALUE = re.compile(r"([a-zA-Z0-9_./-]+)\s*(==?|!=)")
+
+
+def selector_key(selector: str | None) -> frozenset[tuple[str, str, frozenset[str]]] | None:
+    """A label selector in a form where equivalent selectors compare equal; None if it cannot be read in full.
 
     Requirement order and value order do not matter, and ``a!=x,a!=y`` is
-    ``a notin (x,y)``, which is how the controller reports it.
+    ``a notin (x,y)``, which is how the controller reports it. It reports an
+    empty selector as ``<none>``.
     """
-    labels, expressions = parse_label_selector(selector or "")
+    if (selector or "").strip() in ("", "<none>"):
+        return frozenset()
     excluded: dict[str, set[str]] = {}
     requirements: set[tuple[str, str, frozenset[str]]] = set()
-    for key, operator, values in expressions:
-        if operator in ("!=", "notin"):
-            excluded.setdefault(key, set()).update(values)
+    for part in filter(None, map(str.strip, _SELECTOR_PARTS.split(selector or ""))):
+        if empty := _EMPTY_VALUE.fullmatch(part):
+            expressions = [(empty[1], "!=" if empty[2] == "!=" else "=", [""])]
         else:
-            requirements.add((key, operator, frozenset(values)))
+            labels, expressions = parse_label_selector(part)
+            expressions = [*((key, "=", [value]) for key, value in labels.items()), *expressions]
+        if not expressions:
+            return None
+        for key, operator, values in expressions:
+            if operator in ("!=", "notin"):
+                excluded.setdefault(key, set()).update(values)
+            else:
+                requirements.add((key, operator, frozenset(values)))
     requirements.update((key, "notin", frozenset(values)) for key, values in excluded.items())
-    return labels, requirements
+    return frozenset(requirements)
 
 
 def matching_lease(leases: Iterable[Any], client: str, selector: str | None, exporter_name: str | None) -> Any | None:
@@ -332,16 +369,19 @@ def matching_lease(leases: Iterable[Any], client: str, selector: str | None, exp
     A lease for a narrower or wider selector never matches, and neither does
     one that has not started (scheduled for later, or still waiting for an
     exporter): attaching to it would wait instead of running. Of several, the
-    most recently started wins, then the first by name.
+    most recently started wins, then the first by name. A selector that cannot
+    be read in full matches nothing.
     """
-    wanted = _selector_key(selector)
+    wanted = selector_key(selector)
+    if wanted is None:
+        return None
     candidates = [
         lease
         for lease in leases
         if lease.is_accessible_by(client)
         and lease.effective_begin_time
         and not lease.effective_end_time
-        and _selector_key(lease.selector) == wanted
+        and selector_key(lease.selector) == wanted
         and (not exporter_name or lease.exporter_name == exporter_name)
     ]
     if not candidates:
@@ -357,6 +397,11 @@ def _begin(lease: Any) -> float:
     return lease.effective_begin_time.timestamp()
 
 
+def _lease_scope(client_config: Any) -> tuple[Any, Any]:
+    """Where a lease name is unique: the controller and the namespace."""
+    return getattr(client_config, "endpoint", None), getattr(client_config.metadata, "namespace", None)
+
+
 def _reusable_lease(portal: Any, client_config: Any, selector: str | None, exporter_name: str | None) -> str | None:
     """The name of an active lease of this client to attach to instead of acquiring one."""
     try:
@@ -367,9 +412,15 @@ def _reusable_lease(portal: Any, client_config: Any, selector: str | None, expor
         return None
     # A lease another session of this run already uses is not free to share:
     # both sessions would drive one board, and the one that acquired it would
-    # release it from under the other.
+    # release it from under the other. The same name in another namespace, or
+    # on another controller, is another lease.
+    scope = _lease_scope(client_config)
     with _lock:
-        held = {s.lease_name for s in _sessions.values() if not s._closed and s.lease_name}
+        held = {
+            s.lease_name
+            for s in _sessions.values()
+            if not s._closed and s.lease_name and s.lease_scope in (None, scope)
+        }
     free = [lease for lease in listed.leases if lease.name not in held]
     lease = matching_lease(free, client_config.metadata.name, selector, exporter_name)
     return lease.name if lease is not None else None
@@ -377,7 +428,7 @@ def _reusable_lease(portal: Any, client_config: Any, selector: str | None, expor
 
 def _no_lease(name: str, client: str, selector: str | None, exporter_name: str | None, looked: bool) -> str:
     """Why session ``name`` found no lease to attach to, and the three ways to get one."""
-    create = f"jmp create lease -l {selector} --duration 1h" if selector else "jmp create lease"
+    create = f"jmp create lease -l {shlex.quote(selector)} --duration 1h" if selector else "jmp create lease"
     ways = f"create one (`{create}`), run inside `jmp shell`, or call `Acquire Lease`"
     if not looked:
         return f"session '{name}' does not look for a lease (lease reuse is off): name one, or call `Acquire Lease`"
@@ -416,23 +467,39 @@ def register_factory(name: str, factory: SessionFactory, declaration: Any = None
     ``declaration`` is what the factory connects to, in a form that compares
     equal for the same target. Sessions outlive the suite that opened them, so
     a later suite that declares the same name for another exporter would
-    otherwise keep driving the first one: a session opened from a different
-    declaration is closed here, and reopens from this one when next needed.
+    otherwise keep driving the first one: a session opened for another target
+    is closed here, and reopens from this declaration when next needed. A
+    session a keyword opened (``Acquire Lease    selector=...``) stays for the
+    suite that opened it and its children while its declaration does, whatever
+    the keyword's arguments were; any other suite gets what it declares.
     """
     with _lock:
         _factories[name] = factory
         _declarations[name] = declaration
         current = opened(name)
-        stale = (
-            current is not None
-            and current.kind != "shell"  # every declaration opens the shell inside `jmp shell`
-            and declaration is not None
-            and current.declared is not None
-            and current.declared != declaration
-        )
-    if stale:
+        stale = False
+        # every declaration opens the shell inside `jmp shell`
+        if current is not None and current.kind != "shell" and declaration is not None:
+            connected = current.declared if _suite_within(current.suite) else current.target
+            stale = connected is not None and declaration not in (connected, current.target)
+    if current is not None and stale:
         _announce(f"Jumpstarter: session '{name}' is declared for another target; closing {current.exporter}")
         close(name)
+
+
+def _running_suite() -> str | None:
+    from robot.running.context import EXECUTION_CONTEXTS
+
+    current = EXECUTION_CONTEXTS.current
+    return current.suite.id if current is not None else None
+
+
+def _suite_within(opener: str | None) -> bool:
+    """Whether the running suite is ``opener`` or below it."""
+    running = _running_suite()
+    if opener is None or running is None:
+        return True
+    return running == opener or running.startswith(f"{opener}-")
 
 
 def unregister_factory(name: str, factory: SessionFactory | None = None) -> None:
@@ -443,12 +510,18 @@ def unregister_factory(name: str, factory: SessionFactory | None = None) -> None
             _declarations.pop(name, None)
 
 
-def install(session: Session) -> Session:
-    """Make an opened session available by its name, replacing a closed one."""
+def install(session: Session, target: Any = None) -> Session:
+    """Make an opened session available by its name, replacing a closed one.
+
+    ``target`` is what it connects to, in the form of its declaration.
+    """
     with _lock:
         current = _sessions.get(session.name)
         if current is not None and current is not session and not current._closed:
             raise JumpstarterRobotError(f"session '{session.name}' is already open; release it first")
+        session.declared = _declarations.get(session.name)
+        session.target = target
+        session.suite = _running_suite()
         _sessions[session.name] = session
         return session
 
@@ -478,9 +551,7 @@ def get(name: str | None = None) -> Session:
                     f"no Jumpstarter session '{name}': run inside `jmp shell`, attach to a lease you created "
                     "(JMP_LEASE), call Acquire Lease, or serve an exporter config (Start Local Exporter)"
                 )
-        session = factory()
-        session.declared = _declarations.get(name)
-        return install(session)
+        return install(factory(), target=_declarations.get(name))
 
 
 def close(name: str | None = None) -> bool:
@@ -493,11 +564,25 @@ def close(name: str | None = None) -> bool:
     return True
 
 
+def close_each(names: Iterable[str]) -> None:
+    """Close every session in ``names``, then report the ones that failed to close."""
+    errors = []
+    for name in names:
+        try:
+            close(name)
+        except Exception as e:
+            logger.warning("error while closing session %s", name, exc_info=True)
+            errors.append(e)
+    if len(errors) > 1:
+        raise ExceptionGroup("some Jumpstarter sessions failed to close", errors)
+    if errors:
+        raise errors[0]
+
+
 def close_all() -> None:
     with _lock:
         names = list(_sessions)
-    for name in names:
-        close(name)
+    close_each(names)
 
 
 def names() -> list[str]:
@@ -604,17 +689,27 @@ def set_lease_end_policy(policy: str, session: str | None = None) -> None:
         logger.warning("on_lease_end for %s changed from '%s' to '%s'", where, previous, policy)
 
 
+def end_run() -> None:
+    """Forget the lease end policies, which last for one Robot run; idempotent."""
+    global _lease_end_policy, _lease_end_policy_set
+    with _lock:
+        _session_policies.clear()
+        _lease_end_policy, _lease_end_policy_set = "fatal", False
+
+
 def reset() -> None:
     """Close every session and forget factories, configs, switches and lease end policies."""
-    global _default, _lease_end_policy, _lease_end_policy_set
-    close_all()
-    with _lock:
-        _factories.clear()
-        _declarations.clear()
-        _configs.clear()
-        _switches.clear()
-        _session_policies.clear()
-        _default, _lease_end_policy, _lease_end_policy_set = DEFAULT_SESSION, "fatal", False
+    global _default
+    try:
+        close_all()
+    finally:
+        with _lock:
+            _factories.clear()
+            _declarations.clear()
+            _configs.clear()
+            _switches.clear()
+            _default = DEFAULT_SESSION
+            end_run()
 
 
 atexit.register(close_all)

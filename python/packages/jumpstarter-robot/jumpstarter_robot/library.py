@@ -16,7 +16,15 @@ from .driver_library import Driver, class_path, instances, shell_methods
 from .errors import JumpstarterRobotError, mapped_errors
 from .keywords import load_all
 from .naming import normalize, title
-from .session_library import apply_run_settings, dry_run, duration_of, in_run, session_config, text
+from .session_library import (
+    apply_run_settings,
+    dry_run,
+    duration_of,
+    in_run,
+    session_config,
+    target_of,
+    text,
+)
 from .signatures import convert_call
 from jumpstarter.client import DriverClient
 from jumpstarter.client.base import StubDriverClient
@@ -55,7 +63,20 @@ def _suite_drivers() -> list[Driver]:
     current = EXECUTION_CONTEXTS.current
     if current is None:
         return []
-    return [lib for lib in current.namespace.get_library_instances().values() if isinstance(lib, Driver)]
+    # one library imported under two names is one instance
+    found = {id(lib): lib for lib in current.namespace.get_library_instances().values() if isinstance(lib, Driver)}
+    return list(found.values())
+
+
+def _visible_drivers() -> list[Driver]:
+    """The Driver libraries keywords may act on: the running suite's, or every one outside a run.
+
+    Robot Framework keeps the libraries of earlier suites, which a later one
+    that does not import them cannot call.
+    """
+    from robot.running.context import EXECUTION_CONTEXTS
+
+    return _suite_drivers() if EXECUTION_CONTEXTS.current is not None else instances()
 
 
 class Jumpstarter:
@@ -159,6 +180,7 @@ class Jumpstarter:
         self._owned: set[str] = set()
         self._sets = [cls() for cls in load_all()]
         self._names = self._collect_names()
+        self._connecting = False  # whether __init__ just connected, or could not
         declares = self._declares = bool(self.config.wants_lease or self.config.exporter_config)
         if declares:
             setattr(self, context.SESSION_MARKER, self.config.name)
@@ -176,6 +198,7 @@ class Jumpstarter:
                 # imported at start_suite, once the suite's own Driver imports
                 # (a generated client resource) are known and can be skipped,
                 # or right away when a test imports this library itself.
+                self._connecting = True
                 opened = None
                 with mapped_errors("Jumpstarter"):
                     try:
@@ -232,8 +255,8 @@ class Jumpstarter:
     def _name(self, session: str | None) -> str:
         return text(session) or context.session_name()
 
-    def _open(self, opened: sessions.Session) -> sessions.Session:
-        sessions.install(opened)
+    def _open(self, opened: sessions.Session, target: Any = None) -> sessions.Session:
+        sessions.install(opened, target=target)
         self._owned.add(opened.name)
         if self.auto_import:
             self._import_drivers(opened)
@@ -310,9 +333,14 @@ class Jumpstarter:
             if text(selector) or text(exporter_name) or text(lease_name):
                 raise JumpstarterRobotError(f"session '{name}' is already connected; use Release Lease first")
             # connected from its declaration already (a lease, the shell or local mode): nothing to acquire
-            robot_logger.info(f"Jumpstarter: session '{name}' is already connected to {current.exporter}")
+            with mapped_errors("Acquire Lease"):
+                current.check_alive()
+                robot_logger.info(f"Jumpstarter: session '{name}' is already connected to {current.exporter}")
+                if self.auto_import and name in self._owned:
+                    self._import_drivers(current)  # the ones an earlier, failed attempt did not import
             return current.lease_name
         with mapped_errors("Acquire Lease"):
+            target = None
             if os.environ.get(JUMPSTARTER_HOST):
                 opened = sessions.open_shell(name)
             else:
@@ -322,7 +350,14 @@ class Jumpstarter:
                 leases = text(selector) or text(exporter_name) or text(lease_name) or os.environ.get(JMP_LEASE)
                 if not (leases or base.wants_lease) and base.exporter_config:
                     # local mode: the same suite setup serves the exporter config instead
-                    return self._open(base.open_local()).lease_name
+                    return self._open(base.open_local(), base.local_target).lease_name
+                target = target_of(
+                    base,
+                    selector=text(selector),
+                    exporter_name=text(exporter_name),
+                    lease_name=text(lease_name),
+                    config=text(config),
+                )
                 opened = base.open_lease(
                     selector=text(selector),
                     exporter_name=text(exporter_name),
@@ -333,7 +368,7 @@ class Jumpstarter:
                     allow_disabled=allow_disabled or None,
                     reuse_lease=reuse,
                 )
-            return self._open(opened).lease_name
+            return self._open(opened, target).lease_name
 
     @keyword
     def release_lease(self, session: str | None = None) -> None:
@@ -366,7 +401,8 @@ class Jumpstarter:
         if sessions.opened(name) is not None:
             raise JumpstarterRobotError(f"session '{name}' is already connected; use Stop Local Exporter first")
         with mapped_errors("Start Local Exporter"):
-            return self._open(sessions.open_local(name, config=exporter_config)).exporter
+            target = session_config(name, exporter_config=exporter_config).local_target
+            return self._open(sessions.open_local(name, config=exporter_config), target).exporter
 
     @keyword
     def stop_local_exporter(self, session: str | None = None) -> None:
@@ -431,7 +467,8 @@ class Jumpstarter:
             node = self._session(session, alive=True).resolve(path)
             function = getattr(node, method)
             call_args, call_kwargs = convert_call(function, args, kwargs)
-            return context.to_robot(function(*call_args, **call_kwargs), stem=method)
+            with context.bounded_streams(node):
+                return context.to_robot(function(*call_args, **call_kwargs), stem=method)
 
     @keyword
     def get_driver(self, path: str, session: str | None = None) -> DriverClient:
@@ -468,7 +505,7 @@ class Jumpstarter:
         with mapped_errors("List Driver Keywords"):
             target = self._session(session)
             node = target.resolve(path)
-        for instance in instances():
+        for instance in _visible_drivers():
             if instance.default_path == path and context.session_name(instance.session_name) == target.name:
                 return instance.get_keyword_names()
         return Driver(path, client=class_path(type(node)), session=text(session)).get_keyword_names()
@@ -502,7 +539,7 @@ class Jumpstarter:
         """
         target = self._session(session, alive=True)
         matched = []
-        for instance in instances():
+        for instance in _visible_drivers():
             if not instance.role or (instance.session_name or context.session_name()) != target.name:
                 continue
             path = f"{device}.{instance.role}"
@@ -537,15 +574,19 @@ class Jumpstarter:
             return
         for name in sorted(self._owned):
             opened = sessions.opened(name)
-            if opened is None and self._attaches_env_lease(name):
+            # __init__ connects for the drivers' keywords; a reused instance does it here
+            reconnect = self._declares and not self._connecting and name == self.config.name and in_run()
+            if opened is None and (reconnect or self._attaches_env_lease(name)):
                 with mapped_errors("Jumpstarter"):
                     try:
                         opened = sessions.get(name)
                     except sessions.NoSession as e:
-                        robot_logger.warn(f"Jumpstarter: {e}")
+                        log = robot_logger.info if reconnect else robot_logger.warn
+                        log(f"Jumpstarter: {e}")
             if opened is not None:
                 with mapped_errors("Jumpstarter"):
                     self._import_drivers(opened)
+        self._connecting = False
 
     def _attaches_env_lease(self, name: str) -> bool:
         """Whether to attach to ``JMP_LEASE`` now, for the driver keywords of a suite that declares no session."""
@@ -571,4 +612,4 @@ class Jumpstarter:
         sessions.unregister_config(self.config.name, self.config)
         for name in self._owned:
             sessions.unregister_factory(name, self.config.open)
-            sessions.close(name)
+        sessions.close_each(sorted(self._owned))

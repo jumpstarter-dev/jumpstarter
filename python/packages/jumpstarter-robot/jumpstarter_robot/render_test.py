@@ -168,3 +168,63 @@ class TestRoles:
             + "    AS    console",
         ]
         assert text.endswith("@{DEVICES}    dut1    dut2\n")
+
+
+DUTS = {f"dut{i}.{role}": POWER for i in (1, 2, 3) for role in ("power", "usb")}
+
+
+class TestRoleFilters:
+    def render(self, nodes=DUTS, **filters) -> tuple[dict[str, str], str]:
+        text = render_resource(tree_of(nodes), roles=True, **filters)
+        devices = next((line for line in text.splitlines() if line.startswith("@{DEVICES}")), "")
+        return prefixes(text), devices
+
+    def test_excluded_members_leave_the_group(self):
+        found, devices = self.render(exclude=["dut1.*"])
+        assert found == {"power": "Power", "usb": "Usb"}
+        assert devices == "@{DEVICES}    dut2    dut3"
+
+    def test_one_included_member_keeps_its_own_libraries(self):
+        found, devices = self.render(include=["dut1.*"])
+        assert found == {"dut1.power": "Dut1 Power", "dut1.usb": "Dut1 Usb"}
+        assert devices == ""
+
+    def test_members_that_differ_keep_their_own_libraries(self):
+        found, devices = self.render(exclude=["dut1.usb", "dut3.*"])
+        assert found == {"dut1.power": "Dut1 Power", "dut2.power": "Dut2 Power", "dut2.usb": "Dut2 Usb"}
+        assert devices == ""
+
+    def test_filters_by_role(self):
+        for filters in ({"include": ["power"]}, {"exclude": ["usb"]}, {"exclude": ["*.usb"]}):
+            assert self.render(**filters) == ({"power": "Power"}, "@{DEVICES}    dut1    dut2    dut3")
+
+    def test_grouping_composites_do_not_count(self):
+        nested = {f"dut{i}.sub.power": POWER for i in (1, 2, 3)}
+        assert self.render(nested, exclude=["dut1.sub.power"]) == (
+            {"sub.power": "Sub Power"},
+            "@{DEVICES}    dut2    dut3",
+        )
+        assert self.render(nested, exclude=["*.sub.power"]) == ({}, "")
+
+    def test_a_role_removed_from_one_group_is_not_shared_with_it(self):
+        both = {f"dut{i}.{r}": POWER for i in (1, 2) for r in ("power", "usb")}
+        both |= {f"rig{i}.{r}": POWER for i in (1, 2) for r in ("power", "con")}
+        found, devices = self.render(both, exclude=["dut*.power"])
+        assert "dut1.power" not in found and "dut2.power" not in found
+        assert {"rig1.power", "rig2.power"} <= set(found)  # no role `Use Device    dut1` could bind
+        assert found["usb"] == "Usb" and devices == "@{DEVICES}    dut1    dut2"
+
+    @pytest.mark.parametrize("filters", [{"include": ["rack1.*"]}, {"exclude": ["rack2.*"]}])
+    def test_nested_groups_are_found_after_filtering(self, filters):
+        racks = {f"rack{r}.dut{d}.power": POWER for r in (1, 2) for d in (1, 2)}
+        assert self.render(racks, **filters) == ({"power": "Power"}, "@{DEVICES}    rack1.dut1    rack1.dut2")
+
+    def test_role_filters_survive_a_dropped_outer_group(self):
+        nested = {f"dut{i}.{d}": POWER for i in (1, 2) for d in ("sub.power", "sub.serial", "usb")}
+        found, _ = self.render(nested, exclude=["sub.power", "dut1.usb"])
+        assert not any(name.endswith("power") for name in found)
+        found, _ = self.render(nested, include=["sub.*"], exclude=["dut1.sub.serial"])
+        assert len(found) == 3
+        racks = {f"rack{r}.dut{d}.power": POWER for r in (1, 2) for d in (1, 2)}
+        found, _ = self.render(racks, include=["dut1.*"], exclude=["rack2.*"])
+        assert found == {"rack1.dut1.power": "Rack1 Dut1 Power"}

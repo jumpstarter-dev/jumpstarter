@@ -319,7 +319,8 @@ values, the last value applies and the library writes a warning.
 ## Keywords
 
 The `Jumpstarter` library gives these keywords. For the full documentation of
-each keyword, run `python -m robot.libdoc jumpstarter_robot.Jumpstarter`.
+each keyword, run
+`python -m robot.libdoc jumpstarter_robot.Jumpstarter jumpstarter.html`.
 
 ### Sessions and leases
 

@@ -232,8 +232,12 @@ class Driver:
         overrides = type_overrides(member)
         rf_types = None if overrides is None else {**arguments.types, **overrides}
         args = list(arguments.args)
+        extra: dict[str, Any] = {}
         if member.kind == "generator":
-            args = _with_keyword_only(args, ("max_items", self.max_items))
+            # the client's own max_items argument, if it has one, keeps its name
+            limit = "max_items" if "max_items" not in arguments.signature.parameters else "keyword_max_items"
+            args = _with_keyword_only(args, (limit, self.max_items))
+            extra["limit"] = limit
             invoke = _generator_invoker(member.name)
         else:
             invoke = _method_invoker(member.name)
@@ -247,6 +251,7 @@ class Driver:
             invoke=invoke,
             arguments=arguments,
             kind=member.kind,
+            extra=extra,
         )
 
     def _build_shell(self, cls: type, base_tags: tuple[str, ...]) -> None:
@@ -324,15 +329,14 @@ class Driver:
             node = self.node()
             if spec.arguments is not None:
                 if spec.kind == "generator":
-                    max_items = named.pop("max_items", self.max_items)
+                    max_items = named.pop(spec.extra["limit"], self.max_items)
                     args, named = spec.arguments.bind(args, named)
                     named["__max_items__"] = int(max_items)
                 else:
                     args, named = spec.arguments.bind(args, named)
-            elif spec.arguments is not None:
-                args, named = spec.arguments.bind(args, named)
-            result = spec.invoke(node, list(args), named)
-            return context.to_robot(result, max_items=self.max_items, stem=name)
+            with context.bounded_streams(node):
+                result = spec.invoke(node, list(args), named)
+                return context.to_robot(result, max_items=self.max_items, stem=name)
 
     # ---- binding ----
 

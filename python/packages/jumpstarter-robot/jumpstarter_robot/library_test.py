@@ -12,6 +12,7 @@ from .conftest import write
 from .errors import JumpstarterRobotError
 from .keywords import load_all
 from .library import Jumpstarter
+from .naming import session_variable
 from .testing import use_client, use_session_factory
 from jumpstarter.common.utils import serve
 
@@ -87,7 +88,6 @@ class TestKeywordNames:
                 if not attr.startswith("_") and callable(member) and hasattr(member, "robot_name"):
                     assert attr in names, f"{cls.__name__}.{attr}"
 
-
     def test_libdoc_lists_every_keyword(self):
         from robot.libdoc import LibraryDocumentation
 
@@ -100,7 +100,6 @@ class TestKeywordNames:
 
 
 class TestOutsideRobot:
-
     def test_declares_and_registers_lazily(self, leases):
         library = Jumpstarter(selector="board=rpi4", session="lab")
         assert library._jumpstarter_session_name == "lab"
@@ -112,7 +111,6 @@ class TestOutsideRobot:
         library.close()
         assert sessions.opened("lab") is None
         assert sessions.names() == []
-
 
     def test_session_keywords(self, served, leases):
         library = Jumpstarter()
@@ -129,7 +127,6 @@ class TestOutsideRobot:
         library.release_lease()  # idempotent
         assert sessions.opened() is None
 
-
     def test_call_driver_and_lists(self, served):
         library = Jumpstarter()
         with use_client(served):
@@ -143,7 +140,6 @@ class TestOutsideRobot:
             assert "Dut Power On" in library.list_driver_keywords("dut.power")
             with pytest.raises(Exception, match="driver 'nope'"):
                 library.call_driver("nope", "on")
-
 
     def test_start_and_stop_local_exporter(self, served):
         opened = []
@@ -204,7 +200,6 @@ class TestInRobot:
         assert leases.calls[0][1]["selector"] == "board=rpi4"
         assert leases.calls[0][1]["duration"].total_seconds() == 600
 
-
     def test_lease_end_is_fatal(self, tmp_path, leases, run_robot):
         write(tmp_path, "leasecontrol.py", LEASE_CONTROL)
         suite = write(
@@ -231,7 +226,6 @@ class TestInRobot:
         assert run.status("Never Runs") == "FAIL"
         assert "fatal error" in run.message("Never Runs")
 
-
     def test_dry_run_never_connects(self, tmp_path, leases, run_robot):
         suite = write(
             tmp_path,
@@ -251,3 +245,306 @@ class TestInRobot:
         assert run.status("Checked Only") == "PASS"
         assert leases.calls == []
         assert sessions.opened() is None
+
+    def test_acquire_lease_reports_an_ended_lease(self, leases):
+        library = Jumpstarter(selector="board=rpi4", auto_import=False)
+        library.acquire_lease()
+        assert library.acquire_lease() == "lease-1"  # live: nothing to do
+        opened = sessions.opened()
+        assert opened is not None
+        opened.lease.lease_ended = True
+        with pytest.raises(Exception, match="has ended"):
+            library.acquire_lease()
+        library.release_lease()
+        assert library.acquire_lease() == "lease-2"
+
+    def test_close_closes_every_owned_session(self, leases):
+        library = Jumpstarter(selector="board=rpi4", auto_import=False)
+        library.acquire_lease()
+        library.acquire_lease(session="another")
+        for name in ("default", "another"):
+            opened = sessions.opened(name)
+            assert opened is not None
+            opened._stack.callback(lambda: 1 // 0)
+        with pytest.raises(ExceptionGroup):
+            library.close()
+        assert sessions.opened("default") is None and sessions.opened("another") is None
+
+    def test_failed_driver_imports_are_retried(self, tmp_path, leases, run_robot, monkeypatch):
+        real = Jumpstarter._import_drivers
+        attempts = []
+
+        def flaky(self, session):
+            attempts.append(session.name)
+            if len(attempts) == 1:
+                raise RuntimeError("broken driver package")
+            real(self, session)
+
+        monkeypatch.setattr(Jumpstarter, "_import_drivers", flaky)
+        suite = write(
+            tmp_path,
+            "retry.robot",
+            """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter
+
+            *** Test Cases ***
+            Retry
+                Run Keyword And Expect Error    *broken driver package*    Acquire Lease    selector=board=rpi4
+                Acquire Lease
+                Dut Power On
+            """,
+        )
+        run_robot(suite).assert_passed()
+        assert len(leases.calls) == 1
+
+    def test_lease_end_policy_lasts_for_one_run(self, tmp_path, leases, run_robot):
+        write(tmp_path, "control.py", LEASE_CONTROL)
+        body = """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    selector=board=rpi4    auto_import=False{policy}
+            Library    ${{CURDIR}}/control.py
+
+            *** Test Cases ***
+            Lease Ends
+                Acquire Lease
+                End Lease
+                List Drivers
+
+            Next
+                No Operation
+            """
+        fail = write(tmp_path, "a.robot", body.format(policy="    on_lease_end=fail"))
+        default = write(tmp_path, "b.robot", body.format(policy=""))
+        assert run_robot(fail).status("Next") == "PASS"
+        assert run_robot(default).status("Next") == "FAIL"  # fatal again: the run stopped
+
+    def test_roles_of_another_suite_are_left_alone(self, tmp_path, served, run_robot):
+        role = f"Library    jumpstarter_robot.Driver    dut.power    role=power    client={POWER}    AS    power"
+        write(
+            tmp_path,
+            "suites/1.robot",
+            f"""
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    auto_import=False
+            {role}
+
+            *** Test Cases ***
+            Has The Role
+                ${{bound}}=    Use Device    dut2
+                Should Be Equal    ${{bound}}    ${{{{['dut2.power']}}}}
+                ${{names}}=    List Driver Keywords    dut.power
+                Should Contain    ${{names}}    Dut Power On
+            """,
+        )
+        write(
+            tmp_path,
+            "suites/2.robot",
+            """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    auto_import=False
+
+            *** Test Cases ***
+            Has No Role
+                Run Keyword And Expect Error    *no role library matches*    Use Device    dut2
+            """,
+        )
+        with use_client(served):
+            run_robot(tmp_path / "suites").assert_passed()
+
+    def test_a_sibling_suite_gets_the_exporter_it_declares(self, tmp_path, leases, run_robot):
+        for index, board in enumerate(("rpi4", "rpi5"), 1):
+            write(
+                tmp_path,
+                f"suites/{index}.robot",
+                f"""
+                *** Settings ***
+                Library    jumpstarter_robot.Jumpstarter    auto_import=False
+                Library    jumpstarter_robot.Session    rig    selector=board={board}    AS    session.rig
+                Suite Setup    Acquire Lease    session=rig
+
+                *** Test Cases ***
+                Drive {board}
+                    ${{lease}}=    Get Lease Name    session=rig
+                    Should Be Equal    ${{lease}}    lease-{index}
+                """,
+            )
+        run_robot(tmp_path / "suites").assert_passed()
+        assert [call[1]["selector"] for call in leases.calls] == ["board=rpi4", "board=rpi5"]
+
+    def test_child_suites_keep_an_override_of_their_parent(self, tmp_path, leases, run_robot):
+        write(
+            tmp_path,
+            "client.resource",
+            """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    auto_import=False
+            Library    jumpstarter_robot.Session    rig    selector=board=rpi4    AS    session.rig
+            """,
+        )
+        write(
+            tmp_path,
+            "suites/__init__.robot",
+            """
+            *** Settings ***
+            Resource    ../client.resource
+            Suite Setup    Acquire Lease    selector=board=special    session=rig
+            """,
+        )
+        for index in (1, 2):
+            write(
+                tmp_path,
+                f"suites/{index}.robot",
+                f"""
+                *** Settings ***
+                Resource    ../client.resource
+
+                *** Test Cases ***
+                Child {index}
+                    ${{lease}}=    Get Lease Name
+                    Should Be Equal    ${{lease}}    lease-1
+                """,
+            )
+        run_robot(tmp_path / "suites").assert_passed()
+        assert len(leases.calls) == 1
+
+    def test_indistinguishable_session_names_are_refused(self, tmp_path, leases, run_robot):
+        for name in ("board-a", "board_a"):
+            variable = session_variable("JMP_SELECTOR", name)
+            write(
+                tmp_path,
+                f"{name}.resource",
+                f"""
+                *** Settings ***
+                Library    jumpstarter_robot.Jumpstarter    auto_import=False
+                Library    jumpstarter_robot.Session    {name}    selector=${{{variable}}}    AS    session.{name}
+
+                *** Variables ***
+                ${{{variable}}}    board={name}
+                """,
+            )
+        suite = write(
+            tmp_path,
+            "both.robot",
+            """
+            *** Settings ***
+            Resource    board-a.resource
+            Resource    board_a.resource
+
+            *** Test Cases ***
+            First
+                Get Exporter Name    session=board-a
+
+            Second
+                Get Exporter Name    session=board_a
+            """,
+        )
+        run = run_robot(suite)
+        assert run.status("First") == "PASS"
+        assert run.status("Second") == "FAIL"  # rather than driving board-a
+        assert any("same variable and keyword names" in error.message for error in run.result.errors)
+        assert [name for name, _ in leases.calls] == ["board-a"]
+
+    def test_a_sibling_suite_reconnects_and_imports_drivers(self, tmp_path, leases, run_robot):
+        head = """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    selector=board=b
+
+            *** Test Cases ***
+            """
+        write(
+            tmp_path,
+            "suites/1.robot",
+            head
+            + """
+            Override
+                Release Lease
+                Acquire Lease    selector=lab=x
+                Dut Power On
+            """,
+        )
+        write(
+            tmp_path,
+            "suites/2.robot",
+            head
+            + """
+            Declared
+                Dut Power On
+                ${lease}=    Get Lease Name
+                Should Be Equal    ${lease}    lease-3
+            """,
+        )
+        run_robot(tmp_path / "suites").assert_passed()
+        assert [call[1]["selector"] for call in leases.calls] == ["board=b", "lab=x", "board=b"]
+
+    def test_a_role_imported_twice_is_bound_once(self, tmp_path, served, run_robot):
+        role = f"Library    jumpstarter_robot.Driver    dut.power    role=power    client={POWER}"
+        suite = write(
+            tmp_path,
+            "twice.robot",
+            f"""
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    auto_import=False
+            {role}    AS    power
+            {role}    AS    psu
+
+            *** Test Cases ***
+            Bound Once
+                ${{bound}}=    Use Device    dut2
+                Should Be Equal    ${{bound}}    ${{{{['dut2.power']}}}}
+            """,
+        )
+        with use_client(served):
+            run_robot(suite).assert_passed()
+
+    @pytest.mark.parametrize("other", ["board=b", None])
+    def test_a_reused_import_reconnects_after_a_release(self, tmp_path, leases, run_robot, other):
+        head = """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    selector={selector}
+            Suite Teardown    Release Lease
+
+            *** Test Cases ***
+            Drive {selector}
+                Dut Power On
+            """
+        for index, selector in enumerate(filter(None, ["board=a", other, "board=a"]), 1):
+            write(tmp_path, f"suites/{index}.robot", head.format(selector=selector))
+        run_robot(tmp_path / "suites").assert_passed()
+
+    def test_a_local_exporter_is_replaced_by_the_lease_a_suite_declares(
+        self, tmp_path, leases, served, run_robot, monkeypatch
+    ):
+        monkeypatch.setenv("JMP_LEASE", "mine")
+
+        def local(name, *, config, config_dir=None):
+            return sessions.Session.from_client(served, name, exporter=f"local-{config}")
+
+        head = """
+            *** Settings ***
+            Library    jumpstarter_robot.Jumpstarter    auto_import=False
+            Library    jumpstarter_robot.Session    rig    selector=board=a    AS    session.rig
+
+            *** Test Cases ***
+            """
+        write(
+            tmp_path,
+            "suites/1.robot",
+            head
+            + """
+            Simulated
+                Start Local Exporter    sim.yaml    session=rig
+            """,
+        )
+        write(
+            tmp_path,
+            "suites/2.robot",
+            head
+            + """
+            Leased
+                ${exporter}=    Get Exporter Name    session=rig
+                Should Be Equal    ${exporter}    exporter-rig
+            """,
+        )
+        with use_session_factory(local=local):
+            run_robot(tmp_path / "suites").assert_passed()

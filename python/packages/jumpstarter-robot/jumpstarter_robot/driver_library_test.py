@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import signal
+import time
 from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
 
+import anyio
 import pytest
 from jumpstarter_driver_composite.driver import Composite
 from jumpstarter_driver_power.driver import MockPower
@@ -12,6 +15,7 @@ from robot.api import Failure
 from robot.libdoc import LibraryDocumentation
 from robot.utils import DotDict
 
+from . import context
 from .driver_library import Driver, import_client_class
 from .library import Jumpstarter
 from .testing import use_client
@@ -209,3 +213,140 @@ class TestRoles:
         power = Driver(role="power", client=POWER)
         assert Jumpstarter().use_device("dut2") == ["dut2.power"]
         assert power.path == "dut2.power"
+
+
+class LimitedClient(DriverClient):
+    def read(self, max_items: int) -> Generator[int, None, None]:
+        yield from self.streamingcall("read", max_items)
+
+
+class Limited(JumpstarterDriver):
+    active = 0
+
+    @classmethod
+    def client(cls) -> str:
+        return f"{__name__}.LimitedClient"
+
+    @export
+    async def read(self, start: int) -> AsyncGenerator[int, None]:
+        Limited.active += 1
+        try:
+            while True:
+                yield start
+                start += 1
+                await anyio.sleep(0.01)
+        finally:
+            Limited.active -= 1
+
+    @export
+    async def flood(self) -> AsyncGenerator[int, None]:
+        Limited.active += 1
+        try:
+            while True:
+                yield 1
+        finally:
+            Limited.active -= 1
+
+    @export
+    def block(self) -> Generator[int, None, None]:
+        yield 1
+        time.sleep(2)  # on the event loop the client shares with a local exporter
+        yield 2
+
+
+class TestBoundedStreams:
+    @pytest.fixture
+    def limited(self):
+        with serve(Composite(children={"gauge": Limited()})) as client, use_client(client):
+            yield client
+            assert "streamingcall" not in vars(client.children["gauge"])
+
+    def wait_idle(self):
+        deadline = time.monotonic() + 5
+        while Limited.active and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert Limited.active == 0
+
+    def test_the_exporter_stream_ends_with_the_keyword(self, limited):
+        driver = Driver("gauge", client=f"{__name__}.LimitedClient", max_items=3)
+        assert [int(v) for v in driver.run_keyword("Gauge Read", [5])] == [5, 6, 7]
+        self.wait_idle()
+
+    def test_call_driver_ends_the_stream_too(self, limited, monkeypatch):
+        library = Jumpstarter()
+        monkeypatch.setattr(
+            "jumpstarter_robot.library.context.to_robot", lambda value, **_: next(value) or value.close()
+        )
+        library.call_driver("gauge", "read", 1)
+        self.wait_idle()
+
+    def test_the_clients_own_max_items_keeps_its_name(self, limited):
+        driver = Driver("gauge", client=f"{__name__}.LimitedClient", max_items=2)
+        assert "max_items" in driver.get_keyword_arguments("Gauge Read")
+        values = driver.run_keyword("Gauge Read", [], {"max_items": 7, "keyword_max_items": 4})
+        assert [int(v) for v in values] == [7, 8, 9, 10]
+        assert len(driver.run_keyword("Gauge Read", [], {"max_items": 7})) == 2
+        self.wait_idle()
+
+    def test_interrupted_reads_leave_no_stream(self, limited):
+        """An RF timeout may land anywhere, also while a read is being scheduled."""
+
+        class Interrupted(Exception): ...
+
+        def interrupt(signum, frame):
+            raise Interrupted
+
+        gauge = limited.children["gauge"]
+        previous = signal.signal(signal.SIGALRM, interrupt)
+        try:
+            for attempt in range(40):
+                with pytest.raises(Interrupted), context.bounded_streams(gauge):
+                    signal.setitimer(signal.ITIMER_REAL, 0.01 + attempt * 0.0007)
+                    try:
+                        for _ in gauge.streamingcall("flood"):
+                            pass
+                    finally:
+                        signal.setitimer(signal.ITIMER_REAL, 0)
+        finally:
+            signal.signal(signal.SIGALRM, previous)
+        self.wait_idle()
+
+    def test_interrupting_a_blocked_portal_is_bounded(self, limited, monkeypatch):
+        monkeypatch.setattr(context, "CANCEL_GRACE", 0.2)
+
+        class Interrupted(Exception): ...
+
+        def interrupt(signum, frame):
+            raise Interrupted
+
+        gauge = limited.children["gauge"]
+        previous = signal.signal(signal.SIGALRM, interrupt)
+        started = time.monotonic()
+        try:
+            signal.setitimer(signal.ITIMER_REAL, 0.1)
+            with pytest.raises(Interrupted), context.bounded_streams(gauge):
+                list(gauge.streamingcall("block"))
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        assert time.monotonic() - started < 1.5
+
+    def test_dropped_generators_do_not_swallow_an_interruption(self, limited):
+        class Interrupted(Exception): ...
+
+        def interrupt(signum, frame):
+            raise Interrupted
+
+        gauge = limited.children["gauge"]
+        previous = signal.signal(signal.SIGALRM, interrupt)
+        try:
+            for attempt in range(15):
+                deadline = time.monotonic() + 3
+                with pytest.raises(Interrupted), context.bounded_streams(gauge):
+                    signal.setitimer(signal.ITIMER_REAL, 0.03 + attempt * 0.003)
+                    while time.monotonic() < deadline:
+                        next(gauge.streamingcall("read", 1))
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+        self.wait_idle()

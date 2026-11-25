@@ -51,9 +51,23 @@ def driver_node(
     )
 
 
-def opaque_node(path: list[str], reason: str, warnings: list[str], *, required: bool = True) -> DeviceNode:
+def opaque_node(
+    path: list[str],
+    reason: str,
+    warnings: list[str],
+    *,
+    required: bool = True,
+    children: list[DeviceNode] | None = None,
+) -> DeviceNode:
     """A node no client is known for; it is recorded with a warning and skipped by the renderer."""
     message = f"{'.'.join(path) or '(root)'}: {reason}"
     warnings.append(message)
     logger.warning("%s", message)
-    return DeviceNode(name=path[-1] if path else "", path=list(path), kind="opaque", required=required, reason=reason)
+    return DeviceNode(
+        name=path[-1] if path else "",
+        path=list(path),
+        kind="opaque",
+        required=required,
+        children=list(children or []),
+        reason=reason,
+    )

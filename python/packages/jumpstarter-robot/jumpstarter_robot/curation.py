@@ -55,7 +55,7 @@ def type_overrides(member: ClientMember) -> dict[str, Any] | None:
         return None
     if isinstance(types, dict):
         return dict(types)
-    names = [p for p in inspect.signature(member.function).parameters if p != "self"]
+    names = list(inspect.signature(member.function).parameters)[0 if member.static else 1 :]
     return {name: tp for name, tp in zip(names, types, strict=False) if tp is not None}
 
 
