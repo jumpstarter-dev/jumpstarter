@@ -1,7 +1,9 @@
+import inspect
 import shlex
 import threading
 from concurrent.futures import CancelledError
 from contextlib import nullcontext
+from itertools import pairwise
 from pathlib import PosixPath
 from types import SimpleNamespace
 
@@ -10,7 +12,7 @@ import pytest
 
 from .client import DEFAULT_FLS_VERSION, BaseFlasherClient, FlashError, FlashNonRetryableError, FlashRetryableError
 from jumpstarter.client.core import DriverError, DriverMethodNotImplemented
-from jumpstarter.common.exceptions import ArgumentError
+from jumpstarter.common.exceptions import ArgumentError, ConfigurationError
 
 
 class MockFlasherClient(BaseFlasherClient):
@@ -264,55 +266,6 @@ def test_setup_fls_oci_credential_file_chunks_long_tokens():
     assert "FLS_REGISTRY_USERNAME=serviceaccount" in decoded
 
 
-def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
-    """Ensure OCI credential warning does not alter HTTP source selection."""
-    client = MockFlasherClient()
-
-    class DummyService:
-        def __init__(self):
-            self.storage = object()
-
-        def start(self):
-            pass
-
-        def stop(self):
-            pass
-
-        def get_url(self):
-            return "http://exporter"
-
-    client.http = DummyService()  # ty: ignore[missing-attribute]
-    client.tftp = DummyService()  # ty: ignore[missing-attribute]
-    client.call = lambda *args, **kwargs: None
-
-    captured = {}
-
-    def capture_perform(
-        partition, block_device, path, image_url, upload, cacert_file, insecure_tls, headers,
-        bearer_token, method, fls_version, fls_binary_url,
-        oci_username, oci_password, power_off=True,
-    ):
-        captured["image_url"] = image_url
-        captured["upload"] = upload
-        captured["oci_username"] = oci_username
-        captured["oci_password"] = oci_password
-
-    client._perform_flash_operation = capture_perform
-
-    client.flash(
-        "https://example.com/image.raw.xz",
-        method="fls",
-        oci_username="myuser",
-        oci_password="mypassword",
-        fls_version="",
-    )
-
-    assert captured["image_url"] == "https://example.com/image.raw.xz"
-    assert captured["upload"] is None
-    assert captured["oci_username"] is None
-    assert captured["oci_password"] is None
-
-
 def test_curl_header_args_handles_quotes():
     """Test curl header formatting safely handles quotes"""
     client = MockFlasherClient()
@@ -331,42 +284,6 @@ def test_flash_fails_with_invalid_headers():
         client.flash("test.raw", headers={"Invalid Header": "value"})
 
 
-def test_categorize_exception_returns_non_retryable_when_present():
-    """Test that non-retryable errors take priority"""
-    client = MockFlasherClient()
-
-    # Direct non-retryable error
-    error = FlashNonRetryableError("Config error")
-    result = client._categorize_exception(error)
-    assert isinstance(result, FlashNonRetryableError)
-    assert str(result) == "Config error"
-
-
-def test_categorize_exception_returns_retryable_when_present():
-    """Test that retryable errors are returned"""
-    client = MockFlasherClient()
-
-    # Direct retryable error
-    error = FlashRetryableError("Network timeout")
-    result = client._categorize_exception(error)
-    assert isinstance(result, FlashRetryableError)
-    assert str(result) == "Network timeout"
-
-
-def test_categorize_exception_wraps_unknown_exceptions():
-    """Test that unknown exceptions are wrapped as retryable"""
-    client = MockFlasherClient()
-
-    # Unknown exception type
-    error = ValueError("Something went wrong")
-    result = client._categorize_exception(error)
-    assert isinstance(result, FlashRetryableError)
-    assert "ValueError" in str(result)
-    assert "Something went wrong" in str(result)
-    # Verify the cause chain is preserved
-    assert result.__cause__ is error
-
-
 class _IdleService:
     def start(self):
         pass
@@ -375,19 +292,67 @@ class _IdleService:
         pass
 
 
+def _raised_from(*errors):
+    """The first error, raised from the second, raised from the third, and so on"""
+    for error, cause in pairwise(errors):
+        error.__cause__ = cause
+    return errors[0]
+
+
 @pytest.mark.parametrize(
     "error, expected",
     [
-        (
+        pytest.param(
             RuntimeError("Failed to get U-Boot prompt"),
             "Flash operation failed after 1 attempts (Caused by: Failed to get U-Boot prompt)",
+            id="unknown-is-retried",
         ),
-        (
+        pytest.param(
+            FlashRetryableError("Network timeout"),
+            "Flash operation failed after 1 attempts (Caused by: Network timeout)",
+            id="retryable-is-retried",
+        ),
+        pytest.param(
             FlashNonRetryableError("Could not find dd process ID"),
             "Flash operation failed (Caused by: Could not find dd process ID)",
+            id="non-retryable",
         ),
-        (CancelledError(), "Flash operation failed (Caused by: CancelledError)"),
-        (
+        pytest.param(
+            _raised_from(
+                RuntimeError("Flasher session failed"), ValueError("Bad response"), FlashNonRetryableError("Config")
+            ),
+            "Flash operation failed (Caused by: Flasher session failed)",
+            id="non-retryable-in-cause-chain",
+        ),
+        pytest.param(
+            ExceptionGroup(
+                "unhandled errors in a TaskGroup",
+                [
+                    FlashRetryableError("Network timeout"),
+                    ExceptionGroup("unhandled errors in a TaskGroup", [FlashNonRetryableError("Config")]),
+                ],
+            ),
+            (
+                "Flash operation failed"
+                " (Caused by: FlashRetryableError: Network timeout; FlashNonRetryableError: Config)"
+            ),
+            id="non-retryable-wins-in-nested-groups",
+        ),
+        pytest.param(
+            _raised_from(
+                RuntimeError("Flasher session failed"),
+                ExceptionGroup("unhandled errors in a TaskGroup", [FlashNonRetryableError("Config")]),
+            ),
+            "Flash operation failed (Caused by: Flasher session failed)",
+            id="non-retryable-in-group-cause",
+        ),
+        pytest.param(
+            ConfigurationError("Target emmc not found in manifest"),
+            "Flash operation failed (Caused by: Target emmc not found in manifest)",
+            id="configuration-error",
+        ),
+        pytest.param(CancelledError(), "Flash operation failed (Caused by: CancelledError)", id="cancelled"),
+        pytest.param(
             ExceptionGroup(
                 "unhandled errors in a TaskGroup",
                 [
@@ -399,11 +364,16 @@ class _IdleService:
                 "Flash operation failed after 1 attempts"
                 " (Caused by: RuntimeError: Failed to get U-Boot prompt; ValueError: handler failed)"
             ),
+            id="unknown-group-is-retried",
         ),
     ],
 )
-def test_flash_error_reports_the_failure_once(error, expected):
-    """FlashError names the underlying failure once, and chains it as __cause__"""
+def test_flash_retries_only_retryable_failures_and_reports_them_once(error, expected):
+    """A non-retryable failure anywhere in the cause chain or an exception group fails the flash at once.
+
+    Anything else is retried, which "after N attempts" shows. FlashError names the
+    underlying failure once, and chains it as __cause__.
+    """
     client = MockFlasherClient()
     client.http = _IdleService()  # ty: ignore[missing-attribute]
     client.tftp = _IdleService()  # ty: ignore[missing-attribute]
@@ -469,110 +439,6 @@ def test_flash_does_not_retry_onto_a_failed_upload(tmp_path):
     )
 
 
-def test_categorize_exception_cancelled_error_is_non_retryable():
-    """Test that CancelledError is treated as non-retryable"""
-    client = MockFlasherClient()
-
-    # CancelledError should be treated as non-retryable
-    error = CancelledError()
-    result = client._categorize_exception(error)
-    assert isinstance(result, FlashNonRetryableError)
-    assert "Operation cancelled" in str(result)
-
-
-def test_categorize_exception_searches_cause_chain():
-    """Test that categorization searches through the cause chain"""
-    client = MockFlasherClient()
-
-    # Create a chain: generic -> generic -> retryable
-    root = FlashRetryableError("Root cause")
-    middle = ValueError("Middle error")
-    middle.__cause__ = root
-    top = RuntimeError("Top error")
-    top.__cause__ = middle
-
-    result = client._categorize_exception(top)
-    assert isinstance(result, FlashRetryableError)
-    assert str(result) == "Root cause"
-
-
-def test_find_exception_in_chain_finds_target_type():
-    """Test that _find_exception_in_chain correctly finds the target type"""
-    client = MockFlasherClient()
-
-    # Create a chain with retryable error
-    retryable = FlashRetryableError("Network error")
-    generic = RuntimeError("Generic error")
-    generic.__cause__ = retryable
-
-    result = client._find_exception_in_chain(generic, FlashRetryableError)
-    assert result is retryable
-    assert str(result) == "Network error"
-
-
-def test_find_exception_in_chain_returns_none_when_not_found():
-    """Test that _find_exception_in_chain returns None when target not found"""
-    client = MockFlasherClient()
-
-    error = ValueError("Some error")
-    result = client._find_exception_in_chain(error, FlashRetryableError)
-    assert result is None
-
-
-def test_find_exception_in_chain_handles_exception_groups():
-    """Test that _find_exception_in_chain searches through ExceptionGroups"""
-    client = MockFlasherClient()
-
-    # Create an ExceptionGroup with a retryable error
-    retryable = FlashRetryableError("Network timeout")
-    generic = ValueError("Generic error")
-
-    # Mock an ExceptionGroup (Python 3.11+)
-    class MockExceptionGroup(Exception):
-        def __init__(self, message, exceptions):
-            super().__init__(message)
-            self.exceptions = exceptions
-
-    group = MockExceptionGroup("Multiple errors", [generic, retryable])
-
-    result = client._find_exception_in_chain(group, FlashRetryableError)
-    assert result is retryable
-
-
-def test_categorize_exception_with_nested_exception_groups():
-    """Test categorization with nested ExceptionGroups"""
-    client = MockFlasherClient()
-
-    # Create nested ExceptionGroups
-    non_retryable = FlashNonRetryableError("Config error")
-
-    class MockExceptionGroup(Exception):
-        def __init__(self, message, exceptions):
-            super().__init__(message)
-            self.exceptions = exceptions
-
-    inner_group = MockExceptionGroup("Inner errors", [non_retryable])
-    outer_group = MockExceptionGroup("Outer errors", [ValueError("Other"), inner_group])
-
-    result = client._categorize_exception(outer_group)
-    assert isinstance(result, FlashNonRetryableError)
-    assert str(result) == "Config error"
-
-
-def test_categorize_exception_preserves_cause_for_wrapped_exceptions():
-    """Test that wrapped unknown exceptions preserve the cause chain"""
-    client = MockFlasherClient()
-
-    original = OSError("File not found")
-    result = client._categorize_exception(original)
-
-    assert isinstance(result, FlashRetryableError)
-    assert result.__cause__ is original
-    # IOError is an alias for OSError in Python 3
-    assert "OSError" in str(result) or "IOError" in str(result)
-    assert "File not found" in str(result)
-
-
 def test_filename_strips_query_params_from_url_path():
     """Test _filename strips query parameters from paths with signed URL params"""
     client = MockFlasherClient()
@@ -621,106 +487,58 @@ def test_decompression_command_with_query_params():
     assert _get_decompression_command("/images/image.raw?Expires=123") == ""
 
 
-def test_flash_signed_url_preserves_query_params():
-    """Test that flash with a signed HTTP URL preserves query parameters for image_url"""
+class _Http(_IdleService):
+    storage = object()
+
+    def get_url(self):
+        return "http://exporter"
+
+
+def _client_capturing_the_flash_operation():
+    """A client whose flash() hands each attempt's arguments, by name, to the returned dict instead of a DUT"""
     client = MockFlasherClient()
-
-    class DummyService:
-        def __init__(self):
-            self.storage = object()
-
-        def start(self):
-            pass
-
-        def stop(self):
-            pass
-
-        def get_url(self):
-            return "http://exporter"
-
-    client.http = DummyService()  # ty: ignore[missing-attribute]
-    client.tftp = DummyService()  # ty: ignore[missing-attribute]
+    client.http = _Http()  # ty: ignore[missing-attribute]
+    client.tftp = _IdleService()  # ty: ignore[missing-attribute]
     client.call = lambda *args, **kwargs: None
-
     captured = {}
+    signature = inspect.signature(BaseFlasherClient._perform_flash_operation)
 
-    def capture_perform(
-        partition, block_device, path, image_url, upload, cacert_file, insecure_tls, headers,
-        bearer_token, method, fls_version, fls_binary_url,
-        oci_username, oci_password, power_off=True,
-    ):
-        captured["image_url"] = image_url
-        captured["upload"] = upload
+    def capture(*args, **kwargs):
+        captured.update(signature.bind(client, *args, **kwargs).arguments)
 
-    client._perform_flash_operation = capture_perform
-
-    # Direct HTTP URL with query params (no force_exporter_http) should preserve full URL
-    signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
-    client.flash(signed_url, method="fls", fls_version="")
-
-    assert captured["image_url"] == signed_url
-    assert captured["upload"] is None
+    client._perform_flash_operation = capture
+    return client, captured
 
 
-def test_flash_bearer_token_signed_url_preserves_query_params():
-    """Test that flash with force_exporter_http=True and bearer token preserves query params.
+@pytest.mark.parametrize(
+    "url, options",
+    [
+        pytest.param("https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz", {},
+                     id="signed-url"),
+        # OCI credentials only apply to oci:// images, so they are dropped
+        pytest.param("https://example.com/image.raw.xz", {"oci_username": "myuser", "oci_password": "mypassword"},
+                     id="oci-credentials"),
+    ],
+)
+def test_flash_has_the_dut_download_an_http_url_as_given(url, options):
+    client, captured = _client_capturing_the_flash_operation()
 
-    When a signed URL is used with a bearer token, the flash() method enters the
-    bearer token code path (lines 162-174 in client.py) which reconstructs the path
-    from parsed.path + '?' + parsed.query. This test verifies query params are preserved
-    and the path passed to the storage thread is correct.
-    """
-    client = MockFlasherClient()
+    client.flash(url, method="fls", fls_version="", **options)
 
-    class DummyService:
-        def __init__(self):
-            self.storage = object()
+    assert (captured["image_url"], captured["upload"]) == (url, None)
+    assert (captured["oci_username"], captured["oci_password"]) == (None, None)
 
-        def start(self):
-            pass
 
-        def stop(self):
-            pass
-
-        def get_url(self):
-            return "http://exporter"
-
-        def get_host(self):
-            return "127.0.0.1"
-
-    client.http = DummyService()  # ty: ignore[missing-attribute]
-    client.tftp = DummyService()  # ty: ignore[missing-attribute]
-    client.call = lambda *args, **kwargs: None
-
-    captured = {}
-
-    def capture_perform(
-        partition, block_device, path, image_url, upload, cacert_file, insecure_tls, headers,
-        bearer_token, method, fls_version, fls_binary_url,
-        oci_username, oci_password, power_off=True,
-    ):
-        captured["path"] = path
-        captured["image_url"] = image_url
-        captured["upload"] = upload
-
-    client._perform_flash_operation = capture_perform
-    # Mock the background transfer thread to prevent it from actually running
+def test_flash_fetches_a_bearer_token_url_through_the_exporter():
+    """The exporter fetches the image with its query string, and the DUT downloads it by its plain name"""
+    client, captured = _client_capturing_the_flash_operation()
     client._transfer_bg_thread = lambda *args, **kwargs: None
 
     signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
-    client.flash(
-        signed_url,
-        force_exporter_http=True,
-        bearer_token="test-token-123",
-        method="fls",
-        fls_version="",
-    )
+    client.flash(signed_url, force_exporter_http=True, bearer_token="test-token-123", method="fls", fls_version="")
 
-    # With force_exporter_http=True and bearer_token, should download to httpd
     assert captured["upload"] is not None
-    # The path should have query params preserved (reconstructed from parsed.path + '?' + parsed.query)
     assert captured["path"] == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
-    # The image_url should point to the exporter with the clean filename (no query params)
     assert captured["image_url"] == "http://exporter/image.raw.xz"
 
 
