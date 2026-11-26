@@ -4,6 +4,7 @@ Library    jumpstarter_robot.Jumpstarter    auto_import=False
 Library    jumpstarter_robot.Session    default    exporter_config=${JMP_EXPORTER_CONFIG}    selector=${JMP_SELECTOR}    lease_name=${JMP_LEASE_NAME}    config=${JMP_CLIENT_CONFIG}    AS    session.default
 Library    jumpstarter_robot.Driver    power    client=jumpstarter_driver_power.client.PowerClient    prefix=Power    session=default    AS    power
 Library    jumpstarter_robot.Driver    storage    client=jumpstarter_driver_opendal.client.StorageMuxFlasherClient    prefix=Storage    session=default    AS    storage
+Library    jumpstarter_robot.Driver    console    client=jumpstarter_driver_network.client.NetworkClient    prefix=Console    session=default    AS    console
 Library    jumpstarter_robot.Driver    shell    client=jumpstarter_driver_shell.client.ShellClient    prefix=Shell    session=default    methods=hello,fail    AS    shell
 
 *** Variables ***

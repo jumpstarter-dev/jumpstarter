@@ -3,7 +3,7 @@
 `jumpstarter-robot` connects [Robot Framework](https://robotframework.org/)
 test runs to Jumpstarter {term}`exporter`s. The package makes keywords from
 the client class of each driver, such as `Dut Power On` and `Storage Flash`.
-It also gives keywords for {term}`lease`s and sessions.
+It also gives keywords for {term}`lease`s, driver streams and port forwards.
 
 A generator writes a client resource file for each exporter. Your editor reads
 this file and shows each keyword. A lease is not necessary.
@@ -159,7 +159,7 @@ The library makes keywords from client members as follows:
 | Method | `<Prefix> <Method Words>`. The signature gives the arguments, defaults and types. The docstring gives the documentation. |
 | Generator (a stream) | The same name. The keyword returns a list of `max_items` items at most. Then it stops the stream. |
 | Property | `Get <Prefix> <Name>`. |
-| Context manager | No keyword. |
+| Context manager | No keyword. Use `Open Driver Context`. |
 | `async` method | No keyword. |
 | Shell driver | `<Prefix> Run Method`, and one keyword for each method in `methods`. Positional arguments go to the method. Named arguments become environment variables. `expected_rc` (default `0`, or `any`) is the return code that the keyword expects. |
 
@@ -262,6 +262,13 @@ fails.
 
 `robot --dryrun` does not connect, get a lease or start an exporter.
 
+### Scope of port forwards and driver contexts
+
+Port forwards and driver contexts have a `scope`: `test`, `suite` or `global`
+(the full test run). They close at the end of the scope, or before their
+session closes. If you set the scope `test` in a suite setup, the scope is the
+suite.
+
 ### Use an active lease again
 
 With `reuse_lease` (the default), a session looks for an active lease of the
@@ -341,6 +348,17 @@ each keyword, run
 | `List Drivers` | `session=None` | Lists the drivers of the session and their client classes. |
 | `Use Device` | `device, session=None` | Connects each role library to its driver below `device`. |
 
+### Driver contexts, streams and properties
+
+| Keyword | Arguments | Description |
+| --- | --- | --- |
+| `Close All Driver Contexts` | | Closes all open driver contexts. The last context closes first. |
+| `Close Driver Context` | `alias=None` | Closes one driver context. Without `alias`, closes the last context. |
+| `Collect Driver Stream` | `path, method, *args, count=None, timeout=10s, driver_method=None, session=None` | Reads a driver stream for `count` items or for `timeout`. Then stops the stream. |
+| `Get Driver Context Value` | `alias=None` | Returns the value that `Open Driver Context` returned. |
+| `Get Driver Property` | `path, name, session=None` | Returns a property of the driver client at `path`. |
+| `Open Driver Context` | `path, method, *args, alias=None, scope=suite, session=None, **kwargs` | Starts a client method that is a context manager and keeps it open. |
+| `Open Port Forward` | `path, local_port=0, method=connect, alias=None, scope=suite, session=None` | Connects a local TCP port to the byte stream of a driver. Returns `host:port`. |
 ### Appium
 
 These keywords need the `appium` extra:
@@ -598,8 +616,12 @@ Each test run then uses that lease and does not release it. Refer to
   applies if `drivers.allow` in the client config does not permit the client.
 - An exporter config lists only the drivers that it configures. Some drivers
   make their own child drivers. To include these child drivers, use `--live`.
-- An `async` client method and a context manager get no keyword.
-- `Call Driver` converts text arguments to the types of the client method.
+- An `async` client method gets no keyword. Use `Open Driver Context` for a
+  context manager. Use `Call Driver` for all other methods.
+- `Call Driver` and `Open Driver Context` convert text arguments to the types
+  of the client method. `Collect Driver Stream` does not convert arguments.
+  Write a number as `${5}`. It returns the values from the driver as
+  dictionaries.
 - In `jmp shell`, each session uses the exporter of the shell.
 - Keywords from `auto_import` exist only after the session connects.
   `robot --dryrun` does not connect, and thus it cannot find these keywords.

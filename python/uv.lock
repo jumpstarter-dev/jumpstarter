@@ -4144,6 +4144,7 @@ version = "0.1.0"
 source = { virtual = "examples/robot" }
 dependencies = [
     { name = "jumpstarter" },
+    { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power" },
     { name = "jumpstarter-driver-shell" },
@@ -4153,6 +4154,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
     { name = "jumpstarter-driver-power", editable = "packages/jumpstarter-driver-power" },
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },

@@ -17,6 +17,11 @@ For all arguments, keywords and settings, refer to the
   shows each keyword. A lease is not necessary.
 - **Lease control.** A test run can use a local exporter config, a
   `jmp shell`, or a lease from the {term}`controller`.
+- **Standard libraries.** A port forward connects a local port to a driver.
+  Then the
+  [Telnet](https://robotframework.org/robotframework/latest/libraries/Telnet.html)
+  library, [SSHLibrary](https://github.com/MarketSquare/SSHLibrary) and remote
+  libraries can connect to the device.
 
 ## Installation
 
@@ -53,6 +58,8 @@ export:
     type: jumpstarter_driver_power.driver.MockPower
   storage:
     type: jumpstarter_driver_opendal.driver.MockStorageMuxFlasher
+  console:
+    type: jumpstarter_driver_network.driver.EchoNetwork
   shell:
     type: jumpstarter_driver_shell.driver.Shell
     config:
@@ -121,7 +128,7 @@ each keyword with its arguments and its documentation.
 
    ```console
    $ jmp-robot generate
-   default: wrote client.resource (3 driver libraries)
+   default: wrote client.resource (4 driver libraries)
    ```
 
 3. Commit `client.resource`.
@@ -194,6 +201,40 @@ The test run releases a new lease at the end.
 
 Only `Acquire Lease` gets a new lease. If a session opens without a lease, the
 keyword fails. The error message gives these three ways.
+
+## Use standard libraries on a device
+
+Special Jumpstarter keywords for device protocols are not necessary.
+`Open Port Forward` connects a local port to the byte stream of a driver. It
+returns the address as `host:port`. Then a standard library connects to that
+address:
+
+```robotframework
+*** Settings ***
+Library     String
+Library     Telnet    timeout=30s    newline=CR    prompt=root@dut:~#
+Resource    client.resource
+
+*** Test Cases ***
+Board Boots To Login Prompt
+    ${address}=    Open Port Forward    dut.console
+    ${host}    ${port}=    Split String    ${address}    :
+    Telnet.Open Connection    ${host}    port=${port}
+    Dut Power On
+    Telnet.Login    root    ${PASSWORD}
+    ${kernel}=    Telnet.Execute Command    uname -r
+```
+
+You can use the same procedure with these libraries:
+
+- [SSHLibrary](https://github.com/MarketSquare/SSHLibrary), with a
+  `TcpNetwork` driver that connects to the SSH port of the device.
+- A
+  [remote library](https://robotframework.org/robotframework/latest/RobotFrameworkUserGuide.html#remote-library-interface)
+  server on the device.
+
+Some client methods are context managers. Use `Open Driver Context` to start
+one. To read a stream of values, use `Collect Driver Stream`.
 
 ## Change the keywords of a driver
 

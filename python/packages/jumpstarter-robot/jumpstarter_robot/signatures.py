@@ -252,7 +252,7 @@ def convert_call(func: Callable[..., Any], args: list[Any] | tuple, kwargs: dict
     """Convert a generic keyword's text arguments to ``func``'s annotated types.
 
     Generated keywords get this from Robot Framework itself. Keywords that call
-    a method by name (`Call Driver`) only see strings,
+    a method by name (`Call Driver`, `Open Driver Context`) only see strings,
     so they convert here with the same rules: ``wait=5`` reaches
     ``cycle(wait: int)`` as ``5``. Arguments that do not bind, or have no
     convertible annotation, pass through unchanged and the method reports them.

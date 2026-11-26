@@ -12,6 +12,8 @@ export:
     type: jumpstarter_driver_power.driver.MockPower
   storage:
     type: jumpstarter_driver_opendal.driver.MockStorageMuxFlasher
+  console:
+    type: jumpstarter_driver_network.driver.EchoNetwork
   shell:
     type: jumpstarter_driver_shell.driver.Shell
     config:
