@@ -8,8 +8,9 @@ import anyio
 import grpc
 import pytest
 from anyio.from_thread import BlockingPortal
+from google.protobuf import duration_pb2
 from grpc.aio import AioRpcError
-from jumpstarter_protocol import jumpstarter_pb2, jumpstarter_pb2_grpc
+from jumpstarter_protocol import client_pb2, jumpstarter_pb2, jumpstarter_pb2_grpc
 from rich.console import Console
 
 from jumpstarter.client.exceptions import LeaseError
@@ -1059,11 +1060,28 @@ class TestRequestAsyncExpiredLease:
 
 
 @asynccontextmanager
-async def _unresponsive_controller():
-    """A channel to a gRPC server that accepts every call and never answers, as a hung controller."""
+async def _unresponsive_controller(*, answer_get_lease: bool = False):
+    """A channel to a gRPC server that hangs every call, optionally answering GetLease.
+
+    A hung GetLease exercises the cleanup timeout on the call that fetches the
+    lease; answering it leaves only DeleteLease to hang.
+    """
 
     class _Hang(grpc.GenericRpcHandler):
         def service(self, handler_call_details):
+            if answer_get_lease and handler_call_details.method.endswith("/GetLease"):
+
+                async def answer(request, context):
+                    return client_pb2.Lease(
+                        name="namespaces/default/leases/test-lease",
+                        client="namespaces/default/clients/test-client",
+                        duration=duration_pb2.Duration(seconds=3600),
+                    )
+
+                return grpc.unary_unary_rpc_method_handler(
+                    answer, response_serializer=client_pb2.Lease.SerializeToString
+                )
+
             async def hang(request, context):
                 # Outlasts every timeout under test, but ends if a deadline goes missing
                 await anyio.sleep(40)
@@ -1110,12 +1128,11 @@ class TestReleaseOnExit:
     async def test_unresponsive_delete_times_out_the_release_not_the_caller(self, monkeypatch, caplog):
         """A controller that answers GetLease but hangs on DeleteLease must also time out cleanup."""
         monkeypatch.setattr("jumpstarter.client.lease._RELEASE_RPC_TIMEOUT_SECONDS", 0.2)
-        async with _unresponsive_controller() as channel:
+        async with _unresponsive_controller(answer_get_lease=True) as channel:
             lease = object.__new__(Lease)
             lease.channel, lease.namespace, lease.name, lease.release = channel, "default", "test-lease", True
             lease.svc = ClientService(channel=channel, namespace="default")
             lease.request_async = AsyncMock(return_value=lease)
-            lease.get = AsyncMock(return_value=Mock(effective_end_time=None))
 
             with anyio.fail_after(10), caplog.at_level(logging.INFO, logger="jumpstarter.client.lease"):
                 async with lease:
