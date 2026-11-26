@@ -12,8 +12,9 @@ func TestConfigRoundTrip(t *testing.T) {
 	original := Config{
 		Authentication: Authentication{
 			Internal: Internal{
-				Prefix:        "internal:",
-				TokenLifetime: "43800h",
+				AllowStoredTokenFallback: new(false),
+				Prefix:                   "internal:",
+				TokenLifetime:            "43800h",
 			},
 			K8s: K8s{
 				Enabled: true,
@@ -47,6 +48,9 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 
 	// Verify key fields
+	if parsed.Authentication.Internal.AllowStoredTokenFallback == nil || *parsed.Authentication.Internal.AllowStoredTokenFallback {
+		t.Fatal("stored token fallback opt-out did not survive the config round trip")
+	}
 	if parsed.Authentication.Internal.Prefix != original.Authentication.Internal.Prefix {
 		t.Errorf("Internal prefix mismatch: got %s, want %s",
 			parsed.Authentication.Internal.Prefix, original.Authentication.Internal.Prefix)

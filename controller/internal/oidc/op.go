@@ -5,8 +5,6 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
-	"encoding/binary"
-	"math/rand"
 	"time"
 
 	"filippo.io/keygen"
@@ -39,10 +37,8 @@ func NewSigner(privateKey *ecdsa.PrivateKey, issuer, audience string) *Signer {
 }
 
 func NewSignerFromSeed(seed []byte, issuer, audience string) (*Signer, error) {
-	hash := sha256.Sum256(seed)
-	source := rand.NewSource(int64(binary.BigEndian.Uint64(hash[:8])))
-	reader := rand.New(source)
-	key, err := keygen.ECDSALegacy(elliptic.P256(), reader)
+	secret := sha256.Sum256(seed)
+	key, err := keygen.ECDSA(elliptic.P256(), secret[:])
 	if err != nil {
 		return nil, err
 	}

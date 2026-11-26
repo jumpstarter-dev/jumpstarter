@@ -1,10 +1,6 @@
 # Update-available scenario: the update endpoint reports a new firmware version.
 # Tests the DUT's OTA update detection and download flow.
 
-config:
-  files_dir: /opt/jumpstarter/mitmproxy/mock-files
-  addons_dir: /opt/jumpstarter/mitmproxy/addons
-
 endpoints:
   GET /api/v1/updates/check:
     status: 200

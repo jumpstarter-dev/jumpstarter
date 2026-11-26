@@ -2,8 +2,6 @@
 # Tests the DUT's error handling, retry logic, and graceful degradation.
 
 config:
-  files_dir: /opt/jumpstarter/mitmproxy/mock-files
-  addons_dir: /opt/jumpstarter/mitmproxy/addons
   default_latency_ms: 0
 
 endpoints:

@@ -1,11 +1,10 @@
 # jumpstarter-driver-mitmproxy mock configuration v2
 #
 # This file defines how the proxy responds to requests from the DUT.
-# Place in your mock_dir (default: /opt/jumpstarter/mitmproxy/mock-responses/).
+# Load with `j proxy mock load full-scenario.yaml` or proxy.load_mock_scenario().
+# Mock files and addon scripts are found in the driver's configured directories.
 
 config:
-  files_dir: /opt/jumpstarter/mitmproxy/mock-files
-  addons_dir: /opt/jumpstarter/mitmproxy/addons
   default_latency_ms: 0
   default_content_type: application/json
 

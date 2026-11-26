@@ -1011,6 +1011,28 @@ provisioning:
 			}, 1*time.Minute).Should(Succeed())
 		})
 
+		It("should disable legacy token authentication through the operator", func() {
+			deploymentKey := types.NamespacedName{Name: "jumpstarter-controller", Namespace: dynamicTestNamespace}
+			deployment := &appsv1.Deployment{}
+			Expect(k8sClient.Get(ctx, deploymentKey, deployment)).To(Succeed())
+			previousHash := deployment.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]
+			key := types.NamespacedName{Name: "jumpstarter", Namespace: dynamicTestNamespace}
+			updateJumpstarter(key, func(js *operatorv1alpha1.Jumpstarter) {
+				js.Spec.Authentication.Internal.AllowStoredTokenFallback = new(false)
+			})
+			Eventually(func(g Gomega) {
+				cm := &corev1.ConfigMap{}
+				g.Expect(k8sClient.Get(ctx, deploymentKey, cm)).To(Succeed())
+				var cfg map[string]any
+				g.Expect(yaml.Unmarshal([]byte(cm.Data["config"]), &cfg)).To(Succeed())
+				internal := cfg["authentication"].(map[string]any)["internal"].(map[string]any)
+				g.Expect(internal).To(HaveKeyWithValue("allowStoredTokenFallback", false))
+				g.Expect(k8sClient.Get(ctx, deploymentKey, deployment)).To(Succeed())
+				g.Expect(deployment.Spec.Template.Annotations["jumpstarter.dev/configmap-sha256"]).NotTo(
+					Equal(previousHash), "config changes must trigger a controller rollout")
+			}, time.Minute).Should(Succeed())
+		})
+
 		It("should allow access to ingress grpc endpoints", func() {
 			By("checking endpoint grpc access to controller")
 			waitForGRPCEndpoint("grpc.jumpstarter.127.0.0.1.nip.io:5443")

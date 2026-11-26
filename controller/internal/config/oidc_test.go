@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/pem"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -13,13 +14,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	api "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	apiserverinstall "k8s.io/apiserver/pkg/apis/apiserver/install"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func internalBearerAuthenticator(t *testing.T, signer *oidc.Signer, certificateAuthority string) *authentication.BearerTokenAuthenticator {
@@ -132,5 +138,38 @@ func TestInternalTokenAuthenticationBeforeDiscovery(t *testing.T) {
 	ok, err = authenticateBearer(auth, signedToken(t, key, signer.Issuer(), signer.Audience(), now.Add(-time.Minute)))
 	if ok || status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("expired token before discovery: ok=%v err=%v, want Unauthenticated", ok, err)
+	}
+}
+
+func TestStoredTokenFallbackDefault(t *testing.T) {
+	scheme := runtime.NewScheme()
+	apiserverinstall.Install(scheme)
+	if err := api.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	signer := oidc.NewSigner(generateKey(t), "https://127.0.0.1:1", "jumpstarter")
+	for _, format := range []string{"config", "authentication"} {
+		for _, setting := range []string{"", "allowStoredTokenFallback: false", "allowStoredTokenFallback: true"} {
+			t.Run(format+"/"+setting, func(t *testing.T) {
+				ctx := t.Context()
+				raw := fmt.Sprintf("authentication:\n  internal:\n    prefix: 'internal:'\n    %s\n", setting)
+				if format == "authentication" {
+					raw = fmt.Sprintf("apiVersion: %s\nkind: AuthenticationConfiguration\ninternal:\n  prefix: 'internal:'\n  %s\n", api.GroupVersion, setting)
+				}
+				cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "controller", Namespace: "lab"},
+					Data: map[string]string{"router": "{}", format: raw}}
+				kc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+				loaded, err := LoadConfiguration(ctx, kc, scheme, client.ObjectKeyFromObject(cm), signer, "")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if loaded.AllowStoredTokenFallback != (setting != "allowStoredTokenFallback: false") {
+					t.Fatal("wrong stored-token fallback default or explicit override")
+				}
+			})
+		}
 	}
 }

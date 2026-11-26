@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -87,6 +88,15 @@ func ensureSecret(
 			}
 			// A regenerated credential starts a new rotation lineage.
 			delete(secret.Annotations, PreviousTokenHashAnnotation)
+			delete(secret.Annotations, authentication.LegacyTokenHashAnnotation)
+			// Trust only a credential already in the Secret, with the expected
+			// identity and valid lifetime. Never enroll a token from a request.
+			if claims, err := authentication.StoredTokenClaims(string(token), signer.Issuer(), signer.Audience()); err == nil && claims.Subject == subject {
+				if secret.Annotations == nil {
+					secret.Annotations = map[string]string{}
+				}
+				secret.Annotations[authentication.LegacyTokenHashAnnotation] = TokenHash(string(token))
+			}
 			if onRegenerate != nil {
 				onRegenerate(&secret, token)
 			}
