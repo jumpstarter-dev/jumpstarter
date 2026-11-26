@@ -1,6 +1,7 @@
 import json
 import logging
 import subprocess
+import time
 from typing import cast
 
 import anyio
@@ -254,6 +255,40 @@ def test_write_raises_when_disk_unavailable(monkeypatch):
     # a clear RuntimeError, not a TypeError from os.open(None, ...)
     with pytest.raises(RuntimeError, match="did not become available"):
         anyio.run(sdwire.write, "dummy")
+
+
+@pytest.mark.parametrize("method", ["write", "read"])
+def test_switch_to_host_does_not_block_event_loop(monkeypatch, method):
+    sdwire = object.__new__(SDWire)
+    sdwire.storage_timeout = 0
+    sdwire.logger = logging.getLogger("test-sdwire")
+
+    monkeypatch.setattr(SDWire, "host", lambda self: time.sleep(0.5))
+
+    async def none_await(self, timeout):
+        return None
+
+    monkeypatch.setattr(SDWire, "_await_storage_device", none_await)
+
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            await anyio.sleep(0.01)
+            ticks += 1
+
+    async def run():
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(ticker)
+            with pytest.raises(RuntimeError, match="did not become available"):
+                await getattr(sdwire, method)("dummy")
+            tg.cancel_scope.cancel()
+
+    anyio.run(run)
+
+    # a blocked event loop would let the ticker run ~0 times during the 0.5 s host()
+    assert ticks >= 10
 
 
 class _FakeHub:
