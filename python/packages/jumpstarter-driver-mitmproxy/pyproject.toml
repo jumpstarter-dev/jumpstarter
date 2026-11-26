@@ -20,7 +20,7 @@ log_cli_level = "INFO"
 testpaths = [
     "jumpstarter_driver_mitmproxy",
     # demo/ and examples/ require a live HiL exporter; run them manually
-    # with: jmp shell --exporter demo/exporter.yaml -- pytest demo/ -v
+    # with: jmp shell --exporter-config demo/exporter.yaml -- pytest demo/ -v
 ]
 
 [dependency-groups]

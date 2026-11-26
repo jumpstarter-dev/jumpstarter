@@ -62,7 +62,7 @@ export:
 
       # Directory layout (subdirs default to {data}/<name>)
       directories:
-        data: /opt/jumpstarter/mitmproxy
+        data: /opt/jumpstarter/mitmproxy  # must be writable; omit for a per-user temp dir
         conf: /etc/mitmproxy          # override default {data}/conf
 
       # Skip upstream SSL verification (DUT talks to test infra)
