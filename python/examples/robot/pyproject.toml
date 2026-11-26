@@ -1,0 +1,15 @@
+[project]
+name = "jumpstarter-example-robot"
+version = "0.1.0"
+description = "Robot Framework example for Jumpstarter, runnable locally against mock drivers"
+authors = [{ name = "Kirk Brauer", email = "kirkebrauer@gmail.com" }]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+dependencies = [
+  "jumpstarter",
+  "jumpstarter-robot",
+  "jumpstarter-driver-opendal",
+  "jumpstarter-driver-power",
+  "jumpstarter-driver-shell",
+]

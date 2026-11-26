@@ -1,0 +1,6 @@
+# Robot Framework run output
+results/
+output.xml
+log.html
+report.html
+.robotcode_cache/

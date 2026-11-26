@@ -1,0 +1,49 @@
+# Robot Framework Example
+
+This example uses [`jumpstarter-robot`](../../packages/jumpstarter-robot) to
+control Jumpstarter drivers from [Robot Framework](https://robotframework.org/).
+It uses mock drivers. The test run starts these drivers in its own process
+(local mode). Hardware and a controller are not necessary.
+
+The [Robot Framework guide](../../../docs/source/getting-started/guides/robot-framework.md)
+explains this example.
+
+## Run the tests
+
+1. Install the workspace one time. Do this in the `python/` directory:
+
+   ```console
+   $ uv sync --all-packages --all-extras
+   ```
+
+2. Run the tests:
+
+   ```console
+   $ cd examples/robot
+   $ uv run robot -d results tests/
+   ```
+
+To run the tests on a lab exporter that has the same drivers, use a lease:
+
+```console
+$ jmp shell --selector board=mock -- robot -d results tests/
+```
+
+## Files
+
+| Path | Contents |
+| --- | --- |
+| `exporter.yaml` | The mock board: a `power` switch, a `storage` mux, and a `shell` driver with the methods `hello` and `fail`. |
+| `client.resource` | The resource file that each test imports. It declares the session and imports one `Driver` keyword library for each driver. |
+| `tests/power.robot` | Power keywords, stream values, and `Call Driver`. |
+| `tests/storage.robot` | Writes `data/image.bin` through the storage mux. |
+| `tests/shell.robot` | The shell methods `Shell Hello` and `Shell Fail`, and their return codes. |
+
+## Add a driver
+
+1. Add the driver to `exporter.yaml`.
+2. Add a `Library` line for the driver to `client.resource`. Give the path of
+   the driver and its client class.
+
+The keyword names start with the path of the driver: `power` gives `Power On`,
+and `storage` gives `Storage Flash`.
