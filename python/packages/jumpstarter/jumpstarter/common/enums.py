@@ -2,7 +2,7 @@
 
 from enum import IntEnum
 
-from jumpstarter_protocol.jumpstarter.v1 import common_pb2
+from jumpstarter_protocol.jumpstarter.v1 import common_pb2, jumpstarter_pb2
 
 
 class ExporterStatus(IntEnum):
@@ -43,6 +43,28 @@ class ExporterStatus(IntEnum):
     def to_proto(self) -> int:
         """Convert to protobuf integer."""
         return self.value
+
+
+class LeaseHookPhase(IntEnum):
+    """Phase of a lease lifecycle hook, as recorded by the controller."""
+
+    UNSPECIFIED = jumpstarter_pb2.LEASE_HOOK_PHASE_UNSPECIFIED
+    """Not started"""
+
+    RUNNING = jumpstarter_pb2.LEASE_HOOK_PHASE_RUNNING
+    """Started; still running, or cut off by an exporter restart"""
+
+    SUCCEEDED = jumpstarter_pb2.LEASE_HOOK_PHASE_SUCCEEDED
+    """Finished successfully"""
+
+    FAILED = jumpstarter_pb2.LEASE_HOOK_PHASE_FAILED
+    """Failed"""
+
+    SKIPPED = jumpstarter_pb2.LEASE_HOOK_PHASE_SKIPPED
+    """Not run (not configured, or not needed for the lease)"""
+
+    def __str__(self):
+        return self.name
 
 
 class LogSource(IntEnum):

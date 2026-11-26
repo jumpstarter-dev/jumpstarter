@@ -142,6 +142,7 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
       j power on
     timeout: 120       # Hook execution timeout in seconds (default: 120)
     onFailure: warn    # Action on failure: "warn" (default), "endLease", or "exit"
+    onInterrupt: rerun # If a restart cut the hook off: "rerun" (default) or "fail"
   afterLease:
     script: |
       j power off
@@ -152,6 +153,10 @@ hooks: # Optional lifecycle hooks that run at lease boundaries
 The optional `hooks` section configures lifecycle scripts that run at {term}`lease`
 boundaries. See [{term}`Hook`s](../../introduction/hooks.md) for full details on
 {term}`hook` configuration, environment variables, and failure handling.
+
+Restarting the exporter does not end the {term}`lease` it is serving: the
+restarted exporter resumes it without running the `beforeLease` hook again. See
+[Exporter Restarts](../../introduction/hooks.md#exporter-restarts).
 
 If the controller's Status stream fails or ends, and no new update arrives
 within `statusStreamRetryTimeout` seconds, `jmp run` exits with status `75`

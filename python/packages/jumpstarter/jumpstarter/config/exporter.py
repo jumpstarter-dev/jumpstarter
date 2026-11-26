@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_STATUS_STREAM_RETRY_TIMEOUT = 30 * 60.0
 
+MAX_HOOK_ATTEMPTS = 3
+"""Times a lifecycle hook is started before a restart that cuts it off counts as a failure."""
+
 
 class HookInstanceConfigV1Alpha1(BaseModel):
     """Configuration for a specific lifecycle hook."""
@@ -57,6 +60,18 @@ class HookInstanceConfigV1Alpha1(BaseModel):
         description=(
             "Action to take when the expected exit code is not returned: 'endLease' to end the lease, "
             "'exit' takes the exporter offline and ends the lease, 'warn' continues and prints a warning"
+        ),
+    )
+    on_interrupt: Literal[
+        "rerun",
+        "fail",
+    ] = Field(
+        default="rerun",
+        alias="onInterrupt",
+        description=(
+            "What the restarted exporter does with a hook that an exporter restart cut off: 'rerun' runs "
+            f"it again (up to {MAX_HOOK_ATTEMPTS} attempts in total, then it fails), 'fail' treats it as "
+            "failed. A failed hook is handled by onFailure."
         ),
     )
 
