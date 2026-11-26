@@ -1,6 +1,9 @@
 import shlex
+import threading
 from concurrent.futures import CancelledError
+from contextlib import nullcontext
 from pathlib import PosixPath
+from types import SimpleNamespace
 
 import click
 import pytest
@@ -285,13 +288,12 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
     captured = {}
 
     def capture_perform(
-        partition, block_device, path, image_url, should_download_to_httpd,
-        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        partition, block_device, path, image_url, upload, cacert_file, insecure_tls, headers,
         bearer_token, method, fls_version, fls_binary_url,
         oci_username, oci_password, power_off=True,
     ):
         captured["image_url"] = image_url
-        captured["should_download_to_httpd"] = should_download_to_httpd
+        captured["upload"] = upload
         captured["oci_username"] = oci_username
         captured["oci_password"] = oci_password
 
@@ -306,7 +308,7 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
     )
 
     assert captured["image_url"] == "https://example.com/image.raw.xz"
-    assert captured["should_download_to_httpd"] is False
+    assert captured["upload"] is None
     assert captured["oci_username"] is None
     assert captured["oci_password"] is None
 
@@ -417,6 +419,54 @@ def test_flash_error_reports_the_failure_once(error, expected):
 
     assert str(excinfo.value) == expected
     assert excinfo.value.__cause__ is error
+
+
+def test_flash_does_not_retry_onto_a_failed_upload(tmp_path):
+    """A retry must not flash whatever the exporter holds after the image upload failed"""
+    image = tmp_path / "image.raw.xz"
+    image.write_bytes(b"new image")
+    first_attempt_started = threading.Event()
+
+    class FailingStorage:
+        def exists(self, filename):
+            return False
+
+        def write_from_path(self, filename, path, operator):
+            # The upload drops while the first attempt boots the flasher
+            first_attempt_started.wait(timeout=10)
+            raise ConnectionError("upload dropped")
+
+    class Http(_IdleService):
+        storage = FailingStorage()
+
+        def get_url(self):
+            return "http://exporter"
+
+    def resolve_target(*args):
+        first_attempt_started.set()
+        return "/dev/mmcblk0"
+
+    flashed = []
+    console = SimpleNamespace(sendline=lambda *args: None, expect=lambda *args, **kwargs: None)
+    client = MockFlasherClient()
+    client.http = Http()  # ty: ignore[missing-attribute]
+    client.tftp = _IdleService()  # ty: ignore[missing-attribute]
+    client.call = lambda *args, **kwargs: None
+    client._manifest = SimpleNamespace(
+        spec=SimpleNamespace(login=SimpleNamespace(prompt="#"), preflash_commands=[])
+    )
+    client._dhcp_details = SimpleNamespace(ip_address="192.0.2.2", gateway="192.0.2.1")
+    client._busybox = lambda: nullcontext(console)  # ty: ignore[invalid-assignment]
+    client._resolve_and_prepare_target = resolve_target  # ty: ignore[invalid-assignment]
+    client._flash_with_fls = lambda *args: flashed.append(args)  # ty: ignore[invalid-assignment]
+
+    with pytest.raises(FlashError) as excinfo:
+        client.flash(str(image), retries=1, power_off=False)
+
+    assert flashed == []
+    assert str(excinfo.value) == (
+        "Flash operation failed (Caused by: Uploading the image to the exporter failed (Caused by: upload dropped))"
+    )
 
 
 def test_categorize_exception_cancelled_error_is_non_retryable():
@@ -595,13 +645,12 @@ def test_flash_signed_url_preserves_query_params():
     captured = {}
 
     def capture_perform(
-        partition, block_device, path, image_url, should_download_to_httpd,
-        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        partition, block_device, path, image_url, upload, cacert_file, insecure_tls, headers,
         bearer_token, method, fls_version, fls_binary_url,
         oci_username, oci_password, power_off=True,
     ):
         captured["image_url"] = image_url
-        captured["should_download_to_httpd"] = should_download_to_httpd
+        captured["upload"] = upload
 
     client._perform_flash_operation = capture_perform
 
@@ -610,7 +659,7 @@ def test_flash_signed_url_preserves_query_params():
     client.flash(signed_url, method="fls", fls_version="")
 
     assert captured["image_url"] == signed_url
-    assert captured["should_download_to_httpd"] is False
+    assert captured["upload"] is None
 
 
 def test_flash_bearer_token_signed_url_preserves_query_params():
@@ -646,14 +695,13 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
     captured = {}
 
     def capture_perform(
-        partition, block_device, path, image_url, should_download_to_httpd,
-        storage_thread, error_queue, cacert_file, insecure_tls, headers,
+        partition, block_device, path, image_url, upload, cacert_file, insecure_tls, headers,
         bearer_token, method, fls_version, fls_binary_url,
         oci_username, oci_password, power_off=True,
     ):
         captured["path"] = path
         captured["image_url"] = image_url
-        captured["should_download_to_httpd"] = should_download_to_httpd
+        captured["upload"] = upload
 
     client._perform_flash_operation = capture_perform
     # Mock the background transfer thread to prevent it from actually running
@@ -669,7 +717,7 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
     )
 
     # With force_exporter_http=True and bearer_token, should download to httpd
-    assert captured["should_download_to_httpd"] is True
+    assert captured["upload"] is not None
     # The path should have query params preserved (reconstructed from parsed.path + '?' + parsed.query)
     assert captured["path"] == "/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
     # The image_url should point to the exporter with the clean filename (no query params)
