@@ -77,7 +77,7 @@ Zero Config Keywords
     ${drivers}=    List Drivers
     Length Should Be    ${drivers}    3
     Should Be Equal    ${drivers[1].path}    dut.power
-    # auto-imported keywords carry the driver's full path, like a Driver import's
+    # auto-imported keywords carry the driver's full path, like the generated resource's
     Dut Power On
     ${readings}=    Dut Power Read    max_items=2
     Length Should Be    ${readings}    2

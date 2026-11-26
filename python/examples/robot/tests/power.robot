@@ -1,5 +1,5 @@
 *** Settings ***
-Documentation       Power keywords, which come from the client class of the power driver.
+Documentation       Power keywords, generated from the power driver's client.
 
 Resource            ../client.resource
 

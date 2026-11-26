@@ -1,9 +1,9 @@
 """``Session``: declare how a named session connects.
 
 Robot Framework ignores a second import of the same library with different
-arguments, so one ``Jumpstarter`` import cannot describe two exporters. A resource
-file therefore declares its session with this small library instead, and
-imports ``Jumpstarter`` without arguments::
+arguments, so one ``Jumpstarter`` import cannot describe two exporters. Each
+generated client resource therefore declares its session with this small
+library instead, and imports ``Jumpstarter`` without arguments::
 
     Library    jumpstarter_robot.Jumpstarter
     Library    jumpstarter_robot.Session    android    exporter_config=${CURDIR}/exporter-android.yaml
@@ -25,7 +25,7 @@ from jumpstarter.config.env import JMP_LEASE, JUMPSTARTER_HOST
 
 
 def text(value: Any) -> str | None:
-    """Treat empty strings (``${EMPTY}`` from a resource file's variable) as unset."""
+    """Treat empty strings (``${EMPTY}`` from a generated resource) as unset."""
     if value is None:
         return None
     value = str(value).strip()
@@ -271,8 +271,8 @@ class Session:
     is an exporter config path or alias.
 
     Keywords that take no ``session`` argument use the session declared in
-    the suite when there is exactly one, so a suite that imports one resource
-    file never needs to name its session.
+    the suite when there is exactly one, so a suite that imports one client
+    resource never needs to name its session.
 
     A lease `Acquire Lease` acquired is released at the end of the run;
     attached leases never are. ``reuse_lease=False`` stops the session from

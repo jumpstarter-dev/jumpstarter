@@ -97,14 +97,16 @@ class Driver:
     ``path`` is the driver's dotted position in the exporter's tree, the
     same as the Python access path (``dutlink.power`` is
     ``client.dutlink.power``). ``client`` names its Python client class,
-    which is where the keywords come from. The library binds lazily: the first keyword opens the
+    which is where the keywords come from; the generated client resource
+    fills it in. The library binds lazily: the first keyword opens the
     ``session`` and checks that the driver at ``path`` is that client class.
 
     = Keyword names =
 
     Every keyword starts with ``prefix``, by default the words of ``path``:
-    ``dutlink.power`` gives ``Dutlink Power On``. Give ``prefix`` to choose
-    another (``Main Power On``).
+    ``dutlink.power`` gives ``Dutlink Power On``. The generated client
+    resource uses the same full path unless an alias in ``robot.toml``
+    chooses another prefix (``Main Power On``).
 
     = Roles =
 
@@ -360,7 +362,7 @@ class Driver:
             actual = node.labels.get(CLIENT_LABEL) or class_path(type(node))
             raise Failure(
                 f"driver '{self.path}' on exporter '{session.exporter}' is {actual}, "
-                f"but this library was imported for {class_path(cls)}; correct its client argument"
+                f"but this library was generated for {class_path(cls)}; regenerate the client resource"
             )
         self._bound = (session, self.path, node)
         return node

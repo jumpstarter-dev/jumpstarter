@@ -86,7 +86,8 @@ class Jumpstarter:
     provides the keywords that work across drivers: leases, sessions
     and calls to a driver by its path. Each driver's own keywords
     come from a `Driver` library per
-    driver, which a suite or a resource file imports, or which this library
+    driver, which the generated client resource imports
+    (``jmp-robot generate``), or which this library
     imports itself once it is connected.
 
     = Connecting =
@@ -115,14 +116,14 @@ class Jumpstarter:
     ``on_lease_end`` decides what happens when a lease ends, is transferred
     or is revoked during the run: ``fatal`` (the default) stops the run,
     ``fail`` fails only the keyword. It is set for the whole run, by the
-    import that gives it; an import without it, such as a bare one beside a
-    `Session` import, leaves it as it is. The `Session` library
+    import that gives it; an import without it, such as the one in a
+    generated client resource, leaves it as it is. The `Session` library
     takes ``on_lease_end`` for one session.
 
     = Sessions =
 
     A session is a named connection, so one run can drive several exporters.
-    A resource file declares its own with the `Session`
+    The generated client resources declare theirs with the `Session`
     library; arguments given here declare the session named ``session``.
     Keywords without a ``session`` argument use the one `Switch Session`
     chose, else the only session declared in the suite, else ``default``.
@@ -131,8 +132,8 @@ class Jumpstarter:
 
     With ``auto_import`` (the default) this library imports a `Driver`
     library for every driver once it connects, so keywords such as
-    ``Power On`` appear without any `Driver` import. They are not visible to
-    the editor until the run; import a `Driver` library for IntelliSense.
+    ``Power On`` appear without a client resource. They are not visible to
+    the editor until the run; generate a client resource for IntelliSense.
     """
 
     ROBOT_LIBRARY_SCOPE = "GLOBAL"
@@ -185,7 +186,7 @@ class Jumpstarter:
             setattr(self, context.SESSION_MARKER, self.config.name)
         self._declare()
         # A bare import with JMP_LEASE attaches to that lease. It connects at
-        # start_suite rather than here: a resource file can import this
+        # start_suite rather than here: a generated client resource imports this
         # library bare next to the Session that declares its own session, and
         # that suite needs no second connection named ``default``.
         self._attach_env_lease = (
@@ -195,7 +196,7 @@ class Jumpstarter:
             if self.auto_import and in_run():
                 # Connect now so a bad config fails at import. The drivers are
                 # imported at start_suite, once the suite's own Driver imports
-                # (a resource file's) are known and can be skipped,
+                # (a generated client resource) are known and can be skipped,
                 # or right away when a test imports this library itself.
                 self._connecting = True
                 opened = None
@@ -210,7 +211,7 @@ class Jumpstarter:
             elif self.auto_import and dry_run():
                 robot_logger.warn(
                     "Jumpstarter: a dry run does not connect, so driver keywords are not imported; "
-                    "import a Driver library for each driver to check them"
+                    "import a generated client resource to check them"
                 )
 
     def _declare(self) -> None:
