@@ -990,12 +990,41 @@ def test_cli_opens_off_console_with_hotkeys_and_references(qemu_serial, route, o
         commands = ["qemu", "console", "console"] if route == "nested" else ["console", "console"]
         if observe:
             commands.append("--observe")
-        keys = ("" if observe else "\x1d" * 3) + "\x02" * 3
+        read_fd, write_fd = os.pipe()
+        cli_finished = threading.Event()
         with (
+            os.fdopen(read_fd, "rb", buffering=0) as keyboard,
+            os.fdopen(write_fd, "wb", buffering=0) as keys,
             patch.object(Console, "setraw", return_value=nullcontext()),
             patch.object(client.portal, "call", bounded_call),
         ):
-            result = CliRunner().invoke(client.cli(), commands, input=keys)
+            async def type_keys():
+                with fail_after(5):
+                    field = "observer_count" if observe else "write_token_held"
+                    while not (await console_client.call_async("console_status"))[field]:
+                        await sleep(0.01)
+                    if not observe:
+                        keys.write(b"\x1d" * 3)
+                        while not ptys:
+                            await sleep(0.01)
+                    keys.write(b"\x02" * 3)
+                    # Drain forwarded hotkey prefixes so macOS can finish closing the serial port.
+                    while not observe and not cli_finished.is_set():
+                        try:
+                            os.read(ptys[-1][0], 1024)
+                        except BlockingIOError:
+                            pass
+                        await sleep(0.01)
+
+            typing = client.portal.start_task_soon(type_keys)
+            try:
+                result = CliRunner().invoke(client.cli(), commands, input=keyboard)
+            finally:
+                cli_finished.set()
+                try:
+                    typing.result(timeout=5)
+                finally:
+                    typing.cancel()
         assert result.exit_code == 0, result.exception
         assert len(ptys) == (0 if observe else 1)
 
