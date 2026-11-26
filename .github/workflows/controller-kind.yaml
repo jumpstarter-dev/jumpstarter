@@ -34,8 +34,10 @@ jobs:
           # The pull-policy test must not replace our local image with upstream :latest.
           export IMG="quay.io/jumpstarter-dev/jumpstarter-controller:e2e-${GITHUB_SHA}"
           podman tag quay.io/jumpstarter-dev/jumpstarter-controller:latest "$IMG"
-          source hack/utils
-          load_image "$IMG"
+          (
+            source hack/utils
+            load_image "$IMG"
+          )
           make -C deploy/operator test-e2e
 
       - name: Collect router failure diagnostics
