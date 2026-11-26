@@ -16,6 +16,68 @@ To use OIDC with your Jumpstarter installation:
 2. Configure your OIDC provider to work with Jumpstarter
 3. Create users with appropriate OIDC usernames
 
+## Migrating credentials after a signing-key change
+
+The controller normally verifies tokens using the current signing key. During
+migration, it can also accept an **exact, unexpired credential already stored in
+Kubernetes**. It does not trust signatures made with the previous signing key.
+
+This fallback is enabled by default. It runs only after normal authentication
+fails. Valid current-key and external OIDC tokens do not cause an additional
+Secret lookup. The fallback checks the token's issuer, audience, expiry and
+internal subject, then requires an exact token or SHA-256 hash match in the
+cached Secret before re-reading the Secret and its owner directly from the API
+server. Normal resource authorization, including the identity's UID, still applies.
+
+When reconciliation replaces an old-key token in a `<name>-client` or
+`<name>-exporter` Secret, it retains the old token's hash in the Secret's
+`jumpstarter.dev/legacy-token-hash` annotation. Only the credential actually in
+the Secret is retained; tokens supplied in requests are never enrolled. Install
+this migration support together with the signing-key fix: a credential already
+overwritten without retaining its hash cannot be recovered by this mechanism.
+
+Old tokens keep working until their own expiry; the fallback never extends it.
+Release 0.9 does not provide automatic exporter token refresh. Before the old
+token expires, update each exporter's local `token` field from its replacement
+Secret, preserving driver and TLS settings, and restart the exporter. Clients
+must be re-imported with `jmp admin import` to pick up their replacement
+credentials. Each fallback authentication logs a warning naming the credential
+Secret, without logging the token.
+
+Keep the fallback enabled until the old tokens have expired. Turning it off
+earlier cuts off holders that have not refreshed. The switch only controls
+authentication: reconciliation records and retains the hash even while fallback
+is off. Turning it off deletes nothing, and turning it back on restores access
+for unexpired retained tokens. To permanently revoke a retained credential,
+delete the Secret's `jumpstarter.dev/legacy-token-hash` annotation or the Secret
+itself. These changes affect new authentication; they do not retroactively
+reauthenticate existing streams.
+
+The same migration path covers a `CONTROLLER_KEY` rotation. Only one previous
+generation is retained, so update holders' local credentials before rotating
+again. The retained hash stays until the next credential regeneration, even
+after expiry; an expired token is rejected by the authenticator.
+
+After a suspected signing-key leak, turn the fallback off and re-issue
+credentials. Otherwise, genuine tokens obtained earlier would be carried over
+to the new signing key through the stored-token fallback.
+
+For manually managed deployments, disable the fallback in the controller
+ConfigMap's `config` section and restart the controller:
+
+```yaml
+authentication:
+  internal:
+    allowStoredTokenFallback: false
+```
+
+When omitted, `allowStoredTokenFallback` uses the controller's current default
+(`true`). Explicit `true` and `false` values are preserved.
+
+The release 0.9 operator does not expose this setting and leaves it omitted,
+so operator-managed installations use the enabled default. No operator or CRD
+update is required for this backport.
+
 ## Username Collisions
 
 When using OIDC auto provisioning, Jumpstarter derives resource names directly from

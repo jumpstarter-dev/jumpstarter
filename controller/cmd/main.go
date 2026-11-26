@@ -220,7 +220,7 @@ func main() {
 	}
 
 	authenticator, prefix, router, option, provisioning, leasePolicy,
-		hiddenLabels, deprecatedLabels, err := config.LoadConfiguration(
+		hiddenLabels, deprecatedLabels, allowStoredTokenFallback, err := config.LoadConfiguration(
 		context.Background(),
 		mgr.GetAPIReader(),
 		mgr.GetScheme(),
@@ -237,6 +237,13 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "unable to load configuration")
 		os.Exit(1)
+	}
+
+	if allowStoredTokenFallback {
+		authenticator = &authentication.StoredTokenAuthenticator{
+			Primary: authenticator, Cache: mgr.GetCache(), Reader: mgr.GetAPIReader(), Namespace: watchNamespace,
+			Issuer: oidcSigner.Issuer(), Audience: oidcSigner.Audience(), Prefix: prefix,
+		}
 	}
 
 	if err = (&controller.ExporterReconciler{

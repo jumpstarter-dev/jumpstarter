@@ -145,12 +145,15 @@ jobs:
           fetch-depth: 0
 
       - id: uv
-        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+          echo "python-version=$(cat .py-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
-          python-version-file: .py-version
+          python-version: ${{ steps.uv.outputs.python-version }}
+          ignore-nothing-to-cache: true
 
       - name: Cache python wheels
         id: cache
@@ -187,12 +190,14 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - id: uv
-        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+          echo "python-version=$(cat .py-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
-          python-version-file: .py-version
+          python-version: ${{ steps.uv.outputs.python-version }}
 
       - name: Install Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -251,12 +256,14 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - id: uv
-        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+          echo "python-version=$(cat .py-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
-          python-version-file: .py-version
+          python-version: ${{ steps.uv.outputs.python-version }}
 
       - name: Install Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
@@ -293,12 +300,14 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - id: uv
-        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+          echo "python-version=$(cat .py-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
-          python-version-file: .py-version
+          python-version: ${{ steps.uv.outputs.python-version }}
 
       - name: Install Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
