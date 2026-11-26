@@ -147,3 +147,18 @@ def test_log_progress_zero_total_shows_zero_bytes_not_question_mark():
 
     assert "/ 0 B" in msg
     assert "/ ?" not in msg
+
+
+class _PostInitRecorder:
+    def __post_init__(self):
+        self.next_post_init_ran = True
+
+
+class _ProgressStreamWithPostInitMixin(ProgressStream, _PostInitRecorder):
+    pass
+
+
+def test_post_init_runs_the_post_init_of_a_mixin_after_the_stream():
+    stream = _ProgressStreamWithPostInitMixin(stream=_BytesStream(), logging=True)
+
+    assert stream.next_post_init_ran
