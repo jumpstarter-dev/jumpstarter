@@ -1333,6 +1333,27 @@ wheels = [
 ]
 
 [[package]]
+name = "geographiclib"
+version = "2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/78/4892343230a9d29faa1364564e525307a37e54ad776ea62c12129dbba704/geographiclib-2.1.tar.gz", hash = "sha256:6a6545e6262d0ed3522e13c515713718797e37ed8c672c31ad7b249f372ef108", size = 37004, upload-time = "2025-08-21T21:34:26Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/b3/802576f2ea5dcb48501bb162e4c7b7b3ca5654a42b2c968ef98a797a4c79/geographiclib-2.1-py3-none-any.whl", hash = "sha256:e2a873b9b9e7fc38721ad73d5f4e6c9ed140d428a339970f505c07056997d40b", size = 40740, upload-time = "2025-08-21T21:34:24.955Z" },
+]
+
+[[package]]
+name = "geopy"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "geographiclib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/0c/b4e42a0495293f6c94364baba4c657c68bc8d8efec784259cc943f4ba28b/geopy-2.5.0.tar.gz", hash = "sha256:7b6c849f18108dcce4faa3d614e2801107b465f7b05fd3c1db9db12e225ae950", size = 122254, upload-time = "2026-07-12T19:50:06.051Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/66/e5/de8b557b279e31cdfb2070ac83eb45dc7e29bd93cd544128756f658e52c7/geopy-2.5.0-py3-none-any.whl", hash = "sha256:8ad8cc226b505ca4d272ae9a2eeba08b8a2c565fc9a04eaefc33ad49c32b51aa", size = 114619, upload-time = "2026-07-12T19:50:04.839Z" },
+]
+
+[[package]]
 name = "google-auth"
 version = "2.40.3"
 source = { registry = "https://pypi.org/simple" }
@@ -4310,8 +4331,15 @@ dependencies = [
     { name = "robotframework" },
 ]
 
+[package.optional-dependencies]
+appium = [
+    { name = "jumpstarter-driver-appium" },
+    { name = "robotframework-appiumlibrary" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal" },
@@ -4320,16 +4348,21 @@ dev = [
     { name = "jumpstarter-driver-shell" },
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "robotframework-appiumlibrary" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "jumpstarter", editable = "packages/jumpstarter" },
+    { name = "jumpstarter-driver-appium", marker = "extra == 'appium'", editable = "packages/jumpstarter-driver-appium" },
     { name = "robotframework", specifier = ">=7.5" },
+    { name = "robotframework-appiumlibrary", marker = "extra == 'appium'", specifier = ">=3.0,<4" },
 ]
+provides-extras = ["appium"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
     { name = "jumpstarter-driver-opendal", editable = "packages/jumpstarter-driver-opendal" },
@@ -4338,6 +4371,7 @@ dev = [
     { name = "jumpstarter-driver-shell", editable = "packages/jumpstarter-driver-shell" },
     { name = "pytest", specifier = ">=8.3.2" },
     { name = "pytest-cov", specifier = ">=5.0.0" },
+    { name = "robotframework-appiumlibrary", specifier = ">=3.0,<4" },
 ]
 
 [[package]]
@@ -6236,6 +6270,24 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/99/82/c7e3f8acb173c63e17cbdffdadf95a55520c0139cc548ce9ac963424361b/robotframework-7.5.1.tar.gz", hash = "sha256:00f63dc7b0477a137f8a9c1f2e14db8084a4d187a76f3fec6c2567875c32b932", size = 686670, upload-time = "2026-11-02T21:35:34.339Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2b/a3/6d528a8ac42a03ba4b9f6642b80ea37de2d18086d458c044bb6a6a8df5b9/robotframework-7.5.1-py3-none-any.whl", hash = "sha256:a46196098d92a30cb8b68c426d8d9a35b048d7936fc2cd9959b8c5c6f57524c8", size = 844474, upload-time = "2026-11-02T21:35:32.447Z" },
+]
+
+[[package]]
+name = "robotframework-appiumlibrary"
+version = "3.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "appium-python-client" },
+    { name = "decorator" },
+    { name = "docutils" },
+    { name = "geopy" },
+    { name = "robotframework" },
+    { name = "selenium" },
+    { name = "six" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/17/ab8c7c8a06daa561520a33261369ede02383cd562a24123b744494a94e76/robotframework_appiumlibrary-3.2.1.tar.gz", hash = "sha256:f1a56efbbc00ea63ab577a18dcf4fcf5c262aa1cdbcab3ba97f971f75e255dfd", size = 40044, upload-time = "2025-12-15T20:16:02.642Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/e6/21572505b7af0d933591861b821ee538fbd413adab09011a916aa05ed03f/robotframework_appiumlibrary-3.2.1-py3-none-any.whl", hash = "sha256:9bae5a078101a3eb667aef05829caa853dc7544ab36caf0e8ca5a79480ed464e", size = 47794, upload-time = "2025-12-15T20:16:01.278Z" },
 ]
 
 [[package]]

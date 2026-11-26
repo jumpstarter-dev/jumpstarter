@@ -11,10 +11,18 @@ dependencies = [
   "robotframework>=7.5",
 ]
 
+[project.optional-dependencies]
+appium = [
+  "jumpstarter-driver-appium",
+  "robotframework-appiumlibrary>=3.0,<4",
+]
+
 [dependency-groups]
 dev = [
   "pytest>=8.3.2",
   "pytest-cov>=5.0.0",
+  "jumpstarter-driver-appium",
+  "robotframework-appiumlibrary>=3.0,<4",
   "jumpstarter-driver-composite",
   "jumpstarter-driver-network",
   "jumpstarter-driver-opendal",
