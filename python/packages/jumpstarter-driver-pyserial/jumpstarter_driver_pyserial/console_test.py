@@ -292,6 +292,62 @@ def test_run_interrupted_while_starting_its_task_stops_it():
         assert not status["write_token_held"], status
 
 
+class _StalledStdout:
+    """A stdout whose flush() blocks until unstall is set, as one nobody reads does."""
+
+    def __init__(self):
+        self.flushing = threading.Event()
+        self.unstall = threading.Event()
+        self.flushed = threading.Event()
+        self.buffer = Mock()
+
+    def flush(self):
+        self.flushing.set()
+        self.unstall.wait(timeout=5)
+        self.flushed.set()
+
+
+def test_interrupted_run_returns_while_stdout_stalls():
+    if threading.current_thread() is not threading.main_thread():
+        pytest.skip("needs to interrupt the main thread")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
+
+    stdout = _StalledStdout()
+
+    def stall_stdout():
+        _wait_write_token_held(client)
+        keyboard.writer.write(b"a")  # echoed by loop://
+        assert stdout.flushing.wait(timeout=5), "console did not flush its output"
+
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        try:
+            _interrupt_run(Console(client), keyboard, stall_stdout, stdout=stdout)
+            assert not stdout.flushed.is_set(), "console.run() waited for the stalled stdout"
+            status = _wait_detached(client)
+            assert not stdout.flushed.is_set(), "console stayed attached until stdout drained"
+        finally:
+            stdout.unstall.set()
+        assert not status["write_token_held"], status
+
+
+def test_ctrl_b_exits_while_stdout_stalls():
+    stdout = _StalledStdout()
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        try:
+            with _running_console(Console(client), keyboard, stdout=stdout) as run:
+                _wait_registered(client, run)
+                keyboard.writer.write(b"a")  # echoed by loop://
+                assert stdout.flushing.wait(timeout=5), "console did not flush its output"
+                keyboard.writer.write(EXIT_HOTKEY)
+                run.thread.join(timeout=2)
+                assert not run.thread.is_alive(), "console waited for the stalled stdout to exit"
+            status = _wait_detached(client)
+            assert not stdout.flushed.is_set(), "console stayed attached until stdout drained"
+        finally:
+            stdout.unstall.set()
+        assert run.error is None
+        assert not status["write_token_held"], status
+
+
 class _FakePowerControl(PowerClient):
     """Power client double that records the thread cycle() ran on."""
 

@@ -16,7 +16,6 @@ from anyio import (
     wait_readable,
 )
 from anyio.abc import TaskGroup
-from anyio.streams.file import FileWriteStream
 from jumpstarter_driver_power.client import PowerClient
 
 from jumpstarter.client import DriverClient
@@ -35,6 +34,11 @@ STREAM_ERRORS = (EndOfStream, BrokenResourceError, ClosedResourceError)
 
 class ConsoleStreamDrop(Exception):
     """Serial stream closed by the exporter (kicked, token revoked, lease ended)."""
+
+
+def _write_stdout(data: bytes):
+    sys.stdout.buffer.write(data)
+    sys.stdout.flush()
 
 
 class HotkeyDetector:
@@ -117,13 +121,12 @@ class Console:
             raise failure
 
     async def __serial_to_stdout(self, stream):
-        stdout = FileWriteStream(sys.stdout.buffer)
         try:
             while True:
                 data = await stream.receive()
-                await stdout.send(data)
-                sys.stdout.flush()
-        except STREAM_ERRORS:
+                # Abandoned on cancel: a stdout nobody drains must not keep the console attached.
+                await to_thread.run_sync(_write_stdout, data, abandon_on_cancel=True)
+        except (*STREAM_ERRORS, OSError, ValueError):  # ValueError: stdout closed
             raise ConsoleStreamDrop() from None
 
     async def __attach_input(self, stream):
