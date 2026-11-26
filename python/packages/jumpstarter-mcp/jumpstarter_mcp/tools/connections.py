@@ -6,9 +6,9 @@ import contextlib
 import logging
 from datetime import timedelta
 
+from jumpstarter_mcp import catalogue
 from jumpstarter_mcp.connections import ConnectionManager
 
-from jumpstarter.client.introspect import list_drivers, walk_click_tree
 from jumpstarter.config.client import ClientConfigV1Alpha1
 
 logger = logging.getLogger(__name__)
@@ -38,28 +38,36 @@ async def connect(
         logger.exception("Unexpected connection failure")
         return {"error": f"Failed to connect: {exc}"}
 
-    # Auto-explore: get CLI tree and driver list
-    cli_tree = None
-    drivers = None
+    # What the device can do, shortly: its drivers and the names of their tools. Their arguments are asked for
+    # when they are needed (jmp_tools), and the whole command tree only when someone wants it (jmp_explore): the
+    # answer to a connection is read by an agent every time, whatever it goes on to use.
+    tools: dict[str, list[str]] | None = None
     with contextlib.suppress(Exception):
-        client = conn.client
-        if hasattr(client, "cli"):
-            from anyio import to_thread
+        from anyio import to_thread
 
-            cli_cmd = await to_thread.run_sync(client.cli)  # ty: ignore[invalid-argument-type]
-            cli_tree = walk_click_tree(cli_cmd)
-
-    with contextlib.suppress(Exception):
-        drivers = list_drivers(conn.client)
+        tools = await to_thread.run_sync(_tool_names, conn.client)
 
     return {
         "connection_id": conn.id,
         "lease_name": conn.lease_name,
         "exporter_name": conn.exporter_name,
         "socket_path": conn.socket_path,
-        "cli_tree": cli_tree,
-        "drivers": drivers,
+        "tools": tools,
+        "next": (
+            "jmp_tools(connection_id, driver) gives a driver's tools with their arguments; call them with jmp_read "
+            "(tools that only read) or jmp_call. Pass this connection_id with every call."
+        ),
     }
+
+
+def _tool_names(client) -> dict[str, list[str]]:
+    """The tools of each driver of a lease, by the driver's path (``""`` is the device itself)."""
+    names: dict[str, list[str]] = {}
+    for path, node in catalogue.walk(client):
+        offered = [command.tool for command in catalogue.driver_commands(path, node)]
+        if offered:
+            names[".".join(path)] = offered
+    return names
 
 
 async def disconnect(

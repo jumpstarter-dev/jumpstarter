@@ -1,5 +1,11 @@
 """
 Client-side Click group helpers for building driver CLIs.
+
+Today a driver CLI is written by hand inside ``DriverClient.cli()`` with
+:func:`driver_click_group` and ``@base.command()``. Method-level decorators
+(``@cli.command()`` / ``@cli.hidden``) that derive commands from the method
+signature are planned; they will record their metadata through
+:mod:`jumpstarter.client.decorators._frontend`.
 """
 
 from collections.abc import Callable
