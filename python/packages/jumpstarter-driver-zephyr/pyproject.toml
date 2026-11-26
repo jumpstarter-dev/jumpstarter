@@ -28,7 +28,7 @@ Homepage = "https://jumpstarter.dev"
 source_archive = "https://github.com/jumpstarter-dev/repo/archive/{commit_hash}.zip"
 
 [tool.pytest.ini_options]
-addopts = "--cov --cov-report=html --cov-report=xml --strict-markers --strict-config"
+addopts = "--cov=. --cov-report=html --cov-report=xml --strict-markers --strict-config"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["jumpstarter_driver_zephyr"]
