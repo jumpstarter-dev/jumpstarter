@@ -383,6 +383,44 @@ call `Start Appium` again for the same driver, it returns the same server.
 The local port closes at the end of `scope`, when the session closes, or with
 `Stop Appium`.
 
+### ADB
+
+These keywords need the `android` extra:
+`pip install "jumpstarter-robot[android]"`. The `mobile` extra installs
+`android` and `appium`.
+
+`Open ADB Device` connects to the Android device of an ADB driver. It uses
+[adbutils](https://github.com/openatx/adbutils) through a port forward. Thus a
+local `adb` program is not necessary for an ADB server driver (`AdbServer`, or
+the `adb` child of an emulator). For an `AdbDevice` driver, a local `adb`
+program is necessary.
+
+```robotframework
+Open ADB Device    emulator    alias=phone    timeout=5 min
+${model}=    ADB Get Property    ro.product.model
+ADB Install    ${CURDIR}/app.apk
+${output}=    ADB Shell    pm list packages
+[Teardown]    Close All ADB Devices
+```
+
+You can open more than one device. The other keywords use the current device.
+`Switch ADB Device` changes the current device. A device closes at the end of
+its `scope`, when its session closes, or with `Close ADB Device`.
+
+| Keyword | Arguments | Description |
+| --- | --- | --- |
+| `Open ADB Device` | `path, alias=None, serial=None, timeout=180s, wait_for_boot=True, scope=suite, session=None` | Connects to the Android device of the ADB driver at `path` and makes it the current device. |
+| `Switch ADB Device` | `alias` | Makes the device with `alias` (or index) the current device. |
+| `Close ADB Device` | `alias=None` | Closes the current device, or the device with `alias`. |
+| `Close All ADB Devices` | | Closes all devices. |
+| `ADB Shell` | `command, timeout=None, expected_rc=0` | Runs `command` in the shell of the device. Returns the output. |
+| `ADB Install` | `apk, replace=True, grant_permissions=True` | Installs the APK file `apk`. |
+| `ADB Uninstall` | `package` | Removes `package` from the device. |
+| `ADB Push` | `local, remote` | Copies the local file `local` to `remote` on the device. |
+| `ADB Pull` | `remote, local=None` | Copies `remote` from the device to `local`. Returns the local path. |
+| `ADB Get Property` | `name` | Returns the system property `name`. |
+| `ADB Wait For Boot` | `timeout=180s` | Waits until the device completes its startup. |
+
 ## Change the keywords of a driver
 
 Each public method of a `DriverClient` class is a keyword. You do not change

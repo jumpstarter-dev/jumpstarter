@@ -4332,13 +4332,22 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+android = [
+    { name = "adbutils" },
+]
 appium = [
+    { name = "jumpstarter-driver-appium" },
+    { name = "robotframework-appiumlibrary" },
+]
+mobile = [
+    { name = "adbutils" },
     { name = "jumpstarter-driver-appium" },
     { name = "robotframework-appiumlibrary" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "adbutils" },
     { name = "jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network" },
@@ -4353,15 +4362,20 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "adbutils", marker = "extra == 'android'", specifier = ">=2.8.7" },
+    { name = "adbutils", marker = "extra == 'mobile'", specifier = ">=2.8.7" },
     { name = "jumpstarter", editable = "packages/jumpstarter" },
     { name = "jumpstarter-driver-appium", marker = "extra == 'appium'", editable = "packages/jumpstarter-driver-appium" },
+    { name = "jumpstarter-driver-appium", marker = "extra == 'mobile'", editable = "packages/jumpstarter-driver-appium" },
     { name = "robotframework", specifier = ">=7.5" },
     { name = "robotframework-appiumlibrary", marker = "extra == 'appium'", specifier = ">=3.0,<4" },
+    { name = "robotframework-appiumlibrary", marker = "extra == 'mobile'", specifier = ">=3.0,<4" },
 ]
-provides-extras = ["appium"]
+provides-extras = ["android", "appium", "mobile"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "adbutils", specifier = ">=2.8.7" },
     { name = "jumpstarter-driver-appium", editable = "packages/jumpstarter-driver-appium" },
     { name = "jumpstarter-driver-composite", editable = "packages/jumpstarter-driver-composite" },
     { name = "jumpstarter-driver-network", editable = "packages/jumpstarter-driver-network" },
