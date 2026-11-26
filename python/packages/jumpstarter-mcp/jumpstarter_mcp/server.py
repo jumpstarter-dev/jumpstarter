@@ -3,19 +3,26 @@
 from __future__ import annotations
 
 import asyncio  # noqa: TID251
+import functools
+import inspect
 import json
 import logging
 import os
 import sys
+from collections.abc import Callable
 from io import TextIOWrapper
+from typing import Any, cast
 
 import anyio
 from anyio import ClosedResourceError
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.stdio import stdio_server
 from mcp.types import ToolAnnotations
 
+from jumpstarter_mcp import telemetry
 from jumpstarter_mcp.connections import ConnectionManager
+from jumpstarter_mcp.environments import ENV_VARIABLE, NOT_DELEGATED, EnvironmentError_, Router, ToolFailed, resolve
 from jumpstarter_mcp.tools import commands as cmd_tools
 from jumpstarter_mcp.tools import connections as conn_tools
 from jumpstarter_mcp.tools import generated as generated_tools
@@ -181,7 +188,7 @@ async def _get_config() -> ClientConfigV1Alpha1:
 def _register_lease_tools(mcp: MCPServer) -> None:
     """Register lease and exporter management tools."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
     async def jmp_list_exporters(
         selector: str | None = None,
         include_leases: bool = True,
@@ -209,7 +216,7 @@ def _register_lease_tools(mcp: MCPServer) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True))
     async def jmp_list_leases(
         selector: str | None = None,
     ) -> str:
@@ -222,7 +229,7 @@ def _register_lease_tools(mcp: MCPServer) -> None:
         result = await lease_tools.list_leases(config, selector=selector)
         return json.dumps(result, indent=2)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False))
     async def jmp_create_lease(
         duration_seconds: int = 1800,
         selector: str | None = None,
@@ -243,7 +250,7 @@ def _register_lease_tools(mcp: MCPServer) -> None:
         )
         return json.dumps(result, indent=2)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True))
     async def jmp_delete_lease(lease_id: str) -> str:
         """Delete/release a lease.
 
@@ -258,23 +265,28 @@ def _register_lease_tools(mcp: MCPServer) -> None:
 def _register_connection_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
     """Register connection management tools."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False))
     async def jmp_connect(
         lease_id: str | None = None,
         selector: str | None = None,
         exporter_name: str | None = None,
         duration_seconds: int = 1800,
+        environment: str | None = None,
     ) -> str:
         """Connect to a hardware device, establishing a persistent background connection.
 
         Creates or acquires a lease, starts a background Unix socket, and returns
-        a connection ID plus a summary of available CLI commands and drivers.
+        a connection ID plus the names of the device's tools, by driver.
 
         Args:
             lease_id: Existing lease name to connect to
             selector: Label selector to create a new lease (e.g. "board=qemu")
             exporter_name: Specific exporter name to create a new lease
             duration_seconds: Lease duration in seconds (default: 1800 = 30 minutes)
+            environment: Where this device's drivers are installed, when it is not
+                the selected environment: the name of one of the environments
+                jmp_environments lists as allowed. The connection then belongs to
+                it: every later call that names the connection runs there.
         """
         if not lease_id and not selector and not exporter_name:
             return json.dumps({"error": "One of lease_id, selector, or exporter_name is required"})
@@ -289,7 +301,7 @@ def _register_connection_tools(mcp: MCPServer, manager: ConnectionManager) -> No
         )
         return json.dumps(result, indent=2, default=str)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True))
     async def jmp_disconnect(connection_id: str) -> str:
         """Disconnect from a device and tear down the background connection.
 
@@ -299,7 +311,7 @@ def _register_connection_tools(mcp: MCPServer, manager: ConnectionManager) -> No
         result = await conn_tools.disconnect(manager, connection_id)
         return json.dumps(result, indent=2)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def jmp_list_connections() -> str:
         """List all active persistent connections."""
         result = conn_tools.list_connections(manager)
@@ -309,7 +321,7 @@ def _register_connection_tools(mcp: MCPServer, manager: ConnectionManager) -> No
 def _register_command_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
     """Register command execution and environment tools."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True))
     async def jmp_run(
         connection_id: str,
         command: list[str],
@@ -332,7 +344,7 @@ def _register_command_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
         result = await cmd_tools.run_command(manager, connection_id, command, timeout_seconds)
         return json.dumps(result, indent=2)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False))
     async def jmp_list_events(max_count: int = 50) -> str:
         """Drain and return buffered lease and connection events.
 
@@ -346,7 +358,7 @@ def _register_command_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
         result = await cmd_tools.list_events(manager, max_count)
         return result
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def jmp_get_env(connection_id: str) -> str:
         """Get environment variables, paths, and code examples for this connection.
 
@@ -360,6 +372,14 @@ def _register_command_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
         """
         result = await cmd_tools.get_env(manager, connection_id)
         return json.dumps(result, indent=2)
+
+
+def _answer(result: dict) -> str:
+    """A tool's answer as text; one that says it failed is a failure of the tool (``isError``), with what it says."""
+    text = json.dumps(result, indent=2)
+    if "error" in result:
+        raise ToolError(text)
+    return text
 
 
 def _register_generated_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
@@ -379,7 +399,7 @@ def _register_generated_tools(mcp: MCPServer, manager: ConnectionManager) -> Non
             connection_id: ID of the active connection (the lease to list)
             driver: A driver's path, as listed ("power", "dutlink.console")
         """
-        return json.dumps(await generated_tools.list_tools(manager, connection_id, driver), indent=2)
+        return _answer(await generated_tools.list_tools(manager, connection_id, driver))
 
     @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def jmp_read(connection_id: str, tool: str, arguments: dict | None = None) -> str:
@@ -392,8 +412,7 @@ def _register_generated_tools(mcp: MCPServer, manager: ConnectionManager) -> Non
             tool: The tool's name, as jmp_tools lists it ("power_read")
             arguments: The tool's arguments, by name, as its schema says
         """
-        result = await generated_tools.call_tool(manager, connection_id, tool, arguments, reads_only=True)
-        return json.dumps(result, indent=2)
+        return _answer(await generated_tools.call_tool(manager, connection_id, tool, arguments, reads_only=True))
 
     @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=True, open_world_hint=False))
     async def jmp_call(connection_id: str, tool: str, arguments: dict | None = None) -> str:
@@ -407,13 +426,13 @@ def _register_generated_tools(mcp: MCPServer, manager: ConnectionManager) -> Non
             tool: The tool's name, as jmp_tools lists it ("power_cycle")
             arguments: The tool's arguments, by name, as its schema says
         """
-        return json.dumps(await generated_tools.call_tool(manager, connection_id, tool, arguments), indent=2)
+        return _answer(await generated_tools.call_tool(manager, connection_id, tool, arguments))
 
 
 def _register_discovery_tools(mcp: MCPServer, manager: ConnectionManager) -> None:
     """Register discovery and introspection tools."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def jmp_explore(
         connection_id: str,
         command_path: list[str] | None = None,
@@ -430,7 +449,7 @@ def _register_discovery_tools(mcp: MCPServer, manager: ConnectionManager) -> Non
         result = await cmd_tools.explore(manager, connection_id, command_path)
         return json.dumps(result, indent=2, default=str)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def jmp_drivers(connection_id: str) -> str:
         """List all driver objects in the connected device's driver tree.
 
@@ -442,7 +461,7 @@ def _register_discovery_tools(mcp: MCPServer, manager: ConnectionManager) -> Non
         result = await cmd_tools.drivers(manager, connection_id)
         return json.dumps(result, indent=2)
 
-    @mcp.tool()
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
     async def jmp_driver_methods(
         connection_id: str,
         driver_path: list[str],
@@ -460,16 +479,90 @@ def _register_discovery_tools(mcp: MCPServer, manager: ConnectionManager) -> Non
         return json.dumps(result, indent=2)
 
 
-def create_server() -> tuple[MCPServer, ConnectionManager]:
+class _Routed:
+    """Registers a tool so that a call for another environment is passed on there (``environments.Router``).
+
+    The register functions use it as they would the server: ``@mcp.tool()``. The tool keeps its name, its
+    description and its arguments; only what it does first changes.
+    """
+
+    def __init__(self, mcp: MCPServer, router: Router) -> None:
+        self._mcp = mcp
+        self._router = router
+
+    def tool(self, *args: Any, **kwargs: Any) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        def register(function: Callable[..., Any]) -> Callable[..., Any]:
+            @functools.wraps(function)
+            async def routed(*positional: Any, **named: Any) -> Any:
+                bound = inspect.signature(function).bind(*positional, **named)
+                try:
+                    forwarded = await self._router.forward(getattr(function, "__name__", ""), dict(bound.arguments))
+                except (EnvironmentError_, ToolFailed) as exc:
+                    # a call that could not be passed on, or that failed where it ran, failed: the host is told
+                    # so in the protocol's own way (`isError`), not in a text that looks like an answer
+                    raise ToolError(str(exc)) from exc
+                if forwarded is not NOT_DELEGATED:
+                    return forwarded
+                return await function(*positional, **named)
+
+            self._mcp.tool(*args, **kwargs)(routed)
+            return function
+
+        return register
+
+
+def _register_environment_tools(mcp: MCPServer, router: Router) -> None:
+    """Register the tools that say where the other tools run (jumpstarter_mcp.environments)."""
+
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    async def jmp_environments() -> str:
+        """List the Python environments this server can run the device tools in.
+
+        A device's drivers are Python packages a project installs in its own
+        environment. This server may be installed once, with none of them: it then
+        runs the tools in the environment that has them. Returns the one selected,
+        the ones that may be used (a person named them, in the environments file or
+        when the server was started), which environment each connection belongs
+        to, and any that were found on this machine but are not allowed.
+        """
+        return json.dumps(router.describe(), indent=2)
+
+    @mcp.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False))
+    async def jmp_use_environment(environment: str | None = None) -> str:
+        """Choose the Python environment the device tools run in from now on.
+
+        Applies to what has no connection yet: listing leases and connecting. A
+        connection keeps the environment it was made in, so two devices may be
+        driven from two environments at once. Use it when jmp_connect says a
+        device's drivers are not installed.
+
+        Args:
+            environment: The name of one of the environments jmp_environments
+                lists as allowed. Only those can be chosen: a path, a container or
+                an image given here is not used. Omit it to use this server's own.
+        """
+        try:
+            router.use(environment)
+        except EnvironmentError_ as exc:
+            raise ToolError(str(exc)) from exc
+        return json.dumps(router.describe(), indent=2)
+
+
+def create_server(router: Router | None = None) -> tuple[MCPServer, ConnectionManager]:
     """Create the MCP server and register all tools."""
     mcp = MCPServer("jumpstarter", instructions=SERVER_INSTRUCTIONS)
     manager = ConnectionManager()
+    router = router or Router()
+    mcp.router = router  # ty: ignore[unresolved-attribute]
 
-    _register_lease_tools(mcp)
-    _register_connection_tools(mcp, manager)
-    _register_command_tools(mcp, manager)
-    _register_generated_tools(mcp, manager)
-    _register_discovery_tools(mcp, manager)
+    # a call that belongs to another environment is passed on to the server there; the rest is done here
+    routed = cast(MCPServer, _Routed(mcp, router))
+    _register_lease_tools(routed)
+    _register_connection_tools(routed, manager)
+    _register_command_tools(routed, manager)
+    _register_generated_tools(routed, manager)
+    _register_discovery_tools(routed, manager)
+    _register_environment_tools(mcp, router)
 
     return mcp, manager
 
@@ -516,8 +609,12 @@ def _is_closed_resource_error(exc_group: BaseExceptionGroup) -> bool:
     return True
 
 
-async def run_server():
-    """Run the MCP server with stdio transport."""
+async def run_server(environment: str | None = None, allow_found: bool = False):
+    """Run the MCP server with stdio transport.
+
+    ``environment`` (or ``JMP_MCP_ENV``) is the Python environment the device tools run in when it is not this
+    server's own: see ``jumpstarter_mcp.environments``.
+    """
     # MCP communicates via JSON-RPC over stdin/stdout. Any stray output to
     # stdout (from logging, gRPC C extensions, print() in dependencies, etc.)
     # corrupts the protocol and kills the session. We duplicate the real stdout
@@ -532,9 +629,21 @@ async def run_server():
 
     _setup_logging()
     logger.info("Jumpstarter MCP server starting")
-    mcp, manager = create_server()
+    started_with = None
+    named = environment or os.environ.get(ENV_VARIABLE)
+    if named:
+        try:
+            # what the server is started with is a person's own choice: it is taken as given
+            started_with = resolve(named)
+            logger.info("device tools run in %s", started_with.where)
+        except EnvironmentError_ as exc:
+            # the server still starts: the agent is told when it asks (jmp_environments), and may choose another
+            logger.warning("%s", exc)
+    router = Router(selected=started_with, allow_found=allow_found)
+    telemetry.setup("worker" if router.is_worker else "server")
+    mcp, manager = create_server(router)
     try:
-        async with manager.running():
+        async with manager.running(), router.running():
             mcp_stdout = anyio.wrap_file(TextIOWrapper(os.fdopen(real_stdout_fd, "wb"), encoding="utf-8"))
             async with stdio_server(stdout=mcp_stdout) as (
                 read_stream,

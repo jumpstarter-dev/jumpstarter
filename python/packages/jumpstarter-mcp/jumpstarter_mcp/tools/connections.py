@@ -47,17 +47,46 @@ async def connect(
 
         tools = await to_thread.run_sync(_tool_names, conn.client)
 
+    missing: list[dict[str, str]] = []
+    with contextlib.suppress(Exception):
+        missing = _missing_drivers(conn.client)
+
     return {
         "connection_id": conn.id,
         "lease_name": conn.lease_name,
         "exporter_name": conn.exporter_name,
         "socket_path": conn.socket_path,
         "tools": tools,
+        **(
+            {
+                "missing_drivers": missing,
+                "missing_drivers_note": (
+                    "These drivers of the device have no tools: their client packages are not installed in the "
+                    "Python environment the tools run in. jmp_environments lists the environments found; connect "
+                    "again with `environment` set to the one that has them (or select it with jmp_use_environment)."
+                ),
+            }
+            if missing
+            else {}
+        ),
         "next": (
             "jmp_tools(connection_id, driver) gives a driver's tools with their arguments; call them with jmp_read "
             "(tools that only read) or jmp_call. Pass this connection_id with every call."
         ),
     }
+
+
+def _missing_drivers(client, path: tuple[str, ...] = ()) -> list[dict[str, str]]:
+    """The drivers of a lease whose client class is not installed here (stubs): their path and the class wanted."""
+    from jumpstarter.client.base import StubDriverClient
+
+    if isinstance(client, StubDriverClient):
+        wanted = getattr(client, "labels", {}).get("jumpstarter.dev/client", "")
+        return [{"driver": ".".join(path), "client": wanted}]
+    found: list[dict[str, str]] = []
+    for name, child in (getattr(client, "children", None) or {}).items():
+        found += _missing_drivers(child, (*path, name))
+    return found
 
 
 def _tool_names(client) -> dict[str, list[str]]:
