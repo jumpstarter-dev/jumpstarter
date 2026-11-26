@@ -527,7 +527,7 @@ class _QemuSerialStream(ObjectStream[bytes]):
                         return data
             except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream) as exc:
                 await self._disconnect()
-                power.logger.debug("Serial source disconnected; waiting for power or acquire: %s", exc)
+                power.logger.warning("Serial source disconnected; waiting for power or acquire: %s", exc)
                 # An established PTY hangup stays silent until power or release state changes.
                 await changed.wait()
         raise ClosedResourceError
