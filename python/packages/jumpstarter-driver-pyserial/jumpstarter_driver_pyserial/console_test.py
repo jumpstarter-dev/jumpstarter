@@ -2,6 +2,7 @@ import fcntl
 import logging
 import os
 import select
+import signal
 import struct
 import termios
 import threading
@@ -198,6 +199,97 @@ def test_ctrl_b_exits():
             run.thread.join(timeout=5)
             assert not run.thread.is_alive(), "console did not exit after Ctrl-B x3"
         assert run.error is None
+
+
+def _interrupt_run(console, keyboard, prepare, stdout=None):
+    """Run console.run() on this, the main, thread and send it SIGINT once prepare() returns in another.
+
+    SIGINT raises KeyboardInterrupt even if the process started with it ignored.
+    If prepare() raises, the console gets Ctrl-B x3 instead and the error is re-raised.
+    """
+    main = threading.get_ident()
+    errors = []
+
+    def interrupter():
+        try:
+            prepare()
+        except BaseException as error:  # noqa: BLE001 - re-raised on the main thread
+            errors.append(error)
+            keyboard.writer.write(EXIT_HOTKEY)
+            return
+        signal.pthread_kill(main, signal.SIGINT)
+
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        with ExitStack() as stack:
+            if stdout is None:
+                stdout = stack.enter_context(open(os.devnull, "w"))
+            stack.enter_context(patch("sys.stdin", keyboard.reader))
+            stack.enter_context(patch("sys.stdout", stdout))
+            stack.enter_context(patch.object(console, "setraw", nullcontext))
+            thread = threading.Thread(target=interrupter, daemon=True)
+            thread.start()
+            try:
+                console.run()
+            except KeyboardInterrupt:
+                interrupted = True
+            else:
+                interrupted = False
+            finally:
+                thread.join()
+    finally:
+        signal.signal(signal.SIGINT, previous)
+    if errors:
+        raise errors[0]
+    assert interrupted, "console.run() returned before it was interrupted"
+
+
+def _wait_write_token_held(client, timeout=5):
+    deadline = time.monotonic() + timeout
+    while not client.call("console_status")["write_token_held"]:
+        if time.monotonic() > deadline:
+            raise AssertionError("console did not register with the exporter")
+        time.sleep(0.01)
+
+
+def test_interrupted_run_stops_console_task():
+    if threading.current_thread() is not threading.main_thread():
+        pytest.skip("needs to interrupt the main thread")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
+
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        _interrupt_run(Console(client), keyboard, lambda: _wait_write_token_held(client))
+        try:
+            status = _wait_detached(client)
+        finally:
+            keyboard.writer.write(EXIT_HOTKEY)  # ends a console task that outlived run()
+        assert not status["write_token_held"], status
+
+
+def test_run_interrupted_while_starting_its_task_stops_it():
+    with _pty_pair() as keyboard, serve(PySerial(url="loop://")) as client:
+        console = Console(client)
+        spawn = client.portal._spawn_task_from_thread
+
+        def spawn_then_interrupt(func, *args):
+            spawn(func, *args)
+            if getattr(func, "__self__", None) is console:
+                raise KeyboardInterrupt  # as SIGINT does while the caller waits for the task to be queued
+
+        with (
+            patch.object(client.portal, "_spawn_task_from_thread", spawn_then_interrupt),
+            patch("sys.stdin", keyboard.reader),
+            patch("sys.stdout", Mock()),
+            patch.object(console, "setraw", nullcontext),
+        ):
+            with pytest.raises(KeyboardInterrupt):
+                console.run()
+            time.sleep(0.2)  # time for a console task that outlived run() to attach
+            try:
+                status = _wait_detached(client)
+            finally:
+                keyboard.writer.write(EXIT_HOTKEY)  # ends a console task that outlived run()
+                time.sleep(0.2)  # while it still reads the patched stdin
+        assert not status["write_token_held"], status
 
 
 class _FakePowerControl(PowerClient):

@@ -6,7 +6,15 @@ import tty
 from collections.abc import Collection
 from contextlib import contextmanager
 
-from anyio import BrokenResourceError, ClosedResourceError, EndOfStream, create_task_group, to_thread, wait_readable
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    ClosedResourceError,
+    EndOfStream,
+    create_task_group,
+    to_thread,
+    wait_readable,
+)
 from anyio.abc import TaskGroup
 from anyio.streams.file import FileWriteStream
 from jumpstarter_driver_power.client import PowerClient
@@ -66,8 +74,14 @@ class Console:
         self.power_control = power_control
 
     def run(self):
+        portal = self.serial_client.portal
+        # Created before the task is submitted, so an interrupt at any point after can cancel it.
+        scope = portal.call(CancelScope)
         with self.setraw():
-            self.serial_client.portal.call(self.__run)
+            try:
+                portal.call(self.__run, scope)
+            finally:
+                portal.call(scope.cancel)
 
     @contextmanager
     def setraw(self):
@@ -78,7 +92,11 @@ class Console:
         finally:
             termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, original)
 
-    async def __run(self):
+    async def __run(self, scope: CancelScope):
+        with scope:
+            await self.__console()
+
+    async def __console(self):
         self._stream = None
         self._typed_ahead = bytearray()
         self._send_warned = False
