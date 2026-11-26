@@ -7,13 +7,11 @@ import os
 import re
 import shlex
 import sys
-import threading
 import time
-from concurrent.futures import CancelledError
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from queue import Queue
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -158,7 +156,9 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         oci_creds = self._resolve_oci_credentials(path, oci_username, oci_password)
         oci_username = oci_creds.username
         oci_password = oci_creds.plain_password
-        should_download_to_httpd = True
+        # The image upload to the exporter's storage, when the DUT downloads the image from
+        # there. The Future keeps the outcome for every flash attempt to read.
+        upload: Future[None] | None = None
         image_url = ""
         original_http_url = None
         operator_scheme = None
@@ -168,14 +168,15 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             oci_username = None
             oci_password = None
 
+        # start counting time for the flash operation
+        start_time = time.time()
+
         if is_oci_path:
             # OCI URLs are always passed directly to fls
             image_url = path
-            should_download_to_httpd = False
         elif path.startswith(("http://", "https://")) and not force_exporter_http:
             # the flasher image can handle the http(s) from a remote directly, unless target is isolated
             image_url = path
-            should_download_to_httpd = False
         else:
             # use the exporter's http server for the flasher image, we should download it first
             if operator is None:
@@ -191,41 +192,30 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                 else:
                     path, operator, operator_scheme = operator_for_path(path)
 
-        # start counting time for the flash operation
-        start_time = time.time()
-
-        # Initialize storage_thread and error_queue
-        storage_thread = None
-        error_queue = Queue()
-
-        if should_download_to_httpd:
-            # Start the storage write operation in the background
-            storage_thread = threading.Thread(
-                target=self._transfer_bg_thread,
-                args=(
-                    path,
-                    operator,
-                    operator_scheme,
-                    os_image_checksum,
-                    self.http.storage,
-                    error_queue,
-                    original_http_url,
-                    headers,
-                ),
-                name="storage_transfer",
+            uploader = ThreadPoolExecutor(max_workers=1, thread_name_prefix="storage_transfer")
+            upload = uploader.submit(
+                self._transfer_bg_thread,
+                path,
+                operator,
+                operator_scheme,
+                os_image_checksum,
+                self.http.storage,
+                original_http_url,
+                headers,
             )
-            storage_thread.start()
+            # Nothing else is submitted; the upload runs on without blocking a failing flash()
+            uploader.shutdown(wait=False)
 
         # Make the exporter download the bundle contents and set files in the right places
         self.logger.info("Setting up flasher bundle files in exporter")
         self.call("setup_flasher_bundle", force_flash_bundle)
 
-        # Early exit if there was an error in the background thread
-        if should_download_to_httpd and not error_queue.empty():
-            raise error_queue.get()
+        # Early exit if the upload has already failed
+        if upload is not None and upload.done():
+            upload.result()
 
         with self._services_up():
-            if should_download_to_httpd:
+            if upload is not None:
                 image_url = self.http.get_url() + "/" + self._filename(path)
 
             # Retry logic at the highest level - retry entire console setup and flash operation
@@ -236,9 +226,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
                         block_device,
                         path,
                         image_url,
-                        should_download_to_httpd,
-                        storage_thread,
-                        error_queue,
+                        upload,
                         cacert_file,
                         insecure_tls,
                         headers,
@@ -444,9 +432,7 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
         block_device: str | None,
         path: PathBuf,
         image_url: str,
-        should_download_to_httpd: bool,
-        storage_thread: threading.Thread | None,
-        error_queue: Queue,
+        upload: Future[None] | None,
         cacert_file: str | None,
         insecure_tls: bool,
         headers: dict[str, str] | None,
@@ -497,8 +483,8 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             console.expect(manifest.spec.login.prompt, timeout=EXPECT_TIMEOUT_DEFAULT)
 
             stored_cacert = None
-            if should_download_to_httpd:
-                self._wait_for_storage_thread(storage_thread, error_queue)
+            if upload is not None:
+                self._wait_for_upload(upload)
             else:
                 stored_cacert = self._setup_flasher_ssl(console, manifest, cacert_file)
 
@@ -1028,32 +1014,28 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         return target_path
 
-    def _wait_for_storage_thread(self, storage_thread, error_queue):
-        """Wait for the storage write operation to complete and check for exceptions.
+    def _wait_for_upload(self, upload: Future[None]):
+        """Wait for the image upload to the exporter's storage to finish.
 
-        Args:
-            storage_thread: The background thread handling storage operations
-            error_queue: Queue containing any exceptions from the background thread
+        A failed upload is not retryable: retries do not upload again, so another
+        attempt would flash whatever the exporter holds under that filename.
 
         Raises:
-            Exception: Any exception that occurred in the background thread
+            FlashNonRetryableError: The upload failed
         """
-        # Wait for the storage write operation to complete before proceeding
         self.logger.info("Waiting until the http image preparation in storage is completed")
-        storage_thread.join()
-
-        # Check if there were any exceptions in the background thread
-        if not error_queue.empty():
-            raise error_queue.get()
+        try:
+            upload.result()
+        except Exception as e:
+            raise FlashNonRetryableError("Uploading the image to the exporter failed") from e
 
     def _transfer_bg_thread(
         self,
         src_path: PathBuf,
         src_operator: Operator,
-        src_operator_scheme: str,
+        src_operator_scheme: str | None,
         known_hash: str | None,
         to_storage: OpendalClient,
-        error_queue,
         original_url: str | None = None,
         headers: dict[str, str] | None = None,
     ):
@@ -1062,7 +1044,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
             src_path: Path to the source image
             src_operator: Operator to read the source image
             to_storage: Storage operator to write the image to
-            error_queue: Queue to put exceptions in if any
             known_hash: Known hash of the image
             original_url: Original URL for HTTP fallback
             headers: HTTP headers for requests
@@ -1101,7 +1082,6 @@ class BaseFlasherClient(FlasherClient, CompositeClient):
 
         except Exception as e:
             self.logger.error(f"Error writing image to storage: {e}")
-            error_queue.put(e)
             raise
 
     def _sha256_file(self, src_operator, src_path) -> str:
