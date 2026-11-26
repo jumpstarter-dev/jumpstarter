@@ -282,6 +282,20 @@ def test_get_existing_cvds_non_dict(requests_mock, drv):
         drv._get_existing_cvds()
 
 
+def test_all_cvds_rejects_malformed_entries(requests_mock, drv):
+    requests_mock.get(f"{BASE}/cvds", json={"cvds": [None]})
+    with pytest.raises(CuttlefishError, match="unexpected response"):
+        drv._all_cvds()
+
+
+def test_delete_cvds_keeps_identity_on_failure(requests_mock, drv):
+    drv._cvd_group, drv._cvd_name = "cvd_9", "3"
+    requests_mock.delete(f"{BASE}/cvds/cvd_9/3", status_code=500, text="boom")
+    failed = drv._delete_cvds([{"group": "cvd_9", "name": "3"}])
+    assert failed == ["cvd_9/3"]
+    assert (drv._cvd_group, drv._cvd_name) == ("cvd_9", "3")
+
+
 def test_auto_connect_adb(drv):
     drv.children["adb"] = MagicMock()
     result = drv._auto_connect_adb()
@@ -491,12 +505,6 @@ def test_cvd_power_read_not_implemented(drv):
         list(power.read())
 
 
-def test_cvd_flasher_flash_not_implemented(drv):
-    flasher = drv.children["storage"]
-    with pytest.raises(NotImplementedError):
-        flasher.flash("source")
-
-
 def test_cvd_flasher_dump_not_implemented(drv):
     flasher = drv.children["storage"]
     with pytest.raises(NotImplementedError):
@@ -660,6 +668,21 @@ def test_managed_initialization_preserves_startup_runtime_id(drv, tmp_path):
     runtime_id.write_text("runtime-2")
     with pytest.raises(CuttlefishError, match="restarted"):
         Cuttlefish(**config)  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize("instance,error", [
+    ({}, "loads images from None"),
+    ({"disk": None}, "loads images from None"),
+    ({"disk": {"default_build": "@ab/aosp-main/aosp_cf_x86_64_phone"}}, "loads images from @ab/aosp-main"),
+    ({"disk": {"default_build": "/images"}, "boot": {"kernel": {"build": "/kernels"}}}, "sets boot.kernel"),
+    ({"disk": {"default_build": "/images", "super": {"system": "/gsi"}}}, "sets disk.super"),
+])
+def test_flashing_needs_the_cvd_to_boot_from_images_dir(drv, instance, error):
+    # Otherwise a flash would succeed and change nothing the CVD boots. (drv
+    # stands in for adb, which constructing a driver needs.)
+    with pytest.raises(CuttlefishError, match=error):
+        Cuttlefish(images_dir="/images", env_config={"instances": [instance]})
+    Cuttlefish(images_dir="/images", env_config={"instances": [{"disk": {"default_build": "/images/"}, "boot": None}]})
 
 
 # --- WebRTC display over the lease ---
