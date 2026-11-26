@@ -4,9 +4,14 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	mathrand "math/rand"
 	"testing"
 	"time"
 
+	"filippo.io/keygen"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -121,5 +126,46 @@ func TestNewSignerFromSeedDeterministic(t *testing.T) {
 	}
 	if err := s2.Validate(token1); err != nil {
 		t.Error("tokens from same seed should validate against each other")
+	}
+}
+
+func TestNewSignerFromSeedDoesNotUseTruncatedMathRandSeed(t *testing.T) {
+	seed := []byte("test-seed-value")
+
+	signer, err := NewSignerFromSeed(seed, "https://test", "aud")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if signer.privatekey.Equal(truncatedMathRandSigningKey(t, seed)) {
+		t.Fatal("signing key matches the math/rand derivation, whose seed space is only 2^31 states")
+	}
+}
+
+func truncatedMathRandSigningKey(t *testing.T, seed []byte) *ecdsa.PrivateKey {
+	t.Helper()
+	hash := sha256.Sum256(seed)
+	source := mathrand.NewSource(int64(binary.BigEndian.Uint64(hash[:8])))
+	key, err := keygen.ECDSALegacy(elliptic.P256(), mathrand.New(source))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+func TestNewSignerFromSeedKeepsDerivedKeyStable(t *testing.T) {
+	signer, err := NewSignerFromSeed([]byte("test-seed-value"), "https://test", "aud")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publicKey, err := signer.privatekey.PublicKey.ECDH()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const want = "0419ac797993ef89bcaa96043d92f1628004460b60a986fea259cfe5833c07f6580eb9116e6f1d4ce286487bd21b6c5409e8088843f09498eaa2210fd44c470f38"
+	if got := hex.EncodeToString(publicKey.Bytes()); got != want {
+		t.Fatalf("derived public key changed, which invalidates every token the controller has issued: got %s", got)
 	}
 }

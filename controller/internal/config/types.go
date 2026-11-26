@@ -48,6 +48,10 @@ type Internal struct {
 	// TokenLifetime defines how long issued tokens are valid.
 	// Parsed as a Go duration string (e.g., "43800h", "30d").
 	TokenLifetime string `json:"tokenLifetime,omitempty" yaml:"tokenLifetime,omitempty"`
+
+	// AllowStoredTokenFallback permits exact stored credentials during signing-key
+	// migrations. Nil uses the controller's current default (true).
+	AllowStoredTokenFallback *bool `json:"allowStoredTokenFallback,omitempty" yaml:"allowStoredTokenFallback,omitempty"`
 }
 
 // K8s defines the Kubernetes service account token authentication configuration.

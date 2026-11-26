@@ -2,7 +2,10 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 
+	"github.com/jumpstarter-dev/jumpstarter-controller/internal/authentication"
 	"github.com/jumpstarter-dev/jumpstarter-controller/internal/oidc"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -67,13 +70,24 @@ func ensureSecret(
 		if !ok || signer.Validate(string(token)) != nil {
 			// Secret present but invalid
 			logger.Info("secret present but invalid, updating")
-			token, err := signer.Token(subject)
+			newToken, err := signer.Token(subject)
 			if err != nil {
 				logger.Error(err, "failed to sign token")
 				return nil, err
 			}
+			// Retain only the immediately previous credential, regardless of
+			// whether stored-token authentication is currently enabled.
+			delete(secret.Annotations, authentication.LegacyTokenHashAnnotation)
+			// Trust only a credential already in the Secret, with the expected
+			// identity and valid lifetime. Never enroll a token from a request.
+			if claims, err := authentication.StoredTokenClaims(string(token), signer.Issuer(), signer.Audience()); err == nil && claims.Subject == subject {
+				if secret.Annotations == nil {
+					secret.Annotations = map[string]string{}
+				}
+				secret.Annotations[authentication.LegacyTokenHashAnnotation] = TokenHash(string(token))
+			}
 			secret.Data = map[string][]byte{
-				TokenKey: []byte(token),
+				TokenKey: []byte(newToken),
 			}
 		}
 		if err = kclient.Patch(ctx, &secret, original); err != nil {
@@ -82,4 +96,9 @@ func ensureSecret(
 		}
 		return &secret, nil
 	}
+}
+
+func TokenHash(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(digest[:])
 }

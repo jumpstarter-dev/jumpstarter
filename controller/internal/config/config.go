@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,27 +52,27 @@ func LoadConfiguration(
 	key client.ObjectKey,
 	signer *oidc.Signer,
 	certificateAuthority string,
-) (authenticator.Token, string, Router, []grpc.ServerOption, *Provisioning, *LeasePolicy, *HiddenLabels, *DeprecatedLabels, error) {
+) (authenticator.Token, string, Router, []grpc.ServerOption, *Provisioning, *LeasePolicy, *HiddenLabels, *DeprecatedLabels, bool, error) {
 	var configmap corev1.ConfigMap
 	if err := client.Get(ctx, key, &configmap); err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, "", nil, nil, nil, nil, nil, nil, false, err
 	}
 
 	rawRouter, ok := configmap.Data["router"]
 	if !ok {
-		return nil, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("LoadConfiguration: missing router section")
+		return nil, "", nil, nil, nil, nil, nil, nil, false, fmt.Errorf("LoadConfiguration: missing router section")
 	}
 
 	var router Router
 	if err := yaml.Unmarshal([]byte(rawRouter), &router); err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, "", nil, nil, nil, nil, nil, nil, false, err
 	}
 
 	rawAuthenticationConfiguration, ok := configmap.Data["authentication"]
 	if ok {
 		// backwards compatibility
 		// TODO: remove in 0.7.0
-		authenticator, prefix, err := oidc.LoadAuthenticationConfiguration(
+		authenticator, prefix, allowStoredTokens, err := oidc.LoadAuthenticationConfiguration(
 			ctx,
 			scheme,
 			[]byte(rawAuthenticationConfiguration),
@@ -79,7 +80,7 @@ func LoadConfiguration(
 			certificateAuthority,
 		)
 		if err != nil {
-			return nil, "", nil, nil, nil, nil, nil, nil, err
+			return nil, "", nil, nil, nil, nil, nil, nil, false, err
 		}
 
 		return authenticator, prefix, router, []grpc.ServerOption{
@@ -87,17 +88,17 @@ func LoadConfiguration(
 				MinTime:             1 * time.Second,
 				PermitWithoutStream: true,
 			}),
-		}, &Provisioning{Enabled: false}, &LeasePolicy{MaxTags: 10}, nil, nil, nil
+		}, &Provisioning{Enabled: false}, &LeasePolicy{MaxTags: 10}, nil, nil, allowStoredTokens, nil
 	}
 
 	rawConfig, ok := configmap.Data["config"]
 	if !ok {
-		return nil, "", nil, nil, nil, nil, nil, nil, fmt.Errorf("LoadConfiguration: missing config section")
+		return nil, "", nil, nil, nil, nil, nil, nil, false, fmt.Errorf("LoadConfiguration: missing config section")
 	}
 
 	var config Config
 	if err := yaml.UnmarshalStrict([]byte(rawConfig), &config); err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, "", nil, nil, nil, nil, nil, nil, false, err
 	}
 
 	authenticator, prefix, err := LoadAuthenticationConfiguration(
@@ -108,13 +109,13 @@ func LoadConfiguration(
 		certificateAuthority,
 	)
 	if err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, "", nil, nil, nil, nil, nil, nil, false, err
 	}
 
 	serverOptions, err := LoadGrpcConfiguration(config.Grpc)
 	if err != nil {
-		return nil, "", nil, nil, nil, nil, nil, nil, err
+		return nil, "", nil, nil, nil, nil, nil, nil, false, err
 	}
 
-	return authenticator, prefix, router, serverOptions, &config.Provisioning, &config.LeasePolicy, &config.HiddenLabels, &config.DeprecatedLabels, nil
+	return authenticator, prefix, router, serverOptions, &config.Provisioning, &config.LeasePolicy, &config.HiddenLabels, &config.DeprecatedLabels, ptr.Deref(config.Authentication.Internal.AllowStoredTokenFallback, true), nil
 }
