@@ -153,6 +153,7 @@ jobs:
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version: ${{ steps.uv.outputs.python-version }}
+          ignore-nothing-to-cache: true
 
       - name: Cache python wheels
         id: cache
