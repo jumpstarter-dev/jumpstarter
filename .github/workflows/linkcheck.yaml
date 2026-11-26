@@ -22,13 +22,15 @@ jobs:
           fetch-tags: true
 
       - id: uv
-        run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
+          echo "python-version=$(cat .py-version)" >> "$GITHUB_OUTPUT"
         working-directory: .
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: ${{ steps.uv.outputs.version }}
-          python-version-file: .py-version
+          python-version: ${{ steps.uv.outputs.python-version }}
 
       - name: Check documentation links
         run: make sync && make docs-linkcheck
