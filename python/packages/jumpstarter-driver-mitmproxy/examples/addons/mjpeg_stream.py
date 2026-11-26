@@ -86,7 +86,7 @@ def _generate_test_pattern_jpeg(
     frame number overlay. Otherwise, returns the minimal JPEG.
     """
     try:
-        from PIL import Image, ImageDraw, ImageFont  # ty: ignore[unresolved-import]
+        from PIL import Image, ImageDraw, ImageFont  # ty: ignore[import-not-found]
 
         img = Image.new("RGB", (width, height), color=(40, 40, 40))
         draw = ImageDraw.Draw(img)

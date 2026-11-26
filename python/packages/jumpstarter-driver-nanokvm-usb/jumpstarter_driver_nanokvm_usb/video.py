@@ -84,7 +84,7 @@ class VideoCapture:
         if not cap.isOpened():
             raise ConnectionError(f"Cannot open video device: {device}")
 
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # ty: ignore[unresolved-attribute]
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # ty: ignore[missing-attribute]
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)

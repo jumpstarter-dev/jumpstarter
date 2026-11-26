@@ -517,7 +517,7 @@ async def test_ipv6_clients_are_served(tmp_path):
     try:
         client = await create_udp_socket(local_host="::1")
     except OSError:
-        pytest.skip("no IPv6 loopback")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("no IPv6 loopback")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
 
     async with client, _serving(_server(tmp_path, host="::1")) as port:
         assert await download(client, port, "file.bin", host="::1") == b"x" * 1000

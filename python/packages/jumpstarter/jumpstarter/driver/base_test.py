@@ -204,3 +204,22 @@ async def test_presigned_get_uses_proxy_from_environment(http_proxy):
 
     assert received == b'{"proxied": true}'
     assert http_proxy.requests == [("GET", "package.invalid")]
+
+
+class _PostInitRecorder:
+    def __post_init__(self):
+        self.next_post_init_ran = True
+
+
+class _DriverWithPostInitMixin(Driver, _PostInitRecorder):
+    @classmethod
+    def client(cls) -> str:
+        return "test.client"
+
+
+def test_post_init_runs_the_post_init_of_a_mixin_after_the_driver():
+    driver = _DriverWithPostInitMixin()
+    try:
+        assert driver.next_post_init_ran
+    finally:
+        driver.close()

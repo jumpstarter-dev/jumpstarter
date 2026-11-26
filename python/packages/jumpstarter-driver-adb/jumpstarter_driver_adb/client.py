@@ -207,7 +207,7 @@ class AdbDeviceClient(DriverClient):
         child = self.children.get("appium")
         if child is None:
             raise AttributeError("Appium is not configured for this device on the exporter")
-        return child  # ty: ignore[invalid-return-type]
+        return child  # ty: ignore[invalid-explicit-return]
 
     def info(self) -> dict:
         """Describe the device: transport, selector, and whether it is present."""

@@ -278,9 +278,9 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
         def get_url(self):
             return "http://exporter"
 
-    client.http = DummyService()  # ty: ignore[unresolved-attribute]
-    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
-    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+    client.http = DummyService()  # ty: ignore[missing-attribute]
+    client.tftp = DummyService()  # ty: ignore[missing-attribute]
+    client.call = lambda *args, **kwargs: None
 
     captured = {}
 
@@ -295,7 +295,7 @@ def test_flash_http_url_with_oci_credentials_still_uses_direct_http_path():
         captured["oci_username"] = oci_username
         captured["oci_password"] = oci_password
 
-    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
+    client._perform_flash_operation = capture_perform
 
     client.flash(
         "https://example.com/image.raw.xz",
@@ -403,14 +403,14 @@ class _IdleService:
 def test_flash_error_reports_the_failure_once(error, expected):
     """FlashError names the underlying failure once, and chains it as __cause__"""
     client = MockFlasherClient()
-    client.http = _IdleService()  # ty: ignore[unresolved-attribute]
-    client.tftp = _IdleService()  # ty: ignore[unresolved-attribute]
-    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+    client.http = _IdleService()  # ty: ignore[missing-attribute]
+    client.tftp = _IdleService()  # ty: ignore[missing-attribute]
+    client.call = lambda *args, **kwargs: None
 
     def fail(*args, **kwargs):
         raise error
 
-    client._perform_flash_operation = fail  # ty: ignore[invalid-assignment]
+    client._perform_flash_operation = fail
 
     with pytest.raises(FlashError) as excinfo:
         client.flash("https://example.com/image.raw.xz", retries=0)
@@ -588,9 +588,9 @@ def test_flash_signed_url_preserves_query_params():
         def get_url(self):
             return "http://exporter"
 
-    client.http = DummyService()  # ty: ignore[unresolved-attribute]
-    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
-    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+    client.http = DummyService()  # ty: ignore[missing-attribute]
+    client.tftp = DummyService()  # ty: ignore[missing-attribute]
+    client.call = lambda *args, **kwargs: None
 
     captured = {}
 
@@ -603,7 +603,7 @@ def test_flash_signed_url_preserves_query_params():
         captured["image_url"] = image_url
         captured["should_download_to_httpd"] = should_download_to_httpd
 
-    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
+    client._perform_flash_operation = capture_perform
 
     # Direct HTTP URL with query params (no force_exporter_http) should preserve full URL
     signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
@@ -639,9 +639,9 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
         def get_host(self):
             return "127.0.0.1"
 
-    client.http = DummyService()  # ty: ignore[unresolved-attribute]
-    client.tftp = DummyService()  # ty: ignore[unresolved-attribute]
-    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+    client.http = DummyService()  # ty: ignore[missing-attribute]
+    client.tftp = DummyService()  # ty: ignore[missing-attribute]
+    client.call = lambda *args, **kwargs: None
 
     captured = {}
 
@@ -655,9 +655,9 @@ def test_flash_bearer_token_signed_url_preserves_query_params():
         captured["image_url"] = image_url
         captured["should_download_to_httpd"] = should_download_to_httpd
 
-    client._perform_flash_operation = capture_perform  # ty: ignore[invalid-assignment]
+    client._perform_flash_operation = capture_perform
     # Mock the background transfer thread to prevent it from actually running
-    client._transfer_bg_thread = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+    client._transfer_bg_thread = lambda *args, **kwargs: None
 
     signed_url = "https://cdn.example.com/images/image.raw.xz?Expires=123&Signature=abc&Key-Pair-Id=xyz"
     client.flash(
@@ -723,8 +723,8 @@ def _fls_client(exporter_version=None, serve_error=None):
             return None
         raise AssertionError(f"unexpected call {method}")
 
-    client.http = Http()  # ty: ignore[unresolved-attribute]
-    client.call = call  # ty: ignore[invalid-assignment]
+    client.http = Http()  # ty: ignore[missing-attribute]
+    client.call = call
     client._download_fls_binary = lambda console, prompt, url, msg: downloads.append(url)  # ty: ignore[invalid-assignment]
     return client, calls, downloads
 
@@ -765,8 +765,8 @@ def test_install_fls_empty_version_has_no_fallback():
 def test_flash_cli_fls_version_defaults_to_exporter_choice():
     client = MockFlasherClient()
     captured = {}
-    client.flash = lambda *args, **kwargs: captured.update(kwargs)  # ty: ignore[invalid-assignment]
-    client.call = lambda *args, **kwargs: None  # ty: ignore[invalid-assignment]
+    client.flash = lambda *args, **kwargs: captured.update(kwargs)
+    client.call = lambda *args, **kwargs: None
 
     from click.testing import CliRunner
 

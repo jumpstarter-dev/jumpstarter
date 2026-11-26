@@ -382,7 +382,7 @@ def test_cli_empty_command_reports_usage(client):
 
 def test_interface_requires_info():
     with pytest.raises(TypeError, match="abstract"):
-        IosDeviceInterface()  # ty: ignore[call-non-callable]
+        IosDeviceInterface()  # ty: ignore[abstract-class-instantiation]
     assert IosDeviceInterface.client() == "jumpstarter_driver_iosdevice.client.IosDeviceClient"
 
 

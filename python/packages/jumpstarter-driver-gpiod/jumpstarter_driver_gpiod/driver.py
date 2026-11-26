@@ -65,30 +65,30 @@ class _GPIOBase(Driver):
         drive = gpiod.line.Drive.PUSH_PULL
         bias = gpiod.line.Bias.AS_IS
 
-        if self.drive == "open_drain":  # ty: ignore[unresolved-attribute]
+        if self.drive == "open_drain":  # ty: ignore[missing-attribute]
             drive = gpiod.line.Drive.OPEN_DRAIN
-        elif self.drive in ["push_pull", None]:  # ty: ignore[unresolved-attribute]
+        elif self.drive in ["push_pull", None]:  # ty: ignore[missing-attribute]
             drive = gpiod.line.Drive.PUSH_PULL
-        elif self.drive == "open_source":  # ty: ignore[unresolved-attribute]
+        elif self.drive == "open_source":  # ty: ignore[missing-attribute]
             drive = gpiod.line.Drive.OPEN_SOURCE
         else:
-            raise ValueError(f"Invalid drive: {self.drive}, must be one of: open_drain, push_pull, open_source")  # ty: ignore[unresolved-attribute]
+            raise ValueError(f"Invalid drive: {self.drive}, must be one of: open_drain, push_pull, open_source")  # ty: ignore[missing-attribute]
 
-        if self.bias in [None, "as_is"]:  # ty: ignore[unresolved-attribute]
+        if self.bias in [None, "as_is"]:  # ty: ignore[missing-attribute]
             bias = gpiod.line.Bias.AS_IS
-        elif self.bias == "pull_up":  # ty: ignore[unresolved-attribute]
+        elif self.bias == "pull_up":  # ty: ignore[missing-attribute]
             bias = gpiod.line.Bias.PULL_UP
-        elif self.bias == "pull_down":  # ty: ignore[unresolved-attribute]
+        elif self.bias == "pull_down":  # ty: ignore[missing-attribute]
             bias = gpiod.line.Bias.PULL_DOWN
-        elif self.bias == "disabled":  # ty: ignore[unresolved-attribute]
+        elif self.bias == "disabled":  # ty: ignore[missing-attribute]
             bias = gpiod.line.Bias.DISABLED
         else:
-            raise ValueError(f"Invalid bias: {self.bias}, must be one of: as_is, pull_up, pull_down, disabled")  # ty: ignore[unresolved-attribute]
+            raise ValueError(f"Invalid bias: {self.bias}, must be one of: as_is, pull_up, pull_down, disabled")  # ty: ignore[missing-attribute]
 
         return gpiod.LineSettings(
             drive=drive,
             bias=bias,
-            active_low=self.active_low,  # ty: ignore[unresolved-attribute]
+            active_low=self.active_low,  # ty: ignore[missing-attribute]
         )
 
 

@@ -48,7 +48,7 @@ class _BufferedDuplexStream(StapledByteStream):
     async def send_eof(self):
         # Both halves share one socket. StapledByteStream's default closes the
         # sender entirely, which would discard the outstanding response too.
-        await self.send_stream.send_eof()  # ty: ignore[unresolved-attribute]
+        await self.send_stream.send_eof()  # ty: ignore[missing-attribute]
 
 
 def _uint(value, maximum=0xFFFFFFFF):

@@ -195,7 +195,7 @@ async def test_shell_warns_when_expired_token_prevents_cleanup_on_normal_exit():
     ):
         yield lease
 
-    config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+    config.lease_async = lease_async
 
     async def fake_monitor(_config, _lease, _cancel_scope, token_state=None):
         if token_state is not None:
@@ -231,7 +231,7 @@ def test_shell_requires_selector_or_name_when_no_leases():
     config.list_leases = AsyncMock(return_value=_make_lease_list([]))
     with pytest.raises(click.UsageError, match="no active leases found"):
         assert shell.callback is not None
-        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -283,7 +283,7 @@ def test_shell_auto_connects_single_lease():
         patch("jumpstarter_cli.shell.sys.exit") as mock_exit,
     ):
         assert shell.callback is not None
-        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -314,7 +314,7 @@ def test_shell_no_leases_shows_guidance():
     config.list_leases = AsyncMock(return_value=_make_lease_list([]))
     with pytest.raises(click.UsageError, match="no active leases found"):
         assert shell.callback is not None
-        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -358,7 +358,7 @@ def test_shell_multi_lease_no_tty_error():
     ):
         mock_stdin.isatty.return_value = False
         assert shell.callback is not None
-        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -397,7 +397,7 @@ def test_shell_no_own_leases_among_others():
     config.list_leases = AsyncMock(return_value=lease_list)
     with pytest.raises(click.UsageError, match="no active leases found"):
         assert shell.callback is not None
-        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[unresolved-attribute]
+        shell.callback.__wrapped__.__wrapped__(  # ty: ignore[missing-attribute]
             config=config,
             command=(),
             lease_name=None,
@@ -1326,7 +1326,7 @@ class TestShellWithSignalHandlingExceptionGroup:
         ):
             yield lease
 
-        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+        config.lease_async = lease_async
         return config
 
     async def test_exits_gracefully_when_lease_ended(self):
@@ -1409,7 +1409,7 @@ class TestRetryLoopTimeout:
         ):
             yield lease
 
-        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+        config.lease_async = lease_async
 
         async def fake_run(*_):
             state["call_count"] += 1
@@ -1453,7 +1453,7 @@ class TestRetryLoopTimeout:
         ):
             yield lease
 
-        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+        config.lease_async = lease_async
 
         async def fake_run(*_):
             state["call_count"] += 1
@@ -1495,7 +1495,7 @@ class TestRetryLoopTimeout:
         ):
             yield lease
 
-        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+        config.lease_async = lease_async
 
         async def fake_run(*_):
             state["call_count"] += 1
@@ -1538,7 +1538,7 @@ class TestRetryLoopLeaseExpired:
         ):
             yield lease
 
-        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+        config.lease_async = lease_async
 
         async def fake_run(*_):
             state["call_count"] += 1
@@ -1575,7 +1575,7 @@ class TestRetryLoopLeaseExpired:
         ):
             yield lease
 
-        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+        config.lease_async = lease_async
 
         async def fake_run(*_):
             state["call_count"] += 1
@@ -1734,7 +1734,7 @@ class TestRetryLoopUserInterrupt:
         ):
             yield lease
 
-        config.lease_async = lease_async  # ty: ignore[invalid-assignment]
+        config.lease_async = lease_async
         return config
 
     def _lease(self):

@@ -104,7 +104,7 @@ def _extract_grpc_code_and_details(exc: BaseException) -> tuple[str | None, str]
     code = None
     details = ""
     try:
-        code_member = exc.code  # ty: ignore[unresolved-attribute]
+        code_member = exc.code  # ty: ignore[missing-attribute]
         if callable(code_member):
             grpc_code = code_member()
             code = grpc_code.name if hasattr(grpc_code, "name") else str(grpc_code)
@@ -112,7 +112,7 @@ def _extract_grpc_code_and_details(exc: BaseException) -> tuple[str | None, str]
         code = None
 
     try:
-        details_member = exc.details  # ty: ignore[unresolved-attribute]
+        details_member = exc.details  # ty: ignore[missing-attribute]
         if callable(details_member):
             details = str(details_member() or "")
     except Exception:  # pragma: no cover  # noqa: BLE001

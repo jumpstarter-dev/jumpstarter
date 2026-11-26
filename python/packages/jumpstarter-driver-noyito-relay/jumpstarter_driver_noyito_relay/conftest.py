@@ -17,4 +17,4 @@ def pytest_runtest_call(item):
     try:
         item.runtest()
     except serial.SerialException:
-        pytest.skip("Serial device not available")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("Serial device not available")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]

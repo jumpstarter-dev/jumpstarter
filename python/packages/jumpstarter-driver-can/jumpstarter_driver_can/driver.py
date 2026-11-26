@@ -87,7 +87,7 @@ class Can(Driver):
     @export
     @validate_call(validate_return=True)
     def _start_task(self, uuid: UUID) -> None:
-        self.__tasks[uuid].start()  # ty: ignore[unresolved-attribute]
+        self.__tasks[uuid].start()  # ty: ignore[missing-attribute]
 
     @export
     @validate_call(validate_return=True)
@@ -330,7 +330,7 @@ class IsoTpSocket(Driver):
             raise ValueError("socket already started")
         self.sock = isotp.socket()
         self.params.apply(self.sock)
-        self.sock.bind(self.channel, self.address)  # ty: ignore[unresolved-attribute]
+        self.sock.bind(self.channel, self.address)  # ty: ignore[missing-union-attribute]
 
     @export
     @validate_call(validate_return=True)

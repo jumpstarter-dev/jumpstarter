@@ -334,7 +334,7 @@ class NanoKVMUSB(Composite):
                 default_encrypt=self.vnc_encrypt,
             )
         for name in ("video", "hid"):
-            self.children[name]._owns_device = False  # ty: ignore[unresolved-attribute]
+            self.children[name]._owns_device = False  # ty: ignore[missing-attribute]
 
         super().__post_init__()
         if self._vnc_server is not None:

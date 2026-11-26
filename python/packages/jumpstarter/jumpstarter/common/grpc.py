@@ -51,7 +51,7 @@ async def _try_connect_and_extract_cert(
         # Private API: the public get_unverified_chain() is Python 3.13+ and returns
         # DER bytes, while these certificate objects can render themselves as PEM.
         ssl_object = stream.extra(TLSAttribute.ssl_object)
-        cert_chain = ssl_object._sslobj.get_unverified_chain()  # ty: ignore[unresolved-attribute]
+        cert_chain = ssl_object._sslobj.get_unverified_chain()  # ty: ignore[missing-attribute]
         root_certificates = ""
         for cert in cert_chain:
             root_certificates += cert.public_bytes()

@@ -426,3 +426,18 @@ class TestAsyncDriverClientWaitForLeaseReadyMonitored:
                 await client.wait_for_lease_ready_monitored(timeout=2.0)
 
         stub.GetStatus.assert_awaited_once()
+
+
+class _PostInitRecorder:
+    def __post_init__(self):
+        self.next_post_init_ran = True
+
+
+class _ClientWithPostInitMixin(AsyncDriverClient, _PostInitRecorder):
+    pass
+
+
+def test_post_init_runs_the_post_init_of_a_mixin_after_the_client():
+    client = _ClientWithPostInitMixin(stub=MagicMock())
+
+    assert client.next_post_init_ran

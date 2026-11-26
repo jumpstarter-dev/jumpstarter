@@ -389,11 +389,11 @@ def test_drivers_sdwire():
     try:
         instance = SDWire()
     except FileNotFoundError:
-        pytest.skip("sd-wire not available")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("sd-wire not available")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
     except usb.core.USBError:
-        pytest.skip("USB not available")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("USB not available")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
     except usb.core.NoBackendError:
-        pytest.skip("No USB backend")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("No USB backend")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
 
     with serve(instance) as client:
         client.host()

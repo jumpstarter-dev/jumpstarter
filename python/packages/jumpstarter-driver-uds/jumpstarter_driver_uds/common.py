@@ -106,14 +106,14 @@ class RawDidCodec(DidCodec):
     requiring per-DID configuration in the udsoncan client.
     """
 
-    def encode(self, value: Any) -> bytes:  # ty: ignore[invalid-method-override]
+    def encode(self, value: Any) -> bytes:  # ty: ignore[incompatible-method-override]
         if isinstance(value, (bytes, bytearray)):
             return bytes(value)
         if isinstance(value, str):
             return value.encode("utf-8")
         raise TypeError(f"Cannot encode {type(value)} as DID payload")
 
-    def decode(self, payload: bytes) -> bytes:  # ty: ignore[invalid-method-override]
+    def decode(self, payload: bytes) -> bytes:  # ty: ignore[lost-keyword-for-regular-parameter]
         return payload
 
     def __len__(self) -> int:

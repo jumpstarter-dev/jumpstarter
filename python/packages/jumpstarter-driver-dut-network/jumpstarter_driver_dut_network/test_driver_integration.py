@@ -162,7 +162,7 @@ def _nat_probe() -> bool:
 def nat_available() -> None:
     """Run the NAT probe once per session (at test time, not import time)."""
     if not _nat_probe():
-        pytest.skip("nftables NAT between namespaces not available")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip("nftables NAT between namespaces not available")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
 
 
 class NetworkTestEnv:

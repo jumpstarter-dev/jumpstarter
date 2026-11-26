@@ -25,7 +25,7 @@ from jumpstarter.driver.decorators import (
 )
 
 try:
-    import cyclonedds as _cyclonedds  # noqa: F401  # ty: ignore[unresolved-import]
+    import cyclonedds as _cyclonedds  # noqa: F401  # ty: ignore[import-not-found]
 
     _has_cyclonedds = True
 except ImportError:

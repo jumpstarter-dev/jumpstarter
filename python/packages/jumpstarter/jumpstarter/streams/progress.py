@@ -55,7 +55,7 @@ class ProgressStream(ObjectStream[bytes]):
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()  # ty: ignore[unresolved-attribute]
+            super().__post_init__()  # ty: ignore[missing-attribute]
 
         self.__prog = Progress(
             TextColumn("[progress.description]{task.description}"),

@@ -57,7 +57,7 @@ def get_native_arch_config():
     elif native_arch == "aarch64":
         return "aarch64", "aarch64"
     else:
-        pytest.skip(f"Unsupported architecture: {native_arch}")  # ty: ignore[too-many-positional-arguments]
+        pytest.skip(f"Unsupported architecture: {native_arch}")  # ty: ignore[too-many-positional-arguments, invalid-argument-type]
 
 
 @pytest.mark.xfail(
@@ -602,7 +602,7 @@ async def test_flash_oci_process_cleanup_on_early_exit(fake_fls):
     """Abandoning the output early should stop fls."""
     flasher = Qemu().children["flasher"]
     fake_fls.configure(stdout="line1\nline2", sleep=60)
-    gen = flasher._stream_subprocess([fake_fls.path, "from-url", "oci://img", "/tmp/root"], None)  # ty: ignore[unresolved-attribute]
+    gen = flasher._stream_subprocess([fake_fls.path, "from-url", "oci://img", "/tmp/root"], None)  # ty: ignore[missing-attribute]
 
     with fail_after(10):
         async for _ in gen:

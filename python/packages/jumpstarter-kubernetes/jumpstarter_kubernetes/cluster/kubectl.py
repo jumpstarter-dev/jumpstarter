@@ -138,8 +138,8 @@ def _parse_json_with_prefix(stdout: str) -> dict:
 def _apply_cr_result(result_data: dict, cr_result: CrInstanceResult) -> None:
     if cr_result["installed"] is True:
         result_data["installed"] = True
-        result_data["namespace"] = cr_result["namespace"]  # ty: ignore[invalid-key]
-        result_data["status"] = cr_result["status"]  # ty: ignore[invalid-key]
+        result_data["namespace"] = cr_result["namespace"]  # ty: ignore[invalid-typed-dict-key]
+        result_data["status"] = cr_result["status"]  # ty: ignore[invalid-typed-dict-key]
     elif "error" in cr_result:
         result_data["error"] = cr_result["error"]
 

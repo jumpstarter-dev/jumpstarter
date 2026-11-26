@@ -120,7 +120,7 @@ class Driver(
 
     def __post_init__(self):
         if hasattr(super(), "__post_init__"):
-            super().__post_init__()  # ty: ignore[unresolved-attribute]
+            super().__post_init__()  # ty: ignore[missing-attribute]
 
         display_name = f"driver.{self.__class__.__name__}"
         # ponytail: accept 16-bit collisions at 5-10 active same-class drivers
