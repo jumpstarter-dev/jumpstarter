@@ -44,6 +44,7 @@ from jumpstarter_driver_qemu.driver import Qemu, QemuConsole, QemuFlasher, QemuP
 from jumpstarter.client.core import DriverError
 from jumpstarter.common.oci import OciCredentials
 from jumpstarter.common.utils import serve
+from jumpstarter.streams.fanout import ExclusiveStream
 
 # .github/workflows/python-tests.yaml downloads and caches the same image for CI,
 # under FEDORA_CLOUD_VERSION too; Renovate bumps both together.
@@ -55,6 +56,25 @@ FEDORA_CLOUD_VERSION = "43-1.6"
 def anyio_backend():
     """Use only asyncio backend for anyio tests."""
     return "asyncio"
+
+
+@pytest.fixture
+def processed_input(monkeypatch):
+    """Observe exporter-side processing without adding acknowledgements to the wire."""
+    events = {}
+    original_send = ExclusiveStream.send
+
+    async def send(stream, data):
+        await original_send(stream, data)
+        if event := events.get(data):
+            event.set()
+
+    def track(data):
+        events[data] = Event()
+        return events[data]
+
+    monkeypatch.setattr(ExclusiveStream, "send", send)
+    return track
 
 
 @pytest.fixture
@@ -122,13 +142,17 @@ async def wait_serial_open(console):
             await sleep(0.01)
 
 
-async def read_pty(master):
+async def assert_pty_input(master, expected):
+    received = b""
     with fail_after(2):
-        while True:
+        while len(received) < len(expected):
             try:
-                return os.read(master, 1024)
+                chunk = os.read(master, 1024)
+                assert chunk, "PTY closed before receiving expected input"
+                received += chunk
             except BlockingIOError:
                 await sleep(0.01)
+    assert received == expected
 
 
 @pytest.mark.anyio
@@ -188,7 +212,7 @@ async def test_console_does_not_open_stale_pty_during_startup(qemu_serial, monke
             await preparing.wait()
             async with console.connect() as stream:
                 await stream.send(b"discard during startup")
-                await sleep(0.15)
+                await wait_all_tasks_blocked()
                 assert not opened
                 finish_preparation.set()
                 await startup_done.wait()
@@ -474,7 +498,7 @@ async def test_power_off_waits_for_startup(qemu_serial, qemu_qmp):
             tasks.start_soon(start)
             await starting.wait()
             tasks.start_soon(stop)
-            await sleep(0.05)
+            await wait_all_tasks_blocked()
             assert not stopped.is_set()
             assert ptys
             finish_start.set()
@@ -663,7 +687,7 @@ async def test_live_vm_write_failure_stays_visible(qemu_serial, error_type):
 
 
 @pytest.mark.parametrize("shutdown", ["power", "guest"])
-def test_client_stream_survives_offline_input_and_power_cycles(qemu_serial, shutdown, caplog):
+def test_client_stream_survives_offline_input_and_power_cycles(qemu_serial, processed_input, shutdown, caplog):
     driver, power, console, ptys = qemu_serial
     caplog.set_level(logging.WARNING)
     with serve(driver) as client:
@@ -674,20 +698,19 @@ def test_client_stream_survives_offline_input_and_power_cycles(qemu_serial, shut
                     client.console.stream_async("observe") as observer,
                 ):
                     for _ in range(2):
+                        processed = processed_input(b"discard while off")
                         await stream.send(b"discard while off")
-                        await sleep(0.15)
+                        await processed.wait()
                         await client.power.call_async("on")
                         await client.power.call_async("on")
                         assert len(ptys) == 1
                         await wait_serial_open(console)
                         master = ptys[-1][0]
-                        with pytest.raises(BlockingIOError):
-                            os.read(master, 1024)  # Offline input must never be replayed.
                         os.write(master, b"boot\n")
                         assert await stream.receive() == b"boot\n"
                         assert await observer.receive() == b"boot\n"
                         await stream.send(b"working input")
-                        assert await read_pty(master) == b"working input"
+                        await assert_pty_input(master, b"working input")  # Offline input must never be replayed.
                         if shutdown == "power":
                             await client.power.call_async("off")
                         else:
@@ -741,7 +764,7 @@ def test_incomplete_startup_can_be_retried_on_the_same_console(qemu_serial, qemu
                 assert await writer.receive() == b"recovered\n"
                 assert await observer.receive() == b"recovered\n"
                 await writer.send(b"working input")
-                assert await read_pty(master) == b"working input"
+                await assert_pty_input(master, b"working input")
 
         client.portal.call(recover)
         assert attempts == 2
@@ -855,7 +878,7 @@ async def test_acquire_after_guest_exit_does_not_open_stale_pty(qemu_serial):
             assert received == [b"restarted\n"]
 
 
-def test_rpc_console_release_preserves_writer_and_observer(qemu_serial, caplog):
+def test_rpc_console_release_preserves_writer_and_observer(qemu_serial, processed_input, caplog):
     driver, power, console, ptys = qemu_serial
     caplog.set_level(logging.WARNING)
     with serve(driver) as client:
@@ -874,11 +897,12 @@ def test_rpc_console_release_preserves_writer_and_observer(qemu_serial, caplog):
                     assert await observer.receive() == b"before release\n"
                     await client.console.call_async("acquire")
                     await writer.send(b"input after redundant acquire")
-                    assert await read_pty(master) == b"input after redundant acquire"
+                    await assert_pty_input(master, b"input after redundant acquire")
                     old_transport = console._transport
                     await client.console.call_async("release")
+                    processed = processed_input(b"discard while released")
                     await writer.send(b"discard while released")
-                    await sleep(0.05)
+                    await processed.wait()
                     await client.console.call_async("acquire")
                     while console._transport is old_transport:
                         await sleep(0.01)
@@ -886,8 +910,8 @@ def test_rpc_console_release_preserves_writer_and_observer(qemu_serial, caplog):
                     os.write(master, b"after acquire\n")
                     assert await writer.receive() == b"after acquire\n"
                     assert await observer.receive() == b"after acquire\n"
-                    with pytest.raises(BlockingIOError):
-                        os.read(master, 1024)
+                    await writer.send(b"input after acquire")
+                    await assert_pty_input(master, b"input after acquire")
                     assert power._process is process
 
         client.portal.call(exercise)
@@ -916,7 +940,7 @@ def test_console_close_kicks_clients_without_stopping_vm(qemu_serial):
                 async with client.console.stream_async("connect") as replacement:
                     await wait_serial_open(console)
                     await replacement.send(b"still running")
-                    assert await read_pty(master) == b"still running"
+                    await assert_pty_input(master, b"still running")
 
         client.portal.call(exercise)
     assert not ptys
