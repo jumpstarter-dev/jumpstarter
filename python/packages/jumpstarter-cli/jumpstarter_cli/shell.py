@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -13,6 +13,7 @@ import click
 import grpc
 import grpc.aio
 from anyio import create_task_group, get_cancelled_exc_class
+from anyio.from_thread import start_blocking_portal
 from jumpstarter_cli_common.config import opt_config
 from jumpstarter_cli_common.exceptions import find_exception_in_group, handle_exceptions_with_reauthentication
 from jumpstarter_cli_common.oidc import (
@@ -45,7 +46,7 @@ from jumpstarter.common.exceptions import (
     ExporterOfflineError,
     ExporterUnreachableError,
 )
-from jumpstarter.common.utils import launch_shell
+from jumpstarter.common.utils import launch_shell, shell_is_bash
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
@@ -62,9 +63,12 @@ _TOKEN_REFRESH_THRESHOLD_SECONDS = 120
 _SHARED_ACCESS_POLL_SECONDS = 15
 # gRPC deadline for the one-off lease reads that decide how a session ends
 _LEASE_CHECK_TIMEOUT_SECONDS = 5
+# gRPC deadline for the local client that registers `j` completion; past it,
+# the shell starts without completion
+_LOCAL_CLIENT_TIMEOUT_SECONDS = 5
 
 
-def _run_shell_only(lease, config, command, path: str, motd: str | None = None) -> int:
+def _run_shell_only(lease, config, command, path: str, motd: str | None = None, client=None) -> int:
     """Run just the shell command without log streaming."""
     allow = config.drivers.allow if config is not None else getattr(lease, "allow", [])
     unsafe = config.drivers.unsafe if config is not None else getattr(lease, "unsafe", False)
@@ -82,7 +86,34 @@ def _run_shell_only(lease, config, command, path: str, motd: str | None = None) 
         insecure=insecure,
         passphrase=passphrase,
         motd=motd,
+        client=client,
     )
+
+
+@contextmanager
+def _local_client(path: str, *, connect: bool = True):
+    """Yield a client of the local exporter at ``path``, or None.
+
+    The shell uses it to register `j` completion, which is best effort: if
+    the client cannot connect, the shell starts without completion.
+    """
+    with ExitStack() as stack:
+        client = None
+        if connect:
+            try:
+                portal = stack.enter_context(start_blocking_portal())
+                # SAFETY: the exporter config is local thus considered trusted
+                client = stack.enter_context(
+                    portal.wrap_async_context_manager(
+                        client_from_path(
+                            path, portal, stack, allow=[], unsafe=True, report_timeout=_LOCAL_CLIENT_TIMEOUT_SECONDS
+                        )
+                    )
+                )
+                stack.callback(client.close)
+            except Exception:
+                logger.debug("Failed to connect to the local exporter for completion", exc_info=True)
+        yield client
 
 
 def _warn_about_expired_token(lease_name: str, selector: str) -> None:
@@ -520,7 +551,7 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                     # enclosing task group is already unwinding, the await below
                     # raises instead of returning and the value would be lost.
                     def _run_and_record():
-                        code = _run_shell_only(lease, config, command, path, motd)
+                        code = _run_shell_only(lease, config, command, path, motd, client)
                         on_shell_exit(code)
                         return code
 
@@ -986,7 +1017,8 @@ def shell(
             sys.exit(exit_code)
 
         case ExporterConfigV1Alpha1():
-            with config.serve_unix() as path:
+            # Only bash without profiles registers completion; nothing else needs the client
+            with config.serve_unix() as path, _local_client(path, connect=not command and shell_is_bash()) as client:
                 # SAFETY: the exporter config is local thus considered trusted
                 exit_code = launch_shell(
                     path,
@@ -996,6 +1028,7 @@ def shell(
                     use_profiles=False,
                     command=command,
                     motd=config.motd,
+                    client=client,
                 )
             # Exit once the serve context has torn down.
             sys.exit(exit_code)

@@ -1,6 +1,7 @@
 import os
 import pty
 import select
+import shlex
 import shutil
 import signal
 import subprocess
@@ -12,9 +13,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import click
 import pytest
 
-from .utils import _build_common_env, _lease_env_vars, _zsh_isolated_config, launch_shell
+from .completion_test import requires_completion_bash
+from .utils import _bash_completion, _build_common_env, _lease_env_vars, _zsh_isolated_config, launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1Drivers
 from jumpstarter.utils.env import ExporterMetadata, _resolve_drivers_config
 
@@ -946,3 +949,152 @@ def test_launch_shell_signal_death(tmp_path, caplog, signal_name, signum, expect
         )
     assert exit_code == expected
     assert f"killed by signal {signum}" in caplog.text
+
+
+def _fake_client(cli=None):
+    if cli is None:
+
+        @click.group()
+        def cli():
+            """Test device"""
+
+        @cli.command()
+        def reboot():
+            """Reboot"""
+
+    return SimpleNamespace(cli=lambda: cli)
+
+
+def _launch_bash(tmp_path, monkeypatch, returncode=0, **kwargs):
+    """Run launch_shell for bash with a mocked Popen; return (exit_code, env, completion script)."""
+    monkeypatch.setenv("SHELL", str(tmp_path / "fake.bash"))
+    seen = {}
+
+    def fake_popen(cmd, env, **_kw):
+        # The script lives in a temporary directory removed when the shell exits
+        hook = env.get("PROMPT_COMMAND", "")
+        if hook.startswith(". "):
+            seen["script"] = Path(shlex.split(hook)[1]).read_text()
+        process = MagicMock()
+        process.wait.return_value = returncode
+        return process
+
+    with patch("jumpstarter.common.utils.Popen", side_effect=fake_popen) as mock_popen:
+        exit_code = launch_shell(str(tmp_path / "test.sock"), "remote", ["*"], False, **kwargs)
+    return exit_code, mock_popen.call_args[1]["env"], seen.get("script")
+
+
+def test_launch_shell_bash_registers_j_completion(tmp_path, monkeypatch):
+    monkeypatch.delenv("PROMPT_COMMAND", raising=False)
+    exit_code, _env, script = _launch_bash(tmp_path, monkeypatch, use_profiles=False, client=_fake_client())
+    assert exit_code == 0
+    assert "complete -o default -F _j_complete j" in script
+    assert "declare -gA _j_sub=([j]=reboot)" in script
+    # restored first: the script returns early on a bash too old for it
+    assert script.startswith("unset PROMPT_COMMAND\n")
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "reason"),
+    [
+        ({"use_profiles": False}, "no client"),
+        ({"use_profiles": True, "client": _fake_client()}, "the user's own profile"),
+    ],
+)
+def test_launch_shell_bash_without_completion(tmp_path, monkeypatch, kwargs, reason):
+    monkeypatch.delenv("PROMPT_COMMAND", raising=False)
+    exit_code, env, script = _launch_bash(tmp_path, monkeypatch, **kwargs)
+    assert exit_code == 0
+    assert "PROMPT_COMMAND" not in env, reason
+    assert script is None
+
+
+def test_launch_shell_bash_starts_even_if_a_driver_cli_fails(tmp_path, monkeypatch):
+    def broken_cli():
+        raise RuntimeError("driver bug")
+
+    monkeypatch.delenv("PROMPT_COMMAND", raising=False)
+    exit_code, env, _script = _launch_bash(
+        tmp_path, monkeypatch, use_profiles=False, client=SimpleNamespace(cli=broken_cli), returncode=7
+    )
+    assert exit_code == 7
+    assert "PROMPT_COMMAND" not in env
+
+
+@requires_completion_bash
+@pytest.mark.parametrize("original", [None, "echo previous-hook"])
+def test_bash_completion_registration_restores_prompt_command(tmp_path, original):
+    env = {"PATH": os.environ["PATH"], "HOME": str(tmp_path)}
+    if original is not None:
+        env["PROMPT_COMMAND"] = original
+    with _bash_completion(env, _fake_client()):
+        result = subprocess.run(
+            ["bash", "--norc", "--noprofile", "-i"],
+            input='complete -p j\necho "PROMPT_COMMAND=[${PROMPT_COMMAND-unset}]"\n',
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    lines = result.stdout.splitlines()
+    assert "complete -o default -F _j_complete j" in lines
+    if original is None:
+        assert "PROMPT_COMMAND=[unset]" in lines
+    else:
+        assert f"PROMPT_COMMAND=[{original}]" in lines
+        # the previous hook still runs, including before the first prompt
+        assert lines.count("previous-hook") == 3
+
+
+def test_launch_shell_bash_starts_if_the_completion_script_cannot_be_created(tmp_path, monkeypatch):
+    monkeypatch.delenv("PROMPT_COMMAND", raising=False)
+    with patch("jumpstarter.common.utils.TemporaryDirectory", side_effect=OSError("read-only /tmp")):
+        exit_code, env, _script = _launch_bash(tmp_path, monkeypatch, use_profiles=False, client=_fake_client())
+    assert exit_code == 0
+    assert "PROMPT_COMMAND" not in env
+
+
+@pytest.mark.parametrize("error", [OSError("disk full"), UnicodeEncodeError("utf-8", "x", 0, 1, "bad")])
+def test_launch_shell_bash_starts_if_the_completion_script_cannot_be_written(tmp_path, monkeypatch, error):
+    monkeypatch.delenv("PROMPT_COMMAND", raising=False)
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    tempfile.tempdir = None  # pick up TMPDIR
+    try:
+        with patch.object(Path, "write_text", side_effect=error):
+            exit_code, env, _script = _launch_bash(tmp_path, monkeypatch, use_profiles=False, client=_fake_client())
+    finally:
+        tempfile.tempdir = None
+    assert exit_code == 0
+    assert "PROMPT_COMMAND" not in env
+    assert not list(tmp_path.glob("jmp-bash-*")), "temporary directory left behind"
+
+
+def test_bash_completion_script_is_written_as_utf8(tmp_path, monkeypatch):
+    @click.group()
+    def cli():
+        pass
+
+    @cli.command("café")
+    def cafe():
+        pass
+
+    monkeypatch.delenv("PROMPT_COMMAND", raising=False)
+    env = {}
+    with _bash_completion(env, _fake_client(cli)):
+        script = Path(shlex.split(env["PROMPT_COMMAND"])[1]).read_bytes()
+    assert "café".encode() in script
+
+
+class _StubLikeClient:
+    """Like StubDriverClient: any missing attribute raises ImportError."""
+
+    def __getattr__(self, name):
+        raise ImportError("driver package not installed")
+
+
+@pytest.mark.parametrize("client", [_StubLikeClient(), SimpleNamespace()], ids=["stub", "no-cli"])
+def test_launch_shell_bash_starts_without_a_usable_cli(tmp_path, monkeypatch, client):
+    monkeypatch.delenv("PROMPT_COMMAND", raising=False)
+    exit_code, env, _script = _launch_bash(tmp_path, monkeypatch, use_profiles=False, client=client)
+    assert exit_code == 0
+    assert "PROMPT_COMMAND" not in env

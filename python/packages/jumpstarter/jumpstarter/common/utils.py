@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 from anyio.from_thread import BlockingPortal, start_blocking_portal
 
 from jumpstarter.client import client_from_path
+from jumpstarter.common.completion import bash_completion_script
 from jumpstarter.common.display import display_options
 from jumpstarter.config.env import (
     JMP_DRIVERS_ALLOW,
@@ -199,6 +200,59 @@ def _fish_prompt_fn(context: str, bolt: str, arrow: str, no_color: bool) -> str:
     )
 
 
+def shell_is_bash() -> bool:
+    """Whether ``launch_shell`` starts bash, the shell `j` completion supports."""
+    return os.path.basename(os.environ.get("SHELL", "bash")).endswith("bash")
+
+
+@contextmanager
+def _bash_completion(env: dict[str, str], client):
+    """Register TAB completion for `j` in a bash started with ``--norc``.
+
+    Not through ``--rcfile``: distributions that build bash with a system rc
+    file (Debian, for one) then read ``/etc/bash.bashrc`` as well, which
+    replaces our ``PS1``. Instead, ``PROMPT_COMMAND`` sources the script once
+    before the first prompt, and the script puts the previous value back.
+
+    Completion is best effort: without a client, if a driver fails to build
+    its CLI, or if the script cannot be written, the shell starts without it.
+    """
+    script = None
+    if client is not None:
+        try:
+            # Inside the try: a stub client, whose driver package is missing,
+            # raises ImportError rather than AttributeError for any attribute
+            cli = getattr(client, "cli", None)
+            if cli is not None:
+                script = bash_completion_script(cli())
+        except Exception:
+            logger.debug("Failed to build bash completion for j", exc_info=True)
+    if script is None:
+        yield
+        return
+    # Restore first: the script returns early on a bash too old for it
+    original = env.get("PROMPT_COMMAND")
+    if original is None:
+        restore = "unset PROMPT_COMMAND\n"
+    else:
+        restore = f'PROMPT_COMMAND={shlex.quote(original)}\neval "$PROMPT_COMMAND"\n'
+    script = restore + script
+    tmpdir = None
+    try:
+        tmpdir = TemporaryDirectory(prefix="jmp-bash-")
+        path = Path(tmpdir.name) / "j-completion.bash"
+        path.write_text(script, encoding="utf-8")
+    except (OSError, UnicodeError):
+        logger.debug("Failed to write bash completion for j", exc_info=True)
+        if tmpdir is not None:
+            tmpdir.cleanup()
+        yield
+        return
+    with tmpdir:
+        env["PROMPT_COMMAND"] = f". {shlex.quote(str(path))}"
+        yield
+
+
 def _zsh_ps1(context: str, bolt: str, arrow: str, no_color: bool) -> str:
     """Build the zsh ``PS1`` for the jmp shell prompt."""
     if no_color:
@@ -245,6 +299,7 @@ def launch_shell(
     insecure: bool = False,
     passphrase: str | None = None,
     motd: str | None = None,
+    client=None,
 ) -> int:
     """Launch a shell with a custom prompt indicating the exporter type.
 
@@ -257,6 +312,8 @@ def launch_shell(
         command: Optional command to run instead of launching an interactive shell
         lease: Optional Lease object to set up lease ending callback
         motd: Optional message of the day printed before interactive shells
+        client: Optional connected client; in bash, its `j` commands are
+            registered for TAB completion
 
     Returns:
         The exit code of the shell or command process
@@ -279,13 +336,15 @@ def launch_shell(
     bolt = "^" if opts.no_icons else "⚡"
     arrow = ">" if opts.no_icons else "➤"
 
-    if shell_name.endswith("bash"):
+    if shell_is_bash():
         env = common_env | {"PS1": _bash_ps1(context, bolt, arrow, opts.no_color)}
         cmd = [shell]
         if not use_profiles:
             cmd.extend(["--norc", "--noprofile", "-O", "histappend"])
             env.setdefault("HISTSIZE", "50000")
             env.setdefault("HISTFILESIZE", "-1")
+            with _bash_completion(env, client):
+                return _run_process(cmd, env, lease)
         return _run_process(cmd, env, lease)
 
     elif shell_name == "fish":

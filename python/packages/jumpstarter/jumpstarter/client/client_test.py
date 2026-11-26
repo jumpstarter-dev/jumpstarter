@@ -9,6 +9,7 @@ import pytest
 from grpc.aio import AioRpcError
 
 from jumpstarter.client.client import _is_tcp_address, client_from_path
+from jumpstarter.common import TemporarySocket
 from jumpstarter.common.exceptions import ExporterUnreachableError
 
 pytestmark = pytest.mark.anyio
@@ -347,3 +348,48 @@ class TestClientFromPathExporterUnreachable:
             ):
                 pass
 
+
+
+class TestClientFromPathReportTimeout:
+    """report_timeout bounds the initial GetReport with a gRPC deadline."""
+
+    async def test_unresponsive_exporter_times_out(self):
+        import anyio
+        from jumpstarter_protocol import jumpstarter_pb2_grpc
+
+        answered = anyio.Event()
+
+        class Unresponsive(jumpstarter_pb2_grpc.ExporterServiceServicer):
+            async def GetReport(self, request, context):
+                try:
+                    await anyio.sleep_forever()
+                finally:
+                    # The deadline cancels the call on the server side too
+                    answered.set()
+
+        # Not tmp_path: on macOS it is longer than a unix socket path may be
+        with TemporarySocket() as socket:
+            server = grpc.aio.server()
+            jumpstarter_pb2_grpc.add_ExporterServiceServicer_to_server(Unresponsive(), server)
+            server.add_secure_port(f"unix://{socket}", grpc.local_server_credentials(grpc.LocalConnectionType.UDS))
+            await server.start()
+            try:
+                with anyio.fail_after(5):  # guards the test only; the deadline is gRPC's
+                    with ExitStack() as stack, pytest.raises(ExporterUnreachableError):
+                        async with client_from_path(
+                            str(socket), MagicMock(), stack, allow=[], unsafe=True, report_timeout=0.2
+                        ):
+                            pass
+                    await answered.wait()
+            finally:
+                await server.stop(None)
+
+    async def test_no_deadline_by_default(self):
+        stub = MagicMock()
+        stub.GetReport = AsyncMock(side_effect=MockAioRpcError(grpc.StatusCode.UNAVAILABLE, "down"))
+        with patch("jumpstarter.client.client.MultipathExporterStub", return_value=stub), pytest.raises(
+            ExporterUnreachableError
+        ):
+            async with client_from_path("/tmp/test.sock", MagicMock(), ExitStack(), allow=[], unsafe=True):
+                pass
+        assert stub.GetReport.call_args.kwargs == {"timeout": None}
