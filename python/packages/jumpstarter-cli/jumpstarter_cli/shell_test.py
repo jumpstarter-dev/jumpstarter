@@ -1193,6 +1193,43 @@ class TestRunShellWithLeaseAsync:
 
         run_shell.assert_not_called()
 
+    @staticmethod
+    async def _run_shell_ending_lease_then_failing(teardown_error):
+        """The shell exits 3 as the lease ends, then the session fails with *teardown_error*."""
+        monitor = _FakeStatusMonitor()
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.LEASE_READY)
+        lease = _make_shell_lease()
+
+        def run_shell(*_a, **_kw):
+            lease.lease_ended = True
+            return 3
+
+        @asynccontextmanager
+        async def failing_serve_unix_async():
+            yield "/tmp/fake.sock"
+            raise BaseExceptionGroup("teardown", [teardown_error])
+
+        lease.serve_unix_async = failing_serve_unix_async
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", side_effect=run_shell),
+        ):
+            return await _run_shell_with_lease_async(lease, False, None, (), Mock(cancel_called=False))
+
+    async def test_keeps_exit_code_when_session_fails_after_lease_ended(self):
+        assert await self._run_shell_ending_lease_then_failing(RuntimeError("stream reset")) == 3
+
+    async def test_reports_offline_exporter_after_lease_ended(self):
+        with pytest.raises(BaseExceptionGroup) as exc_info:
+            await self._run_shell_ending_lease_then_failing(ExporterOfflineError("afterLease hook failed"))
+
+        assert find_exception_in_group(exc_info.value, ExporterOfflineError) is not None
+
     async def test_available_status_probe_with_lease_ended_race(self):
         """When lease expires during the probe (race condition), AVAILABLE
         should not be treated as connection loss."""
@@ -1329,8 +1366,8 @@ class TestShellWithSignalHandlingExceptionGroup:
         config.lease_async = lease_async
         return config
 
-    async def test_exits_gracefully_when_lease_ended(self):
-        """When the lease expired naturally, a task-group failure exits with code 0."""
+    async def test_exits_gracefully_when_lease_ended(self, capsys):
+        """When the lease expired naturally, a task-group failure warns and exits with code 1."""
         lease = Mock()
         lease.release = True
         lease.name = "timeout-lease"
@@ -1349,7 +1386,10 @@ class TestShellWithSignalHandlingExceptionGroup:
                 config, None, None, None, timedelta(minutes=1), False, (), None
             )
 
-        assert exit_code == 0
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Warning: the lease ended before the command ran" in captured.err
+        assert "Error" not in captured.err + captured.out
 
     async def test_raises_offline_error_when_lease_active_and_task_group_fails(self):
         """An active lease that hits a task-group failure surfaces ExporterOfflineError.
@@ -1552,7 +1592,7 @@ class TestRetryLoopLeaseExpired:
                 config, None, None, None, timedelta(minutes=1), False, (), None
             )
 
-        assert exit_code == 0
+        assert exit_code == 1
         assert state["call_count"] == 1  # did not retry
 
     async def test_retries_normally_when_lease_not_ended(self):
@@ -1703,7 +1743,7 @@ async def test_lease_ending_during_startup_exits_as_expired(client_name, release
 
     exit_code, acquired = await _start_session_with_failing_dial(client_name, release, dial, ended)
 
-    assert exit_code == 0
+    assert exit_code == 1
     assert acquired == 1  # not released and acquired again
 
 
