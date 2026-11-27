@@ -18,8 +18,10 @@ USER 1001
 COPY --chown=1001:0 go.mod go.mod
 COPY --chown=1001:0 go.sum go.sum
 # Cache deps before building
-RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=locked,uid=1001,gid=0 \
-        --mount=type=cache,target=/opt/app-root/src/.cache/go-build,sharing=locked,uid=1001,gid=0 \
+# The cache mounts are shared, not locked: Go's module and build caches allow
+# concurrent use, and a lock made the two architectures' builds take turns.
+RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=shared,uid=1001,gid=0 \
+        --mount=type=cache,target=/opt/app-root/src/.cache/go-build,sharing=shared,uid=1001,gid=0 \
         go mod download
 
 # Copy the go source
@@ -28,10 +30,10 @@ COPY --chown=1001:0 api/ api/
 COPY --chown=1001:0 internal/ internal/
 
 # Build
-RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=locked,uid=1001,gid=0 \
---mount=type=cache,target=/opt/app-root/src/.cache/go-build,sharing=locked,uid=1001,gid=0 \
+RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,sharing=shared,uid=1001,gid=0 \
+--mount=type=cache,target=/opt/app-root/src/.cache/go-build,sharing=shared,uid=1001,gid=0 \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
-    go build -a \
+    go build \
     -ldflags "-X main.version=${GIT_VERSION} -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" \
     -o exporter-set-controller cmd/exporter-set-controller/main.go
 
