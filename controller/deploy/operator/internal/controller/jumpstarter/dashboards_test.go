@@ -182,6 +182,31 @@ func TestDesiredPersesDashboard(t *testing.T) {
 			t.Errorf("failure-rate query must contain %q:\n%s", want, failureRate)
 		}
 	}
+	// The exporter and driver_type variables are shown to the user, so every
+	// panel whose metrics carry those labels has to use them.
+	for _, want := range []string{`exporter=~"$exporter"`, `driver_type=~"$driver_type"`} {
+		if !strings.Contains(failureRate, want) {
+			t.Errorf("failure-rate query must filter on %s:\n%s", want, failureRate)
+		}
+	}
+	for _, key := range []string{"operationDurationP95", "operationErrors", "topExporters"} {
+		query := panelQueryString(t, panels, key)
+		if !strings.Contains(query, `exporter=~"$exporter"`) {
+			t.Errorf("panel %q must filter on the exporter variable:\n%s", key, query)
+		}
+	}
+	if query := panelQueryString(t, panels, "activeSessions"); !strings.Contains(query, `exporter=~"$exporter"`) {
+		t.Errorf("active sessions must filter on the exporter variable:\n%s", query)
+	}
+	if query := panelQueryString(t, panels, "scrapeTimeouts"); !strings.Contains(query, `exporter=~"$exporter"`) {
+		t.Errorf("scrape timeouts must filter on the exporter variable:\n%s", query)
+	}
+	// Controller and telemetry-service metrics carry neither label.
+	for _, key := range []string{"leaseAcquisitions", "telemetryDrops"} {
+		if query := panelQueryString(t, panels, key); strings.Contains(query, "$exporter") {
+			t.Errorf("panel %q must stay unfiltered:\n%s", key, query)
+		}
+	}
 	assertLokiPanel(t, panels, "leaseLogs", "logs")
 	assertLayoutReferences(t, layouts[0], panels)
 }

@@ -239,32 +239,32 @@ func desiredPersesDashboard(js *operatorv1alpha1.Jumpstarter) *unstructured.Unst
 	addPanel("operationFailureRate", "Operation failure rate", "TimeSeriesChart",
 		prometheusQuery(`(
   sum by (exporter, operation) (
-    rate(jumpstarter_operations_total{result="failure"}[5m])
+    rate(jumpstarter_operations_total{result="failure", exporter=~"$exporter", driver_type=~"$driver_type"}[5m])
   )
   or
   0 * sum by (exporter, operation) (
-    rate(jumpstarter_operations_total[5m])
+    rate(jumpstarter_operations_total{exporter=~"$exporter", driver_type=~"$driver_type"}[5m])
   )
 )
 /
 sum by (exporter, operation) (
-  rate(jumpstarter_operations_total[5m])
+  rate(jumpstarter_operations_total{exporter=~"$exporter", driver_type=~"$driver_type"}[5m])
 )`, prometheusDatasource))
 	addPanel("operationDurationP95", "Operation duration p95", "TimeSeriesChart",
 		prometheusQuery(`histogram_quantile(0.95,
   sum by (operation, le) (
-    rate(jumpstarter_operation_duration_seconds_bucket[5m])
+    rate(jumpstarter_operation_duration_seconds_bucket{exporter=~"$exporter", driver_type=~"$driver_type"}[5m])
   )
 )`, prometheusDatasource))
 	addPanel("operationErrors", "Errors by type", "TimeSeriesChart",
 		prometheusQuery(`sum by (exporter, error_type) (
-  increase(jumpstarter_operation_errors_total[5m])
+  increase(jumpstarter_operation_errors_total{exporter=~"$exporter", driver_type=~"$driver_type"}[5m])
 )`, prometheusDatasource))
 	addPanel("activeSessions", "Active sessions", "TimeSeriesChart",
-		prometheusQuery(`sum by (exporter) (jumpstarter_active_sessions)`, prometheusDatasource))
+		prometheusQuery(`sum by (exporter) (jumpstarter_active_sessions{exporter=~"$exporter"})`, prometheusDatasource))
 	addPanel("streamThroughput", "Stream throughput", "TimeSeriesChart",
 		prometheusQuery(`sum by (exporter, direction) (
-  rate(jumpstarter_stream_bytes_total[5m])
+  rate(jumpstarter_stream_bytes_total{exporter=~"$exporter"}[5m])
 )`, prometheusDatasource))
 	addPanel("leaseAcquisitions", "Lease acquisitions", "TimeSeriesChart",
 		prometheusQuery(`sum by (result) (
@@ -272,13 +272,13 @@ sum by (exporter, operation) (
 )`, prometheusDatasource))
 	addPanel("topExporters", "Top exporters by operations", "TimeSeriesChart",
 		prometheusQuery(`topk(5, sum by (exporter) (
-  rate(jumpstarter_operations_total[1h])
+  rate(jumpstarter_operations_total{exporter=~"$exporter", driver_type=~"$driver_type"}[1h])
 ))`, prometheusDatasource))
 	addPanel("telemetryDrops", "Telemetry drops", "TimeSeriesChart",
 		prometheusQuery(`increase(jumpstarter_telemetry_dropped_total[5m])`, prometheusDatasource))
 	addPanel("scrapeTimeouts", "Scrape timeouts", "TimeSeriesChart",
 		prometheusQuery(`topk(10, sum by (exporter) (
-  increase(jumpstarter_scrape_timeouts_total[30m])
+  increase(jumpstarter_scrape_timeouts_total{exporter=~"$exporter"}[30m])
 ))`, prometheusDatasource))
 	addPanel("leaseLogs", "Lease logs", "LogsTable",
 		lokiQuery(`{component="exporter"} | json | lease_id="$lease_id"`, lokiDatasource))

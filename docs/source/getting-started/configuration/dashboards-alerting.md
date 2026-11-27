@@ -42,8 +42,9 @@ uncreated and reports `DashboardsReady=False/NotConfigured`.
 
 The generated dashboard contains:
 
-- variables for `exporter` and `driver_type` (Prometheus) and a `lease_id` text
-  variable;
+- `exporter` and `driver_type` variables that filter every Prometheus panel
+  whose metrics carry those labels, and a `lease_id` text variable that filters
+  the log panel;
 - operation failure rate, p95 duration, errors by type, active sessions, stream
   throughput, lease acquisitions, top exporters, telemetry drops, and scrape
   timeout panels;
