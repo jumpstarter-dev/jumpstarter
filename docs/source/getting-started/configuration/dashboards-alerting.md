@@ -106,8 +106,12 @@ spec:
         proxy:
           kind: HTTPProxy
           spec:
-            url: http://loki-gateway.monitoring.svc:3100
+            url: http://loki-gateway.monitoring.svc:80
 ```
+
+The Loki address is the gateway Service from the Loki Helm chart, which listens
+on port 80 and proxies to Loki itself; point it at your own Service and port if
+you install Loki differently.
 
 ### Project datasources
 
