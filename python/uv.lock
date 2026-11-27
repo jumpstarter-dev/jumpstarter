@@ -5,24 +5,27 @@ resolution-markers = [
     "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'",
     "python_full_version >= '3.14' and platform_python_implementation == 'PyPy' and sys_platform == 'linux'",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'linux') or (implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'))",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'))",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'win32')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'linux') or (implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32'))",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'))",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'win32')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten') or (os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten'))",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten') or (os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten'))",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'android') or (os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android'))",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android')",
     "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android'",
-    "python_full_version >= '3.14' and ((implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'android') or (os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android'))",
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
-    "python_full_version < '3.14' and sys_platform == 'emscripten'",
-    "python_full_version < '3.14' and sys_platform == 'android'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android')",
+    "python_full_version == '3.13.*' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.13' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform == 'android'",
+    "python_full_version < '3.13' and sys_platform == 'android'",
 ]
 
 [manifest]
@@ -140,7 +143,7 @@ docs = [
     { name = "myst-parser", specifier = ">=5.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.33.1" },
-    { name = "sphinx", specifier = "<9.1.1" },
+    { name = "sphinx", specifier = "<9.2.1" },
     { name = "sphinx-autobuild", specifier = ">=2024.4.16" },
     { name = "sphinx-click", specifier = ">=6.0.0" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
@@ -148,6 +151,18 @@ docs = [
     { name = "sphinx-substitution-extensions", specifier = ">=2026.6.17" },
     { name = "sphinxcontrib-mermaid", specifier = ">=2.0.1" },
     { name = "sphinxcontrib-programoutput", specifier = ">=0.19" },
+]
+
+[[package]]
+name = "accessible-pygments"
+version = "0.0.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bc/c1/bbac6a50d02774f91572938964c582fff4270eee73ab822a4aeea4d8b11b/accessible_pygments-0.0.5.tar.gz", hash = "sha256:40918d3e6a2b619ad424cb91e556bd3bd8865443d9f22f1dcdf79e33c8046872", size = 1377899, upload-time = "2024-05-10T11:23:10.216Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/3f/95338030883d8c8b91223b4e21744b04d11b161a3ef117295d8241f50ab4/accessible_pygments-0.0.5-py3-none-any.whl", hash = "sha256:88ae3211e68a1d0b011504b2ffc1691feafce124b845bd072ab6f9f66f34d4b7", size = 1395903, upload-time = "2024-05-10T11:23:08.421Z" },
 ]
 
 [[package]]
@@ -430,9 +445,46 @@ wheels = [
 name = "babel"
 version = "2.17.0"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.13' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform == 'android'",
+]
 sdist = { url = "https://files.pythonhosted.org/packages/7d/6b/d52e42361e1aa00709585ecc30b3f9684b3ab62530771402248b1b1d6240/babel-2.17.0.tar.gz", hash = "sha256:0c54cffb19f690cdcc52a3b50bcbf71e07a808d1c80d549f2459b9d2cf0afb9d", size = 9951852, upload-time = "2025-02-01T15:17:41.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/b8/3fe70c75fe32afc4bb507f75563d39bc5642255d1d94f1f23604725780bf/babel-2.17.0-py3-none-any.whl", hash = "sha256:4d0b53093fdfb4b21c92b5213dba5a1b23885afa8383709427046b21c366e5f2", size = 10182537, upload-time = "2025-02-01T15:17:37.39Z" },
+]
+
+[[package]]
+name = "babel"
+version = "2.19.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'",
+    "python_full_version >= '3.14' and platform_python_implementation == 'PyPy' and sys_platform == 'linux'",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android')",
+    "python_full_version == '3.13.*' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform == 'android'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/44/744169ce3677a541439bc9506ef08bd85674e9d6e3895ebe5a87ff65fb7a/babel-2.19.0.tar.gz", hash = "sha256:fddd2cbbbac7c299af3c2880be23609c331bd94f0912baca6cb0abfe054dfc27", size = 10695455, upload-time = "2026-11-24T20:14:32.427Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/71/3b/ddf4b07be846bfa361683729b5948c9c61a87fbdf09e69540d8e586bb7c5/babel-2.19.0-py3-none-any.whl", hash = "sha256:6d49734aed1d595b2c065d012174df8c83964692f26fc461702281634dd7555b", size = 10983582, upload-time = "2026-11-24T20:14:30.163Z" },
 ]
 
 [[package]]
@@ -663,9 +715,9 @@ version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dbus-fast", marker = "sys_platform == 'linux'" },
-    { name = "pyobjc-core", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-corebluetooth", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-libdispatch", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-core", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-framework-corebluetooth", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "pyobjc-framework-libdispatch", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
     { name = "typing-extensions" },
     { name = "winrt-runtime", marker = "sys_platform == 'win32'" },
     { name = "winrt-windows-devices-bluetooth", marker = "sys_platform == 'win32'" },
@@ -1166,7 +1218,8 @@ dependencies = [
     { name = "platformdirs" },
     { name = "pygls" },
     { name = "pyspellchecker" },
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/67/c5/0c89af3da1f3133b53f3ba8ae677ed4d4ddff33eec50dbf32c95e01ed2d2/esbonio-0.16.5.tar.gz", hash = "sha256:acab2e16c6cf8f7232fb04e0d48514ce50566516b1f6fcf669ccf2f247e8b10f", size = 145347, upload-time = "2024-09-23T18:57:57.823Z" }
@@ -1317,17 +1370,19 @@ wheels = [
 
 [[package]]
 name = "furo"
-version = "2024.8.6"
+version = "2025.12.19"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "accessible-pygments" },
     { name = "beautifulsoup4" },
     { name = "pygments" },
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "sphinx-basic-ng" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a0/e2/d351d69a9a9e4badb4a5be062c2d0e87bd9e6c23b5e57337fef14bef34c8/furo-2024.8.6.tar.gz", hash = "sha256:b63e4cee8abfc3136d3bc03a3d45a76a850bada4d6374d24c1716b0e01394a01", size = 1661506, upload-time = "2024-08-06T08:07:57.567Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/20/5f5ad4da6a5a27c80f2ed2ee9aee3f9e36c66e56e21c00fde467b2f8f88f/furo-2025.12.19.tar.gz", hash = "sha256:188d1f942037d8b37cd3985b955839fea62baa1730087dc29d157677c857e2a7", size = 1661473, upload-time = "2025-12-19T17:34:40.889Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/48/e791a7ed487dbb9729ef32bb5d1af16693d8925f4366befef54119b2e576/furo-2024.8.6-py3-none-any.whl", hash = "sha256:6cd97c58b47813d3619e63e9081169880fbe331f0ca883c871ff1f3f11814f5c", size = 341333, upload-time = "2024-08-06T08:07:54.44Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/b2/50e9b292b5cac13e9e81272c7171301abc753a60460d21505b606e15cf21/furo-2025.12.19-py3-none-any.whl", hash = "sha256:bb0ead5309f9500130665a26bee87693c41ce4dbdff864dbfb6b0dae4673d24f", size = 339262, upload-time = "2025-12-19T17:34:38.905Z" },
 ]
 
 [[package]]
@@ -1361,7 +1416,8 @@ name = "gpiod"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.13' and sys_platform != 'android' and sys_platform != 'emscripten'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/8f/74/cb43c6e2fe74cf1567160ccbf54db176f72481e5ac58567684a262672c7c/gpiod-2.3.0.tar.gz", hash = "sha256:daa840ed5b691e7078a9cf21c79fe813b9a91c3ed0bdbafae0181c7b98b80300", size = 57304, upload-time = "2025-02-19T13:05:38.181Z" }
 wheels = [
@@ -4686,8 +4742,8 @@ version = "0.12.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mitmproxy-linux", marker = "sys_platform == 'linux'" },
-    { name = "mitmproxy-macos", marker = "sys_platform == 'darwin'" },
-    { name = "mitmproxy-windows", marker = "os_name == 'nt'" },
+    { name = "mitmproxy-macos", marker = "(python_full_version < '3.14' and implementation_name != 'pypy' and sys_platform == 'darwin') or (implementation_name == 'pypy' and sys_platform == 'darwin') or (os_name != 'nt' and sys_platform == 'darwin')" },
+    { name = "mitmproxy-windows", marker = "(python_full_version < '3.14' and os_name == 'nt') or (implementation_name != 'pypy' and os_name == 'nt') or (os_name == 'nt' and sys_platform != 'linux')" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5d/5c/16a61303da76cd34aa6ddbd7ef6ac66d9ef8514c4d3a5b71831169d63236/mitmproxy_rs-0.12.9.tar.gz", hash = "sha256:c6ffc35c002c675cac534442d92d1cdebd66fafd63754ad33b92ae968ea6e449", size = 1334424, upload-time = "2026-01-30T14:54:15.043Z" }
 wheels = [
@@ -4862,7 +4918,8 @@ dependencies = [
     { name = "markdown-it-py" },
     { name = "mdit-py-plugins" },
     { name = "pyyaml" },
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/33/fa/7b45eef11b7971f0beb29d27b7bfe0d747d063aa29e170d9edd004733c8a/myst_parser-5.0.0.tar.gz", hash = "sha256:f6f231452c56e8baa662cc352c548158f6a16fcbd6e3800fc594978002b94f3a", size = 98535, upload-time = "2026-01-15T09:08:18.036Z" }
 wheels = [
@@ -5611,7 +5668,7 @@ name = "pyobjc-framework-cocoa"
 version = "12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "python_full_version < '3.14' or implementation_name == 'pypy' or os_name != 'nt'" },
+    { name = "pyobjc-core" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/37/6f/89837da349fe7de6476c426f118096b147de923139556d98af1832c64b97/pyobjc_framework_cocoa-12.0.tar.gz", hash = "sha256:02d69305b698015a20fcc8e1296e1528e413d8cf9fdcd590478d359386d76e8a", size = 2771906, upload-time = "2025-10-21T08:30:51.765Z" }
 wheels = [
@@ -5627,8 +5684,8 @@ name = "pyobjc-framework-corebluetooth"
 version = "12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "python_full_version < '3.14' or implementation_name == 'pypy' or os_name != 'nt'" },
-    { name = "pyobjc-framework-cocoa", marker = "python_full_version < '3.14' or implementation_name == 'pypy' or os_name != 'nt'" },
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/96/b2/ad9e8516cd73611a3a8f8ff2d7d51b917115f3f7f9e7a9760d5fc4e9dd6b/pyobjc_framework_corebluetooth-12.0.tar.gz", hash = "sha256:61ae2a56c3dcb8b7307d833e7d913bd7c063d11a1ea931158facceb38aae21d3", size = 33587, upload-time = "2025-10-21T08:31:18.036Z" }
 wheels = [
@@ -5644,8 +5701,8 @@ name = "pyobjc-framework-libdispatch"
 version = "12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyobjc-core", marker = "python_full_version < '3.14' or implementation_name == 'pypy' or os_name != 'nt'" },
-    { name = "pyobjc-framework-cocoa", marker = "python_full_version < '3.14' or implementation_name == 'pypy' or os_name != 'nt'" },
+    { name = "pyobjc-core" },
+    { name = "pyobjc-framework-cocoa" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/b3/7e/251ea268ce5a341586c963de758c7ff6dea681c98a1fb6da87f6d0004bd3/pyobjc_framework_libdispatch-12.0.tar.gz", hash = "sha256:2ef31c02670c377d9e2875e74053087b1d96b240d2fc8721cc4c665c05394b3a", size = 38599, upload-time = "2025-10-21T08:34:38.878Z" }
 wheels = [
@@ -6178,18 +6235,6 @@ wheels = [
 ]
 
 [[package]]
-name = "roman-numerals-py"
-version = "4.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "roman-numerals" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/b5/de96fca640f4f656eb79bbee0e79aeec52e3e0e359f8a3e6a0d366378b64/roman_numerals_py-4.1.0.tar.gz", hash = "sha256:f5d7b2b4ca52dd855ef7ab8eb3590f428c0b1ea480736ce32b01fef2a5f8daf9", size = 4274, upload-time = "2025-12-17T18:25:41.153Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/2c/daca29684cbe9fd4bc711f8246da3c10adca1ccc4d24436b17572eb2590e/roman_numerals_py-4.1.0-py3-none-any.whl", hash = "sha256:553114c1167141c1283a51743759723ecd05604a1b6b507225e91dc1a6df0780", size = 4547, upload-time = "2025-12-17T18:25:40.136Z" },
-]
-
-[[package]]
 name = "rpds-py"
 version = "2026.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -6532,11 +6577,16 @@ wheels = [
 
 [[package]]
 name = "sphinx"
-version = "8.2.3"
+version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.13' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform == 'android'",
+]
 dependencies = [
     { name = "alabaster" },
-    { name = "babel" },
+    { name = "babel", version = "2.17.0", source = { registry = "https://pypi.org/simple" } },
     { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "docutils" },
     { name = "imagesize" },
@@ -6544,7 +6594,7 @@ dependencies = [
     { name = "packaging" },
     { name = "pygments" },
     { name = "requests" },
-    { name = "roman-numerals-py" },
+    { name = "roman-numerals" },
     { name = "snowballstemmer" },
     { name = "sphinxcontrib-applehelp" },
     { name = "sphinxcontrib-devhelp" },
@@ -6553,9 +6603,60 @@ dependencies = [
     { name = "sphinxcontrib-qthelp" },
     { name = "sphinxcontrib-serializinghtml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/38/ad/4360e50ed56cb483667b8e6dadf2d3fda62359593faabbe749a27c4eaca6/sphinx-8.2.3.tar.gz", hash = "sha256:398ad29dee7f63a75888314e9424d40f52ce5a6a87ae88e7071e80af296ec348", size = 8321876, upload-time = "2025-03-02T22:31:59.658Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/73/567727fc8c8d85bc3adc88a246e12937cfda8d565cf1d80e85bceaa61fe5/sphinx-9.1.1.tar.gz", hash = "sha256:48b627f02908f22c601b3ba9c7b17265b4f315dd05c8bc64cd4da41183f44fbc", size = 8725638, upload-time = "2026-10-20T00:41:13.96Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/31/53/136e9eca6e0b9dc0e1962e2c908fbea2e5ac000c2a2fbd9a35797958c48b/sphinx-8.2.3-py3-none-any.whl", hash = "sha256:4405915165f13521d875a8c29c8970800a0141c14cc5416a38feca4ea5d9b9c3", size = 3589741, upload-time = "2025-03-02T22:31:56.836Z" },
+    { url = "https://files.pythonhosted.org/packages/47/18/3c66ea76da7de47e716b181c35bdbfafbd5e9af0bb247b14578e9de348e9/sphinx-9.1.1-py3-none-any.whl", hash = "sha256:f8b60013ce25017be41a509e5c2d265bc1918410061315c36b809c7f335646c0", size = 3923559, upload-time = "2026-10-20T00:41:11.288Z" },
+]
+
+[[package]]
+name = "sphinx"
+version = "9.2.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and platform_python_implementation != 'PyPy' and sys_platform == 'linux'",
+    "python_full_version >= '3.14' and platform_python_implementation == 'PyPy' and sys_platform == 'linux'",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform != 'android' and sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'win32') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'win32')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'emscripten')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'emscripten')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation != 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation != 'PyPy' and sys_platform == 'android')",
+    "python_full_version >= '3.14' and implementation_name != 'pypy' and os_name == 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android'",
+    "(python_full_version >= '3.14' and implementation_name == 'pypy' and platform_python_implementation == 'PyPy' and sys_platform == 'android') or (python_full_version >= '3.14' and os_name != 'nt' and platform_python_implementation == 'PyPy' and sys_platform == 'android')",
+    "python_full_version == '3.13.*' and sys_platform != 'android' and sys_platform != 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform == 'android'",
+]
+dependencies = [
+    { name = "alabaster" },
+    { name = "babel", version = "2.19.0", source = { registry = "https://pypi.org/simple" } },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "docutils" },
+    { name = "imagesize" },
+    { name = "jinja2" },
+    { name = "packaging" },
+    { name = "pygments" },
+    { name = "requests" },
+    { name = "roman-numerals" },
+    { name = "snowballstemmer" },
+    { name = "sphinxcontrib-applehelp" },
+    { name = "sphinxcontrib-devhelp" },
+    { name = "sphinxcontrib-htmlhelp" },
+    { name = "sphinxcontrib-jsmath" },
+    { name = "sphinxcontrib-qthelp" },
+    { name = "sphinxcontrib-serializinghtml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/64/d4/413466f0be8b1cb0e3e43893a148b96d7462d0923d82b4166b21afc5f30c/sphinx-9.2.0.tar.gz", hash = "sha256:90470459f3cab15d9dfed146c71cf77694b0445df17b2e0e69059cb9f7fc9ee4", size = 8782438, upload-time = "2026-10-21T00:05:15.019Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c4/28/a0c50761cd215b7042f4bc617a6bc5c0cd7be62f75bc908e169e28a4d21e/sphinx-9.2.0-py3-none-any.whl", hash = "sha256:4c3ec13b612712c0d3ce4cbdd9e3eb91e68577e07a8e31f32f21cf178453578c", size = 3925388, upload-time = "2026-10-21T00:05:12.241Z" },
 ]
 
 [[package]]
@@ -6564,7 +6665,8 @@ version = "2024.10.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama" },
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "starlette" },
     { name = "uvicorn" },
     { name = "watchfiles" },
@@ -6580,7 +6682,8 @@ name = "sphinx-basic-ng"
 version = "1.0.0b2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/98/0b/a866924ded68efec7a1759587a4e478aec7559d8165fac8b2ad1c0e774d6/sphinx_basic_ng-1.0.0b2.tar.gz", hash = "sha256:9ec55a47c90c8c002b5960c57492ec3021f5193cb26cebc2dc4ea226848651c9", size = 20736, upload-time = "2023-07-08T18:40:54.166Z" }
 wheels = [
@@ -6594,7 +6697,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
     { name = "docutils" },
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/db/0a/5b1e8d0579dbb4ca8114e456ca4a68020bfe8e15c7001f3856be4929ab83/sphinx_click-6.0.0.tar.gz", hash = "sha256:f5d664321dc0c6622ff019f1e1c84e58ce0cecfddeb510e004cf60c2a3ab465b", size = 29574, upload-time = "2024-05-15T14:49:17.044Z" }
 wheels = [
@@ -6606,7 +6710,8 @@ name = "sphinx-copybutton"
 version = "0.5.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/fc/2b/a964715e7f5295f77509e59309959f4125122d648f86b4fe7d70ca1d882c/sphinx-copybutton-0.5.2.tar.gz", hash = "sha256:4cf17c82fb9646d1bc9ca92ac280813a3b605d8c421225fd9913154103ee1fbd", size = 23039, upload-time = "2023-04-14T08:10:22.998Z" }
 wheels = [
@@ -6618,7 +6723,8 @@ name = "sphinx-inline-tabs"
 version = "2023.4.21"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/48/f5/f8a2be63ed7be9f91a4c2bea0e25bcb56aa4c5cc37ec4d8ead8065f926b1/sphinx_inline_tabs-2023.4.21.tar.gz", hash = "sha256:5df2f13f602c158f3f5f6c509e008aeada199a8c76d97ba3aa2822206683bebc", size = 42664, upload-time = "2023-04-21T20:25:30.578Z" }
 wheels = [
@@ -6633,7 +6739,8 @@ dependencies = [
     { name = "beartype" },
     { name = "docutils" },
     { name = "myst-parser" },
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/07/d9/d7bd4d3a396b05fa441b46e70d6b50971b219a521ffef5cc1f17f2aff7ed/sphinx_substitution_extensions-2026.8.5.tar.gz", hash = "sha256:c64c0c3cd4d2d4c59d761252876b0fd8367e1023bc54e333bf06b1a434965503", size = 42300, upload-time = "2026-08-05T12:21:17.361Z" }
 wheels = [
@@ -6683,7 +6790,8 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
     { name = "pyyaml" },
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2b/ae/999891de292919b66ea34f2c22fc22c9be90ab3536fbc0fca95716277351/sphinxcontrib_mermaid-2.0.1.tar.gz", hash = "sha256:a21a385a059a6cafd192aa3a586b14bf5c42721e229db67b459dc825d7f0a497", size = 19839, upload-time = "2026-03-05T14:10:41.901Z" }
 wheels = [
@@ -6695,7 +6803,8 @@ name = "sphinxcontrib-programoutput"
 version = "0.19"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "sphinx" },
+    { name = "sphinx", version = "9.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "sphinx", version = "9.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5b/c3/670084aead0328cb06d6802d6bd9e382f69e93e79a06c278a0447171a1ea/sphinxcontrib_programoutput-0.19.tar.gz", hash = "sha256:787ca068b7e1205ed492ea20a23a8e599c3b4edb8c43bacf564e5ec7c30c7dad", size = 27534, upload-time = "2026-02-20T19:17:42.217Z" }
 wheels = [
