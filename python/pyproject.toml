@@ -129,7 +129,7 @@ override-dependencies = [
 
 [dependency-groups]
 docs = [
-    "sphinx<9.1.1",
+    "sphinx<9.2.1",
     "myst-parser>=5.0.0",
     "sphinxcontrib-mermaid>=2.0.1",
     "furo>=2024.8.6",
