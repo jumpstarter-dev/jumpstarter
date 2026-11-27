@@ -3,26 +3,26 @@
 isort:skip_file
 Copyright 2024 The Jumpstarter Authors"""
 
-import builtins
-import google.protobuf.descriptor
-import google.protobuf.internal.enum_type_wrapper
-import google.protobuf.message
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+import builtins as _builtins
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 10):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import TypeAlias as _TypeAlias, Never as _Never
 else:
-    import typing_extensions
+    from typing_extensions import TypeAlias as _TypeAlias, Never as _Never
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+DESCRIPTOR: _descriptor.FileDescriptor
 
 class _FrameType:
-    ValueType = typing.NewType("ValueType", builtins.int)
-    V: typing_extensions.TypeAlias = ValueType
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _FrameTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_FrameType.ValueType], builtins.type):
-    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+class _FrameTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_FrameType.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
     FRAME_TYPE_DATA: _FrameType.ValueType  # 0
     """Data frame carrying payload bytes."""
     FRAME_TYPE_RST_STREAM: _FrameType.ValueType  # 3
@@ -43,48 +43,56 @@ FRAME_TYPE_PING: FrameType.ValueType  # 6
 """Keepalive ping frame."""
 FRAME_TYPE_GOAWAY: FrameType.ValueType  # 7
 """Graceful shutdown signal."""
-Global___FrameType: typing_extensions.TypeAlias = FrameType
+Global___FrameType: _TypeAlias = FrameType  # noqa: Y015
 
-@typing.final
-class StreamRequest(google.protobuf.message.Message):
+@_typing.final
+class StreamRequest(_message.Message):
     """Request message for bidirectional stream communication."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    PAYLOAD_FIELD_NUMBER: builtins.int
-    FRAME_TYPE_FIELD_NUMBER: builtins.int
-    payload: builtins.bytes
+    PAYLOAD_FIELD_NUMBER: _builtins.int
+    FRAME_TYPE_FIELD_NUMBER: _builtins.int
+    payload: _builtins.bytes
     """The raw bytes of the stream frame."""
     frame_type: Global___FrameType.ValueType
     """The type of frame being sent."""
     def __init__(
         self,
         *,
-        payload: builtins.bytes = ...,
+        payload: _builtins.bytes = ...,
         frame_type: Global___FrameType.ValueType = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["frame_type", b"frame_type", "payload", b"payload"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["frame_type", b"frame_type", "payload", b"payload"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___StreamRequest: typing_extensions.TypeAlias = StreamRequest
+Global___StreamRequest: _TypeAlias = StreamRequest  # noqa: Y015
 
-@typing.final
-class StreamResponse(google.protobuf.message.Message):
+@_typing.final
+class StreamResponse(_message.Message):
     """Response message for bidirectional stream communication."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    PAYLOAD_FIELD_NUMBER: builtins.int
-    FRAME_TYPE_FIELD_NUMBER: builtins.int
-    payload: builtins.bytes
+    PAYLOAD_FIELD_NUMBER: _builtins.int
+    FRAME_TYPE_FIELD_NUMBER: _builtins.int
+    payload: _builtins.bytes
     """The raw bytes of the stream frame."""
     frame_type: Global___FrameType.ValueType
     """The type of frame being received."""
     def __init__(
         self,
         *,
-        payload: builtins.bytes = ...,
+        payload: _builtins.bytes = ...,
         frame_type: Global___FrameType.ValueType = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["frame_type", b"frame_type", "payload", b"payload"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["frame_type", b"frame_type", "payload", b"payload"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___StreamResponse: typing_extensions.TypeAlias = StreamResponse
+Global___StreamResponse: _TypeAlias = StreamResponse  # noqa: Y015

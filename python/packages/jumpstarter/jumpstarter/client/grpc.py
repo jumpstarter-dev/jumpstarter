@@ -124,7 +124,7 @@ class Exporter(BaseModel):
             namespace=namespace,
             name=name,
             labels=dict(data.labels),
-            online=data.online,
+            online=data.online,  # ty: ignore[deprecated]
             status=status,
             enabled=data.enabled if data.HasField("enabled") else True,
             deprecated_labels=dict(data.deprecated_labels),

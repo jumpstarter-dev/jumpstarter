@@ -3,29 +3,29 @@
 isort:skip_file
 Copyright 2026 The Jumpstarter Authors"""
 
-import builtins
-import collections.abc
-import google.protobuf.descriptor
-import google.protobuf.internal.containers
-import google.protobuf.internal.enum_type_wrapper
-import google.protobuf.message
-import google.protobuf.timestamp_pb2
+from collections import abc as _abc
+from google.protobuf import descriptor as _descriptor
+from google.protobuf import message as _message
+from google.protobuf import timestamp_pb2 as _timestamp_pb2
+from google.protobuf.internal import containers as _containers
+from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
+import builtins as _builtins
 import sys
-import typing
+import typing as _typing
 
-if sys.version_info >= (3, 10):
-    import typing as typing_extensions
+if sys.version_info >= (3, 11):
+    from typing import TypeAlias as _TypeAlias, Never as _Never
 else:
-    import typing_extensions
+    from typing_extensions import TypeAlias as _TypeAlias, Never as _Never
 
-DESCRIPTOR: google.protobuf.descriptor.FileDescriptor
+DESCRIPTOR: _descriptor.FileDescriptor
 
 class _MetricsType:
-    ValueType = typing.NewType("ValueType", builtins.int)
-    V: typing_extensions.TypeAlias = ValueType
+    ValueType = _typing.NewType("ValueType", _builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
 
-class _MetricsTypeEnumTypeWrapper(google.protobuf.internal.enum_type_wrapper._EnumTypeWrapper[_MetricsType.ValueType], builtins.type):
-    DESCRIPTOR: google.protobuf.descriptor.EnumDescriptor
+class _MetricsTypeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_MetricsType.ValueType], _builtins.type):
+    DESCRIPTOR: _descriptor.EnumDescriptor
     METRICS_TYPE_UNSPECIFIED: _MetricsType.ValueType  # 0
     """Unknown or unset type."""
     METRICS_TYPE_COUNTER: _MetricsType.ValueType  # 1
@@ -54,21 +54,21 @@ METRICS_TYPE_SUMMARY: MetricsType.ValueType  # 4
 """Summary."""
 METRICS_TYPE_UNTYPED: MetricsType.ValueType  # 5
 """Untyped / unknown."""
-Global___MetricsType: typing_extensions.TypeAlias = MetricsType
+Global___MetricsType: _TypeAlias = MetricsType  # noqa: Y015
 
-@typing.final
-class MetricsStreamRequest(google.protobuf.message.Message):
+@_typing.final
+class MetricsStreamRequest(_message.Message):
     """Exporter → Telemetry"""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    REGISTER_FIELD_NUMBER: builtins.int
-    SCRAPE_RESPONSE_FIELD_NUMBER: builtins.int
-    @property
+    REGISTER_FIELD_NUMBER: _builtins.int
+    SCRAPE_RESPONSE_FIELD_NUMBER: _builtins.int
+    @_builtins.property
     def register(self) -> Global___MetricsRegister:
         """First message: identify this exporter."""
 
-    @property
+    @_builtins.property
     def scrape_response(self) -> Global___MetricsScrapeResponse:
         """Subsequent: reply to a scrape."""
 
@@ -78,43 +78,51 @@ class MetricsStreamRequest(google.protobuf.message.Message):
         register: Global___MetricsRegister | None = ...,
         scrape_response: Global___MetricsScrapeResponse | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["msg", b"msg", "register", b"register", "scrape_response", b"scrape_response"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["msg", b"msg", "register", b"register", "scrape_response", b"scrape_response"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing.Literal["msg", b"msg"]) -> typing.Literal["register", "scrape_response"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["msg", b"msg", "register", b"register", "scrape_response", b"scrape_response"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["msg", b"msg", "register", b"register", "scrape_response", b"scrape_response"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType_msg: _TypeAlias = _typing.Literal["register", "scrape_response"]  # noqa: Y015
+    _WhichOneofArgType_msg: _TypeAlias = _typing.Literal["msg", b"msg"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType_msg) -> _WhichOneofReturnType_msg | None: ...
 
-Global___MetricsStreamRequest: typing_extensions.TypeAlias = MetricsStreamRequest
+Global___MetricsStreamRequest: _TypeAlias = MetricsStreamRequest  # noqa: Y015
 
-@typing.final
-class MetricsRegister(google.protobuf.message.Message):
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+@_typing.final
+class MetricsRegister(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
 
-    IDENTITY_FIELD_NUMBER: builtins.int
-    identity: builtins.str
+    IDENTITY_FIELD_NUMBER: _builtins.int
+    identity: _builtins.str
     """Exporter CRD name (verified against the auth token by the server)."""
     def __init__(
         self,
         *,
-        identity: builtins.str = ...,
+        identity: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["identity", b"identity"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["identity", b"identity"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___MetricsRegister: typing_extensions.TypeAlias = MetricsRegister
+Global___MetricsRegister: _TypeAlias = MetricsRegister  # noqa: Y015
 
-@typing.final
-class MetricsScrapeResponse(google.protobuf.message.Message):
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+@_typing.final
+class MetricsScrapeResponse(_message.Message):
+    DESCRIPTOR: _descriptor.Descriptor
 
-    METRICS_TEXT_FIELD_NUMBER: builtins.int
-    TIMESTAMP_FIELD_NUMBER: builtins.int
-    FAMILIES_FIELD_NUMBER: builtins.int
-    metrics_text: builtins.bytes
+    METRICS_TEXT_FIELD_NUMBER: _builtins.int
+    TIMESTAMP_FIELD_NUMBER: _builtins.int
+    FAMILIES_FIELD_NUMBER: _builtins.int
+    metrics_text: _builtins.bytes
     """Optional generate_latest() OpenMetrics text (legacy / debug)."""
-    @property
-    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def timestamp(self) -> _timestamp_pb2.Timestamp:
         """When the snapshot was taken."""
 
-    @property
-    def families(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsFamily]:
+    @_builtins.property
+    def families(self) -> _containers.RepeatedCompositeFieldContainer[Global___MetricsFamily]:
         """DD-3 sidecar: in-memory registry dump so the hub can merge and filter
         exemplars without parsing OpenMetrics text (prometheus/common cannot).
         """
@@ -122,292 +130,333 @@ class MetricsScrapeResponse(google.protobuf.message.Message):
     def __init__(
         self,
         *,
-        metrics_text: builtins.bytes = ...,
-        timestamp: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        families: collections.abc.Iterable[Global___MetricsFamily] | None = ...,
+        metrics_text: _builtins.bytes = ...,
+        timestamp: _timestamp_pb2.Timestamp | None = ...,
+        families: _abc.Iterable[Global___MetricsFamily] | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["timestamp", b"timestamp"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["families", b"families", "metrics_text", b"metrics_text", "timestamp", b"timestamp"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["timestamp", b"timestamp"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["families", b"families", "metrics_text", b"metrics_text", "timestamp", b"timestamp"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___MetricsScrapeResponse: typing_extensions.TypeAlias = MetricsScrapeResponse
+Global___MetricsScrapeResponse: _TypeAlias = MetricsScrapeResponse  # noqa: Y015
 
-@typing.final
-class MetricsLabel(google.protobuf.message.Message):
+@_typing.final
+class MetricsLabel(_message.Message):
     """One label name/value pair on a sample or exemplar."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    VALUE_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    VALUE_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """Label name."""
-    value: builtins.str
+    value: _builtins.str
     """Label value."""
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
-        value: builtins.str = ...,
+        name: _builtins.str = ...,
+        value: _builtins.str = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["name", b"name", "value", b"value"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["name", b"name", "value", b"value"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___MetricsLabel: typing_extensions.TypeAlias = MetricsLabel
+Global___MetricsLabel: _TypeAlias = MetricsLabel  # noqa: Y015
 
-@typing.final
-class MetricsExemplar(google.protobuf.message.Message):
+@_typing.final
+class MetricsExemplar(_message.Message):
     """OpenMetrics exemplar attached to a sample (JEP-0013 allowlist applied on the hub)."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    LABELS_FIELD_NUMBER: builtins.int
-    VALUE_FIELD_NUMBER: builtins.int
-    TIMESTAMP_FIELD_NUMBER: builtins.int
-    value: builtins.float
+    LABELS_FIELD_NUMBER: _builtins.int
+    VALUE_FIELD_NUMBER: _builtins.int
+    TIMESTAMP_FIELD_NUMBER: _builtins.int
+    value: _builtins.float
     """Exemplar observation value."""
-    @property
-    def labels(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsLabel]:
+    @_builtins.property
+    def labels(self) -> _containers.RepeatedCompositeFieldContainer[Global___MetricsLabel]:
         """Exemplar labels (client, lease_id, …)."""
 
-    @property
-    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def timestamp(self) -> _timestamp_pb2.Timestamp:
         """Optional exemplar timestamp."""
 
     def __init__(
         self,
         *,
-        labels: collections.abc.Iterable[Global___MetricsLabel] | None = ...,
-        value: builtins.float = ...,
-        timestamp: google.protobuf.timestamp_pb2.Timestamp | None = ...,
+        labels: _abc.Iterable[Global___MetricsLabel] | None = ...,
+        value: _builtins.float = ...,
+        timestamp: _timestamp_pb2.Timestamp | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["timestamp", b"timestamp"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["labels", b"labels", "timestamp", b"timestamp", "value", b"value"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["timestamp", b"timestamp"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["labels", b"labels", "timestamp", b"timestamp", "value", b"value"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___MetricsExemplar: typing_extensions.TypeAlias = MetricsExemplar
+Global___MetricsExemplar: _TypeAlias = MetricsExemplar  # noqa: Y015
 
-@typing.final
-class MetricsSample(google.protobuf.message.Message):
+@_typing.final
+class MetricsSample(_message.Message):
     """One collected sample from prometheus_client (including histogram _bucket/_sum/_count)."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    LABELS_FIELD_NUMBER: builtins.int
-    VALUE_FIELD_NUMBER: builtins.int
-    EXEMPLAR_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    LABELS_FIELD_NUMBER: _builtins.int
+    VALUE_FIELD_NUMBER: _builtins.int
+    EXEMPLAR_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """Sample name (may include _bucket, _sum, _count)."""
-    value: builtins.float
+    value: _builtins.float
     """Sample value."""
-    @property
-    def labels(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsLabel]:
+    @_builtins.property
+    def labels(self) -> _containers.RepeatedCompositeFieldContainer[Global___MetricsLabel]:
         """Sample labels (histogram buckets include le)."""
 
-    @property
+    @_builtins.property
     def exemplar(self) -> Global___MetricsExemplar:
         """Optional exemplar for this sample."""
 
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
-        labels: collections.abc.Iterable[Global___MetricsLabel] | None = ...,
-        value: builtins.float = ...,
+        name: _builtins.str = ...,
+        labels: _abc.Iterable[Global___MetricsLabel] | None = ...,
+        value: _builtins.float = ...,
         exemplar: Global___MetricsExemplar | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["exemplar", b"exemplar"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["exemplar", b"exemplar", "labels", b"labels", "name", b"name", "value", b"value"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["exemplar", b"exemplar"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["exemplar", b"exemplar", "labels", b"labels", "name", b"name", "value", b"value"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___MetricsSample: typing_extensions.TypeAlias = MetricsSample
+Global___MetricsSample: _TypeAlias = MetricsSample  # noqa: Y015
 
-@typing.final
-class MetricsFamily(google.protobuf.message.Message):
+@_typing.final
+class MetricsFamily(_message.Message):
     """One metric family from CollectorRegistry.collect()."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    NAME_FIELD_NUMBER: builtins.int
-    HELP_FIELD_NUMBER: builtins.int
-    TYPE_FIELD_NUMBER: builtins.int
-    SAMPLES_FIELD_NUMBER: builtins.int
-    name: builtins.str
+    NAME_FIELD_NUMBER: _builtins.int
+    HELP_FIELD_NUMBER: _builtins.int
+    TYPE_FIELD_NUMBER: _builtins.int
+    SAMPLES_FIELD_NUMBER: _builtins.int
+    name: _builtins.str
     """Family name (counters include _total; no _bucket/_sum/_count)."""
-    help: builtins.str
+    help: _builtins.str
     """Help text."""
     type: Global___MetricsType.ValueType
     """Family type."""
-    @property
-    def samples(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___MetricsSample]:
+    @_builtins.property
+    def samples(self) -> _containers.RepeatedCompositeFieldContainer[Global___MetricsSample]:
         """Collected samples, including exemplars."""
 
     def __init__(
         self,
         *,
-        name: builtins.str = ...,
-        help: builtins.str = ...,
+        name: _builtins.str = ...,
+        help: _builtins.str = ...,
         type: Global___MetricsType.ValueType = ...,
-        samples: collections.abc.Iterable[Global___MetricsSample] | None = ...,
+        samples: _abc.Iterable[Global___MetricsSample] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["help", b"help", "name", b"name", "samples", b"samples", "type", b"type"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["help", b"help", "name", b"name", "samples", b"samples", "type", b"type"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___MetricsFamily: typing_extensions.TypeAlias = MetricsFamily
+Global___MetricsFamily: _TypeAlias = MetricsFamily  # noqa: Y015
 
-@typing.final
-class MetricsStreamResponse(google.protobuf.message.Message):
+@_typing.final
+class MetricsStreamResponse(_message.Message):
     """Telemetry → Exporter"""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    SCRAPE_REQUEST_FIELD_NUMBER: builtins.int
-    @property
+    SCRAPE_REQUEST_FIELD_NUMBER: _builtins.int
+    @_builtins.property
     def scrape_request(self) -> Global___MetricsScrapeRequest: ...
     def __init__(
         self,
         *,
         scrape_request: Global___MetricsScrapeRequest | None = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["msg", b"msg", "scrape_request", b"scrape_request"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["msg", b"msg", "scrape_request", b"scrape_request"]) -> None: ...
-    def WhichOneof(self, oneof_group: typing.Literal["msg", b"msg"]) -> typing.Literal["scrape_request"] | None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["msg", b"msg", "scrape_request", b"scrape_request"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["msg", b"msg", "scrape_request", b"scrape_request"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    _WhichOneofReturnType_msg: _TypeAlias = _typing.Literal["scrape_request"]  # noqa: Y015
+    _WhichOneofArgType_msg: _TypeAlias = _typing.Literal["msg", b"msg"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType_msg) -> _WhichOneofReturnType_msg | None: ...
 
-Global___MetricsStreamResponse: typing_extensions.TypeAlias = MetricsStreamResponse
+Global___MetricsStreamResponse: _TypeAlias = MetricsStreamResponse  # noqa: Y015
 
-@typing.final
-class MetricsScrapeRequest(google.protobuf.message.Message):
+@_typing.final
+class MetricsScrapeRequest(_message.Message):
     """Empty request: "send your /metrics now"."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
     def __init__(
         self,
     ) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___MetricsScrapeRequest: typing_extensions.TypeAlias = MetricsScrapeRequest
+Global___MetricsScrapeRequest: _TypeAlias = MetricsScrapeRequest  # noqa: Y015
 
-@typing.final
-class PushLogsRequest(google.protobuf.message.Message):
+@_typing.final
+class PushLogsRequest(_message.Message):
     """Request to push log entries to the telemetry service."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    ENTRIES_FIELD_NUMBER: builtins.int
-    @property
-    def entries(self) -> google.protobuf.internal.containers.RepeatedCompositeFieldContainer[Global___LogEntry]:
+    ENTRIES_FIELD_NUMBER: _builtins.int
+    @_builtins.property
+    def entries(self) -> _containers.RepeatedCompositeFieldContainer[Global___LogEntry]:
         """Log entries to push."""
 
     def __init__(
         self,
         *,
-        entries: collections.abc.Iterable[Global___LogEntry] | None = ...,
+        entries: _abc.Iterable[Global___LogEntry] | None = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["entries", b"entries"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["entries", b"entries"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___PushLogsRequest: typing_extensions.TypeAlias = PushLogsRequest
+Global___PushLogsRequest: _TypeAlias = PushLogsRequest  # noqa: Y015
 
-@typing.final
-class PushLogsResponse(google.protobuf.message.Message):
+@_typing.final
+class PushLogsResponse(_message.Message):
     """Response to a PushLogs request."""
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    ACCEPTED_FIELD_NUMBER: builtins.int
-    DROPPED_FIELD_NUMBER: builtins.int
-    accepted: builtins.int
+    ACCEPTED_FIELD_NUMBER: _builtins.int
+    DROPPED_FIELD_NUMBER: _builtins.int
+    accepted: _builtins.int
     """Number of entries accepted."""
-    dropped: builtins.int
+    dropped: _builtins.int
     """Number of entries dropped (backpressure)."""
     def __init__(
         self,
         *,
-        accepted: builtins.int = ...,
-        dropped: builtins.int = ...,
+        accepted: _builtins.int = ...,
+        dropped: _builtins.int = ...,
     ) -> None: ...
-    def ClearField(self, field_name: typing.Literal["accepted", b"accepted", "dropped", b"dropped"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["accepted", b"accepted", "dropped", b"dropped"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___PushLogsResponse: typing_extensions.TypeAlias = PushLogsResponse
+Global___PushLogsResponse: _TypeAlias = PushLogsResponse  # noqa: Y015
 
-@typing.final
-class LogEntry(google.protobuf.message.Message):
+@_typing.final
+class LogEntry(_message.Message):
     """A structured log entry from an exporter or client.
     Maps directly to a Loki log entry with stream labels and body fields.
     """
 
-    DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    DESCRIPTOR: _descriptor.Descriptor
 
-    @typing.final
-    class ExtraFieldsEntry(google.protobuf.message.Message):
-        DESCRIPTOR: google.protobuf.descriptor.Descriptor
+    @_typing.final
+    class ExtraFieldsEntry(_message.Message):
+        DESCRIPTOR: _descriptor.Descriptor
 
-        KEY_FIELD_NUMBER: builtins.int
-        VALUE_FIELD_NUMBER: builtins.int
-        key: builtins.str
-        value: builtins.str
+        KEY_FIELD_NUMBER: _builtins.int
+        VALUE_FIELD_NUMBER: _builtins.int
+        key: _builtins.str
+        value: _builtins.str
         def __init__(
             self,
             *,
-            key: builtins.str = ...,
-            value: builtins.str = ...,
+            key: _builtins.str = ...,
+            value: _builtins.str = ...,
         ) -> None: ...
-        def ClearField(self, field_name: typing.Literal["key", b"key", "value", b"value"]) -> None: ...
+        _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+        def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+        _ClearFieldArgType: _TypeAlias = _typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+        def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-    TIMESTAMP_FIELD_NUMBER: builtins.int
-    SEVERITY_FIELD_NUMBER: builtins.int
-    MESSAGE_FIELD_NUMBER: builtins.int
-    COMPONENT_FIELD_NUMBER: builtins.int
-    EXPORTER_FIELD_NUMBER: builtins.int
-    LEASE_FIELD_NUMBER: builtins.int
-    CLIENT_FIELD_NUMBER: builtins.int
-    OPERATION_FIELD_NUMBER: builtins.int
-    RESULT_FIELD_NUMBER: builtins.int
-    DRIVER_TYPE_FIELD_NUMBER: builtins.int
-    EXTRA_FIELDS_FIELD_NUMBER: builtins.int
-    NAMESPACE_FIELD_NUMBER: builtins.int
-    severity: builtins.str
+    TIMESTAMP_FIELD_NUMBER: _builtins.int
+    SEVERITY_FIELD_NUMBER: _builtins.int
+    MESSAGE_FIELD_NUMBER: _builtins.int
+    COMPONENT_FIELD_NUMBER: _builtins.int
+    EXPORTER_FIELD_NUMBER: _builtins.int
+    LEASE_FIELD_NUMBER: _builtins.int
+    CLIENT_FIELD_NUMBER: _builtins.int
+    OPERATION_FIELD_NUMBER: _builtins.int
+    RESULT_FIELD_NUMBER: _builtins.int
+    DRIVER_TYPE_FIELD_NUMBER: _builtins.int
+    EXTRA_FIELDS_FIELD_NUMBER: _builtins.int
+    NAMESPACE_FIELD_NUMBER: _builtins.int
+    severity: _builtins.str
     """Log severity: debug, info, warning, error, critical."""
-    message: builtins.str
+    message: _builtins.str
     """Human-readable log message."""
-    component: builtins.str
+    component: _builtins.str
     """Loki stream label: cli, exporter, controller, router, telemetry."""
-    exporter: builtins.str
+    exporter: _builtins.str
     """Loki stream label: exporter CRD name (bounded by cluster size)."""
-    lease: builtins.str
+    lease: _builtins.str
     """Log body only (high cardinality): active lease name."""
-    client: builtins.str
+    client: _builtins.str
     """Log body only (high cardinality): client CRD name."""
-    operation: builtins.str
+    operation: _builtins.str
     """Log body: operation name (flash, power, etc.)."""
-    result: builtins.str
+    result: _builtins.str
     """Log body: operation outcome (success, failure, etc.)."""
-    driver_type: builtins.str
+    driver_type: _builtins.str
     """Log body: driver category (storage, power, network, etc.)."""
-    namespace: builtins.str
+    namespace: _builtins.str
     """Capped at 16 entries, 64-char keys, 256-char values.
     Loki stream label: Kubernetes namespace (bounded by cluster size).
     """
-    @property
-    def timestamp(self) -> google.protobuf.timestamp_pb2.Timestamp:
+    @_builtins.property
+    def timestamp(self) -> _timestamp_pb2.Timestamp:
         """When the log was emitted."""
 
-    @property
-    def extra_fields(self) -> google.protobuf.internal.containers.ScalarMap[builtins.str, builtins.str]:
+    @_builtins.property
+    def extra_fields(self) -> _containers.ScalarMap[_builtins.str, _builtins.str]:
         """Additional structured key-value fields."""
 
     def __init__(
         self,
         *,
-        timestamp: google.protobuf.timestamp_pb2.Timestamp | None = ...,
-        severity: builtins.str = ...,
-        message: builtins.str = ...,
-        component: builtins.str = ...,
-        exporter: builtins.str = ...,
-        lease: builtins.str = ...,
-        client: builtins.str = ...,
-        operation: builtins.str = ...,
-        result: builtins.str = ...,
-        driver_type: builtins.str = ...,
-        extra_fields: collections.abc.Mapping[builtins.str, builtins.str] | None = ...,
-        namespace: builtins.str = ...,
+        timestamp: _timestamp_pb2.Timestamp | None = ...,
+        severity: _builtins.str = ...,
+        message: _builtins.str = ...,
+        component: _builtins.str = ...,
+        exporter: _builtins.str = ...,
+        lease: _builtins.str = ...,
+        client: _builtins.str = ...,
+        operation: _builtins.str = ...,
+        result: _builtins.str = ...,
+        driver_type: _builtins.str = ...,
+        extra_fields: _abc.Mapping[_builtins.str, _builtins.str] | None = ...,
+        namespace: _builtins.str = ...,
     ) -> None: ...
-    def HasField(self, field_name: typing.Literal["timestamp", b"timestamp"]) -> builtins.bool: ...
-    def ClearField(self, field_name: typing.Literal["client", b"client", "component", b"component", "driver_type", b"driver_type", "exporter", b"exporter", "extra_fields", b"extra_fields", "lease", b"lease", "message", b"message", "namespace", b"namespace", "operation", b"operation", "result", b"result", "severity", b"severity", "timestamp", b"timestamp"]) -> None: ...
+    _HasFieldArgType: _TypeAlias = _typing.Literal["timestamp", b"timestamp"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["client", b"client", "component", b"component", "driver_type", b"driver_type", "exporter", b"exporter", "extra_fields", b"extra_fields", "lease", b"lease", "message", b"message", "namespace", b"namespace", "operation", b"operation", "result", b"result", "severity", b"severity", "timestamp", b"timestamp"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
-Global___LogEntry: typing_extensions.TypeAlias = LogEntry
+Global___LogEntry: _TypeAlias = LogEntry  # noqa: Y015
