@@ -103,10 +103,9 @@ func TestSanitizeDiff_redactsTokens(t *testing.T) {
 	}
 }
 
-func TestSSHConnectConfig_defaultPort(t *testing.T) {
-	cfg := SSHConnectConfig{
-		Host: "example.com",
-		User: "jumpstarter",
+func TestConnectionConfig_defaultPort(t *testing.T) {
+	cfg := ConnectionConfig{
+		HostConfig: HostConfig{Host: "example.com", User: "jumpstarter"},
 	}
 	if cfg.Port != 0 {
 		t.Errorf("Port = %d, want 0 (defaulted in Connect())", cfg.Port)

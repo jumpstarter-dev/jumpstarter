@@ -34,8 +34,8 @@ func TestParseHost_full(t *testing.T) {
 		t.Fatalf("ParseHost() error = %v", err)
 	}
 
-	if host.Name != "bench-01.lab.example.com" {
-		t.Errorf("host.Name = %q", host.Name)
+	if host.Host != "bench-01.lab.example.com" {
+		t.Errorf("host.Host = %q", host.Host)
 	}
 	if host.Port != 2222 {
 		t.Errorf("host.Port = %d, want 2222", host.Port)
@@ -56,8 +56,8 @@ func TestParseHost_defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseHost() error = %v", err)
 	}
-	if host.Name != "bench-01.lab.example.com" {
-		t.Errorf("host.Name = %q", host.Name)
+	if host.Host != "bench-01.lab.example.com" {
+		t.Errorf("host.Host = %q", host.Host)
 	}
 	if host.User != "root" {
 		t.Errorf("host.User = %q, want root (default)", host.User)

@@ -84,19 +84,20 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 		})
 		DeferCleanup(DeleteClient, exporterSetQemuSSHClientName)
 
+		By("deleting the VirtualTargetClass first")
+		// Cleanup reads the SSH connection recorded on each Exporter at deploy
+		// time, so it no longer needs the class. Delete the class before the
+		// ExporterSet to verify cleanup still tears down the remote containers
+		// without it — teardown must be order-independent.
+		out, err := Kubectl("delete", "--ignore-not-found", "--timeout=30s",
+			"-n", ns, "virtualtargetclasses.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
+		Expect(err).NotTo(HaveOccurred(), "VirtualTargetClass cleanup failed: %s", out)
+
 		By("cleaning up ExporterSet resources")
-		// Delete ExporterSet before VirtualTargetClass so the remote-cleanup
-		// finalizer can still resolve SSH credentials.
-		// NOTE: VTC must exist when the ExporterSet finalizer runs — the
-		// controller intentionally refuses cleanup if the class was deleted
-		// first (it cannot recover SSH user/port). A future validating
-		// webhook should block VTC deletion while ExporterSets reference it.
-		// It is therefore NOT deferred: if the ExporterSet delete above fails,
-		// deleting the VTC would wedge the stuck ExporterSet permanently.
 		// Teardown stops each remote exporter serially and each stop is bounded
 		// by the quadlet's TimeoutStopSec=60, so allow time for more than one
 		// (a replacement may have been created after the last lease ended).
-		out, err := Kubectl("delete", "--ignore-not-found", "--timeout=5m",
+		out, err = Kubectl("delete", "--ignore-not-found", "--timeout=5m",
 			"-n", ns, "exportersets.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
 		Expect(err).NotTo(HaveOccurred(), "ExporterSet cleanup failed: %s", out)
 
@@ -109,10 +110,6 @@ var _ = Describe("ExporterSet QEMU-SSH E2E Tests", Label("exporterset-qemu-ssh")
 		Expect(err).NotTo(HaveOccurred(), "podman ps failed: %s", out)
 		Expect(strings.TrimSpace(out)).To(BeEmpty(),
 			"controller Cleanup should have removed all e2e containers, found: %s", out)
-
-		out, err = Kubectl("delete", "--ignore-not-found", "--timeout=30s",
-			"-n", ns, "virtualtargetclasses.virtualtarget.jumpstarter.dev", "qemu-ssh-e2e")
-		Expect(err).NotTo(HaveOccurred(), "VirtualTargetClass cleanup failed: %s", out)
 	})
 
 	AfterEach(func() {

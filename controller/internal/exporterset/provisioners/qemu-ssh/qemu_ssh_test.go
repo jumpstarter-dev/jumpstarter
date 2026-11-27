@@ -19,13 +19,16 @@ package qemussh
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	jumpstarterdevv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/v1alpha1"
 	virtualtargetv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/api/virtualtarget/v1alpha1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"github.com/jumpstarter-dev/jumpstarter/controller/internal/exporterset"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,7 +74,6 @@ func TestDeployedAt_withTimestamp(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-exp",
 			Annotations: map[string]string{
-				AnnotationHost:       "lab-host-1.example.com",
 				AnnotationDeployedAt: when.Format(time.RFC3339),
 			},
 		},
@@ -85,21 +87,21 @@ func TestDeployedAt_withTimestamp(t *testing.T) {
 	}
 }
 
-// A host assignment is recorded before containers are created, so it must not
-// by itself count as deployed — otherwise a partial deploy is never retried.
-func TestDeployedAt_hostRecordedButNotDeployed(t *testing.T) {
+// The connection is recorded before containers are created, so it must not by
+// itself count as deployed — otherwise a partial deploy is never retried.
+func TestDeployedAt_connectionRecordedButNotDeployed(t *testing.T) {
 	p := New("v1.0.0", nil)
 	exporter := &jumpstarterdevv1alpha1.Exporter{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "test-exp",
 			Annotations: map[string]string{
-				AnnotationHost: "lab-host-1.example.com",
+				AnnotationConnection: `{"name":"lab-host-1.example.com","port":22,"user":"root","secret":"ssh-key"}`,
 			},
 		},
 	}
 	_, deployed := p.DeployedAt(exporter)
 	if deployed {
-		t.Error("deployed should be false when only the host is recorded (deploy not completed)")
+		t.Error("deployed should be false when only the connection is recorded (deploy not completed)")
 	}
 }
 
@@ -122,11 +124,11 @@ func TestDeployedAt_malformedTimestamp(t *testing.T) {
 	}
 }
 
-// recordHostAssignment and markDeployed patch rather than update, so the
+// recordConnection and markDeployed patch rather than update, so the
 // second call must not conflict when another controller modifies the Exporter
 // during the long deployInstance window between them (a plain Update would
 // 409). The concurrent change must also survive.
-func TestRecordAndMarkDeployed_survivesConcurrentUpdate(t *testing.T) {
+func TestRecordConnectionAndMarkDeployed_survivesConcurrentUpdate(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
@@ -139,8 +141,12 @@ func TestRecordAndMarkDeployed_survivesConcurrentUpdate(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(exporter).Build()
 	p := New("v1.0.0", c)
 
-	if err := p.recordHostAssignment(context.Background(), exporter, "lab-host-1", "ssh-secret"); err != nil {
-		t.Fatalf("recordHostAssignment: %v", err)
+	connCfg := ConnectionConfig{
+		HostConfig: HostConfig{Host: "lab-host-1", Port: 2222, User: "deploy"},
+		Secret:     "ssh-secret",
+	}
+	if err := p.recordConnection(context.Background(), exporter, connCfg); err != nil {
+		t.Fatalf("recordConnection: %v", err)
 	}
 
 	// Simulate another controller updating the Exporter during deployInstance,
@@ -162,11 +168,15 @@ func TestRecordAndMarkDeployed_survivesConcurrentUpdate(t *testing.T) {
 	if err := c.Get(context.Background(), key, &final); err != nil {
 		t.Fatal(err)
 	}
-	if final.Annotations[AnnotationHost] != "lab-host-1" {
-		t.Errorf("host annotation = %q, want lab-host-1", final.Annotations[AnnotationHost])
+	gotConn, present, parseErr := connectionFromExporter(&final)
+	if parseErr != nil {
+		t.Fatalf("connectionFromExporter() err = %v", parseErr)
 	}
-	if final.Annotations[AnnotationCredentialsSecret] != "ssh-secret" {
-		t.Errorf("credentials annotation = %q, want ssh-secret", final.Annotations[AnnotationCredentialsSecret])
+	if !present {
+		t.Fatal("connection annotation should be set after recordConnection")
+	}
+	if gotConn != connCfg {
+		t.Errorf("connection = %+v, want %+v", gotConn, connCfg)
 	}
 	if final.Annotations[AnnotationDeployedAt] == "" {
 		t.Error("deployed-at annotation should be set")
@@ -176,20 +186,20 @@ func TestRecordAndMarkDeployed_survivesConcurrentUpdate(t *testing.T) {
 	}
 }
 
-func TestCleanup_requiresVirtualTargetClassForNonDefaultPort(t *testing.T) {
+// Cleanup uses the connection recorded at Deploy time, so it no longer needs the
+// VirtualTargetClass — the ExporterSet and its class can be deleted in any
+// order. When the recorded Secret is gone, Cleanup returns an
+// OrphanedResourcesError so the reconciler warns about the leftover resources
+// without wedging the finalizer.
+func TestCleanup_reportsOrphanedResourcesOnMissingSecret(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := virtualtargetv1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-
-	parameters, err := json.Marshal(map[string]any{
-		"host": map[string]any{
-			"name": "lab-host-1.example.com",
-			"user": "deploy-user",
-			"port": 2222,
-		},
-	})
-	if err != nil {
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 
@@ -197,28 +207,96 @@ func TestCleanup_requiresVirtualTargetClassForNonDefaultPort(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-exporterset", Namespace: "test-ns"},
 		Spec: virtualtargetv1alpha1.ExporterSetSpec{
 			VirtualTargetClassName: "test-class",
-			Parameters:             &apiextensionsv1.JSON{Raw: parameters},
-		},
-	}
-	exporter := &jumpstarterdevv1alpha1.Exporter{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-exp",
-			Namespace: "test-ns",
-			Annotations: map[string]string{
-				AnnotationHost:              "lab-host-1.example.com",
-				AnnotationCredentialsSecret: "test-ssh-secret",
-			},
 		},
 	}
 
+	connRaw, err := json.Marshal(ConnectionConfig{
+		HostConfig: HostConfig{Host: "lab-host-1.example.com", Port: 2222, User: "deploy-user"},
+		Secret:     "test-ssh-secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-exp",
+			Namespace:   "test-ns",
+			Annotations: map[string]string{AnnotationConnection: string(connRaw)},
+		},
+	}
+
+	// No VirtualTargetClass and no Secret in the cluster: the missing Secret is a
+	// skip-with-warning, reported as OrphanedResourcesError rather than failure.
 	provisioner := New("v1.0.0", fake.NewClientBuilder().WithScheme(scheme).Build())
 	err = provisioner.Cleanup(context.Background(), exporterSet, exporter)
+
+	var orphaned *exporterset.OrphanedResourcesError
+	if !errors.As(err, &orphaned) {
+		t.Fatalf("Cleanup() = %v, want OrphanedResourcesError when the Secret is missing", err)
+	}
+	if !strings.Contains(orphaned.Message, "lab-host-1.example.com") {
+		t.Errorf("message = %q, want it to name the host", orphaned.Message)
+	}
+}
+
+// A transient (non-NotFound) Secret read error must fail Cleanup so it retries
+// rather than orphaning on a blip.
+func TestCleanup_failsOnTransientSecretError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := virtualtargetv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := jumpstarterdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+
+	exporterSet := &virtualtargetv1alpha1.ExporterSet{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-exporterset", Namespace: "test-ns"},
+	}
+	connRaw, err := json.Marshal(ConnectionConfig{
+		HostConfig: HostConfig{Host: "lab-host-1.example.com", Port: 22, User: "root"},
+		Secret:     "test-ssh-secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exporter := &jumpstarterdevv1alpha1.Exporter{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-exp",
+			Namespace:   "test-ns",
+			Annotations: map[string]string{AnnotationConnection: string(connRaw)},
+		},
+	}
+
+	c := &secretGetErrClient{
+		Client: fake.NewClientBuilder().WithScheme(scheme).Build(),
+		err:    apierrors.NewServiceUnavailable("kube-apiserver down"),
+	}
+	provisioner := New("v1.0.0", c)
+	err = provisioner.Cleanup(context.Background(), exporterSet, exporter)
 	if err == nil {
-		t.Fatal("Cleanup should fail when the deployed VirtualTargetClass is deleted")
+		t.Fatal("Cleanup should fail on a transient Secret read error so it retries")
 	}
-	if !strings.Contains(err.Error(), "delete ExporterSet test-exporterset before its class") {
-		t.Errorf("Cleanup error = %q, want missing VirtualTargetClass guidance", err)
+	var orphaned *exporterset.OrphanedResourcesError
+	if errors.As(err, &orphaned) {
+		t.Fatalf("Cleanup() = %v; a transient error must fail (retry), not report orphans", err)
 	}
+}
+
+// secretGetErrClient returns a fixed error on Secret Get, simulating a transient
+// API failure that must not be mistaken for NotFound.
+type secretGetErrClient struct {
+	client.Client
+	err error
+}
+
+func (c *secretGetErrClient) Get(
+	ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption,
+) error {
+	if _, ok := obj.(*corev1.Secret); ok {
+		return c.err
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
 }
 
 func TestResolveImage_latest(t *testing.T) {
@@ -364,77 +442,5 @@ func TestBuildExportMap_duplicateKey(t *testing.T) {
 	}
 }
 
-func TestMergeClassAndSetParameters_hostFromExporterSet(t *testing.T) {
-	classRaw, err := json.Marshal(map[string]any{
-		"arch": "x86_64",
-		"runtime": map[string]any{
-			"host_network": true,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	setRaw, err := json.Marshal(map[string]any{
-		"host": map[string]any{
-			"name": "172.18.0.1",
-			"user": "root",
-			"port": 22,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	merged := mergeClassAndSetParameters(
-		&apiextensionsv1.JSON{Raw: classRaw},
-		&apiextensionsv1.JSON{Raw: setRaw},
-	)
-
-	host, err := ParseHost(merged)
-	if err != nil {
-		t.Fatalf("ParseHost: %v", err)
-	}
-	if host.Name != "172.18.0.1" || host.User != "root" || host.Port != 22 {
-		t.Errorf("host = %+v, want name=172.18.0.1 user=root port=22", host)
-	}
-	if merged["arch"] != "x86_64" {
-		t.Errorf("arch = %v, want x86_64", merged["arch"])
-	}
-}
-
-// When the VirtualTargetClass sets host.user/host.port and the ExporterSet
-// overrides only host.name, the merge must keep the class's user/port (deep
-// merge), or Cleanup would SSH with the wrong settings and orphan containers.
-func TestMergeClassAndSetParameters_hostSubfieldsFromClass(t *testing.T) {
-	classRaw, err := json.Marshal(map[string]any{
-		"host": map[string]any{
-			"user": "deploy",
-			"port": 2222,
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	setRaw, err := json.Marshal(map[string]any{
-		"host": map[string]any{
-			"name": "lab-2.example.com",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	merged := mergeClassAndSetParameters(
-		&apiextensionsv1.JSON{Raw: classRaw},
-		&apiextensionsv1.JSON{Raw: setRaw},
-	)
-
-	host, err := ParseHost(merged)
-	if err != nil {
-		t.Fatalf("ParseHost: %v", err)
-	}
-	if host.Name != "lab-2.example.com" || host.User != "deploy" || host.Port != 2222 {
-		t.Errorf("host = %+v, want name=lab-2.example.com user=deploy port=2222 "+
-			"(class host.user/port must survive an ExporterSet host.name override)", host)
-	}
-}
+// ParseHost applies defaults for user/port; the recorded ConnectionConfig
+// carries the resolved values so Cleanup never re-parses parameters.

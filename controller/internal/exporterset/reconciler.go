@@ -156,9 +156,10 @@ func (r *ExporterSetReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("Reconcile: unable to get ExporterSet: %w", err)
 	}
 
-	// Deletion must be handled before resolving the VirtualTargetClass. If the
-	// class has already been removed, provisioner cleanup must fail explicitly
-	// and retain the finalizer rather than leaving the ExporterSet silently stuck.
+	// Deletion is handled before resolving the VirtualTargetClass: the class may
+	// already be gone, and provisioner cleanup uses the connection recorded on each
+	// Exporter, so it does not need the class. Resolving the VTC first would return
+	// early and skip cleanup when the class is missing.
 	if !exporterSet.DeletionTimestamp.IsZero() {
 		_, err := r.reconcileFinalizer(ctx, &exporterSet)
 		return ctrl.Result{}, err
@@ -339,6 +340,29 @@ func (r *ExporterSetReconciler) cleanupBeforeScale(
 	return ctrl.Result{}, true, nil
 }
 
+// cleanupProvisioner runs the provisioner's Cleanup and, when it reports that
+// remote resources were left behind, emits a Warning Event and treats it as
+// handled rather than failing. Real cleanup errors are returned so the caller
+// retries. Keeping the event here (rather than in the provisioner) matches how
+// the other provisioners surface events through the reconciler's Recorder.
+func (r *ExporterSetReconciler) cleanupProvisioner(
+	ctx context.Context,
+	es *virtualtargetv1alpha1.ExporterSet,
+	exp *jumpstarterdevv1alpha1.Exporter,
+) error {
+	err := r.Provisioner.Cleanup(ctx, es, exp)
+	var orphaned *OrphanedResourcesError
+	if errors.As(err, &orphaned) {
+		log.FromContext(ctx).Info("cleanup left remote resources behind",
+			"exporter", exp.Name, "detail", orphaned.Message)
+		if r.Recorder != nil {
+			r.Recorder.Eventf(es, corev1.EventTypeWarning, "OrphanedRemoteResources", "%s", orphaned.Message)
+		}
+		return nil
+	}
+	return err
+}
+
 // NetworkPolicyProvisioner isolates backend listeners before any workload Pod is created.
 type NetworkPolicyProvisioner interface {
 	RenderNetworkPolicy(*virtualtargetv1alpha1.ExporterSet) *networkingv1.NetworkPolicy
@@ -385,7 +409,7 @@ func (r *ExporterSetReconciler) reconcileFinalizer(
 				return false, err
 			}
 			for i := range ownedExporters {
-				if err := r.Provisioner.Cleanup(ctx, exporterSet, &ownedExporters[i]); err != nil {
+				if err := r.cleanupProvisioner(ctx, exporterSet, &ownedExporters[i]); err != nil {
 					logger.Error(err, "failed to clean up remote resources for exporter",
 						"exporter", ownedExporters[i].Name)
 					return false, fmt.Errorf("clean up remote resources for exporter %s: %w", ownedExporters[i].Name, err)
@@ -955,7 +979,7 @@ func (r *ExporterSetReconciler) cleanupDisabledExporters(
 			continue
 		}
 
-		if err := r.Provisioner.Cleanup(ctx, es, exp); err != nil {
+		if err := r.cleanupProvisioner(ctx, es, exp); err != nil {
 			return deleted, fmt.Errorf("unable to cleanup Exporter %s: %w", exp.Name, err)
 		}
 
@@ -1038,7 +1062,7 @@ func (r *ExporterSetReconciler) cleanupTerminalExporters(
 			continue
 		}
 
-		if err := r.Provisioner.Cleanup(ctx, es, exp); err != nil {
+		if err := r.cleanupProvisioner(ctx, es, exp); err != nil {
 			return deleted, 0, fmt.Errorf("unable to cleanup Exporter %s: %w", exp.Name, err)
 		}
 

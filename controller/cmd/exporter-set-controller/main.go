@@ -125,6 +125,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	recorder := mgr.GetEventRecorderFor("exporter-set-controller")
+
 	// Select the provisioner implementation based on the flag.
 	// Some provisioners (e.g. qemu-ssh) need a Kubernetes client for
 	// reading Secrets and updating annotations, so we create them after
@@ -138,7 +140,7 @@ func main() {
 	if err = (&exporterset.ExporterSetReconciler{
 		Client:              mgr.GetClient(),
 		Scheme:              mgr.GetScheme(),
-		Recorder:            mgr.GetEventRecorderFor("exporter-set-controller"),
+		Recorder:            recorder,
 		Provisioner:         prov,
 		LastScaleDownAction: make(map[types.NamespacedName]time.Time),
 	}).SetupWithManager(mgr); err != nil {
