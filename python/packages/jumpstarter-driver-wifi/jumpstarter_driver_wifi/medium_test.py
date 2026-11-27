@@ -112,3 +112,43 @@ def test_through_a_launcher_the_bridge_is_handed_over_as_source(tmp_path):
     assert argv[:5] == [str(tmp_path / "jumpstarter-exec"), "exec", "--socket", str(tmp_path / "launcher.sock"), "--"]
     assert argv[5:7] == ["python3", "-c"] and "class Bridge" in argv[7]
     assert argv[8:10] == ["--api-socket", "/tmp/cf_env_*/env-*/wmediumd_api_server"]
+
+
+def test_the_kernels_own_radios_need_no_wmediumd(monkeypatch):
+    monkeypatch.delenv("JUMPSTARTER_LAUNCHER_SOCKET", raising=False)
+    argv = WifiMedium(medium="hwsim", port=7320, ignore=[])._argv()
+    assert argv[2:] == ["--hwsim", "--listen", "127.0.0.1:7320", "--ignore", ""]
+    assert "--api-socket" in WifiMedium()._argv()
+
+
+@pytest.mark.anyio
+async def test_a_bridge_inside_the_device_is_not_run_here_and_is_known_by_its_path():
+    """A QEMU guest runs the bridge itself: the driver has its frame port, as a forward of the guest gives it."""
+    port = free_port()
+    wifi = WifiMedium(external=True, port=port, retry=0.02)
+    wifi.start()
+    assert wifi._process is None
+    assert wifi.status() == {"running": True, "external": True, "attached": False, "peer": False}
+
+    guests: list = []
+
+    async def connected(guest) -> None:
+        guests.append(await guest.receive())
+        await anyio.sleep_forever()
+
+    async with (
+        await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=port) as bridge,
+        anyio.create_task_group() as tasks,
+    ):
+        tasks.start_soon(bridge.serve, connected)
+        async with wifi.connect_port(wifi.ports[0]) as frames:
+            assert not wifi.status()["peer"]  # (a path that nothing crossed yet is not open)
+            await frames.send(frame_record(5180, frame(BROADCAST, THERE)))
+            with anyio.fail_after(5):
+                while not guests:
+                    await anyio.sleep(0.01)
+            assert guests == [frame_record(5180, frame(BROADCAST, THERE))]
+            assert wifi.status() == {"running": True, "external": True, "attached": True, "peer": True}
+        assert not wifi.status()["peer"]
+        tasks.cancel_scope.cancel()
+    wifi.stop()

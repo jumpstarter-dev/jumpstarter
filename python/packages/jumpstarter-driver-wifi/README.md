@@ -175,6 +175,8 @@ export:
 
 | Parameter | Description | Type | Default |
 | --- | --- | --- | --- |
+| `medium` | `wmediumd`: the medium behind `api_socket`. `hwsim`: the kernel's `mac80211_hwsim` itself, with no wmediumd (see [below](#without-wmediumd-the-kernels-own-radios)) | str | `wmediumd` |
+| `external` | The bridge is not this driver's to run: it runs inside the device, and `host` and `port` are where its frame port is reached. `start` and `stop` do nothing | bool | `false` |
 | `api_socket` | The medium's API socket, a glob. The bridge looks for it until it is there, and again after the device is power cycled | str | `/tmp/cf_env_*/env-*/wmediumd_api_server` |
 | `host`, `port` | Where the bridge's frame port listens | str, int | `127.0.0.1`, `7310` |
 | `station` | A station of the medium's configuration that no device uses; the bridge sends as it | str | `02:15:b3:00:00:00` |
@@ -187,6 +189,49 @@ export:
 The defaults are Cuttlefish's. Its devices all have the same built-in access point (`02:00:00:00:…`) and the
 same factory addresses (`02:15:b2:…`), which must not meet on one air; the randomized addresses Android uses
 for scanning, for connecting and for its own access point do not clash, and are what crosses the bridge.
+
+### Without wmediumd: the kernel's own radios
+
+A Linux device that has only the kernel module (a QEMU guest, a board, a container with its own network
+namespace) needs no wmediumd. With `--hwsim` the bridge is itself the medium of the `mac80211_hwsim` radios of
+the kernel and network namespace it runs in, over generic netlink: the kernel hands it every frame a radio
+sends, and it gives the frame to the other radios there, tells the sender that it was heard, and passes it on to
+the far side. It has to run there, as root (`CAP_NET_ADMIN`). When it stops, the kernel is the medium again.
+
+For a QEMU guest the bridge runs in the guest, started by the guest's own image, and its frame port leaves the
+guest as a forwarded port:
+
+```console
+# modprobe mac80211_hwsim radios=1
+# ip link set wlan0 address 02:51:00:00:00:01
+# python3 wmediumd_agent.py --hwsim --listen 0.0.0.0:7310
+```
+
+```yaml
+export:
+  qemu:
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      hostfwd:
+        hwsim: { hostport: 7310, guestport: 7310 }
+  wifi:
+    type: jumpstarter_driver_wifi.driver.WifiMedium
+    config:
+      external: true
+      port: 7310
+```
+
+Of an `external` bridge the driver knows only whether a forward's path is open to its frame port: `status()` is
+`{"running": true, "external": true, "attached": …, "peer": …}`, the two the same.
+
+- **Give the radio an address of its own.** Every kernel's first simulated radio is `02:00:00:00:00:00`, which
+  is also the built-in access point of every Cuttlefish device and one of the default `ignore` prefixes. Two
+  radios with one address must not meet on one air.
+- An access point on 5 GHz needs a country (`options cfg80211 ieee80211_regdom=US`, and the regulatory
+  database): without one the kernel allows no access point there.
+- Where the exporter itself runs on the Linux device, `medium: hwsim` (without `external`) runs the bridge as
+  any other, if the exporter is root.
+- A radio is known to the bridge once it has sent a frame (an access point's beacon, a station's probe).
 
 ### What it does not do
 

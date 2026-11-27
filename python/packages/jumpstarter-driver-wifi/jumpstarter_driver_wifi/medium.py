@@ -6,6 +6,7 @@ import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 import anyio
 from anyio import to_thread
@@ -78,6 +79,14 @@ class WifiMedium(WifiDriver):
     # Where the bridge's frame port listens. Loopback: the exporter connects to it for the forward.
     host: str = "127.0.0.1"
     port: int = 7310
+    # What the medium is. "wmediumd": the one behind `api_socket`. "hwsim": the kernel's ``mac80211_hwsim``
+    # itself, with no wmediumd: the bridge is the medium of the radios of the kernel it runs in, and has to
+    # run there as root. `api_socket` and `station` are then not used.
+    medium: Literal["wmediumd", "hwsim"] = "wmediumd"
+    # The bridge is not this driver's to run: it runs inside the device (a QEMU guest, which starts
+    # ``wmediumd_agent.py --hwsim --listen 0.0.0.0:7310`` itself), and `host` and `port` are where its frame
+    # port is reached from the exporter (a ``hostfwd`` of the guest). `start` and `stop` then do nothing.
+    external: bool = False
     # A station of the medium's configuration that no device uses: the bridge sends as it. Cuttlefish
     # configures stations for many instances; this is the first radio of its second.
     station: str = "02:15:b3:00:00:00"
@@ -97,6 +106,7 @@ class WifiMedium(WifiDriver):
     _process: subprocess.Popen | None = field(init=False, default=None, repr=False)
     _state: dict = field(init=False, default_factory=dict, repr=False)
     _reader: threading.Thread | None = field(init=False, default=None, repr=False)
+    _paths: list[_FramePort] = field(init=False, default_factory=list, repr=False)
 
     CAPABILITIES = ("link",)
 
@@ -122,15 +132,15 @@ class WifiMedium(WifiDriver):
     @asynccontextmanager
     async def connect_port(self, port: Port):
         async with _FramePort(self.port_address(port), self.retry) as frames:  # ty: ignore[invalid-argument-type]
-            yield frames
+            self._paths.append(frames)
+            try:
+                yield frames
+            finally:
+                self._paths.remove(frames)
 
     def _argv(self) -> list[str]:
-        options = [
-            "--api-socket", self.api_socket,
-            "--listen", f"{self.host}:{self.port}",
-            "--station", self.station,
-            "--ignore", ",".join(self.ignore),
-        ]  # fmt: skip
+        medium = ["--hwsim"] if self.medium == "hwsim" else ["--api-socket", self.api_socket, "--station", self.station]
+        options = [*medium, "--listen", f"{self.host}:{self.port}", "--ignore", ",".join(self.ignore)]
         if not self.launcher_socket:
             return [sys.executable, str(AGENT), *options]
         # The other container has its own Python and none of this package: hand it the bridge's source.
@@ -151,7 +161,7 @@ class WifiMedium(WifiDriver):
     @export
     def start(self) -> None:
         """Start the bridge. It waits for the medium by itself; starting it twice does nothing."""
-        if self._process is not None and self._process.poll() is None:
+        if self.external or (self._process is not None and self._process.poll() is None):
             return
         self._state = {}
         try:
@@ -178,7 +188,12 @@ class WifiMedium(WifiDriver):
 
     @export
     def status(self) -> dict:
-        """What the bridge last said of itself: whether it has the medium and a peer, and its frame counts."""
+        """What the bridge last said of itself: whether it has the medium and a peer, and its frame counts.
+        Of a bridge that runs inside the device (``external``) only this is known: a path of a forward is
+        open to its frame port (``peer``, and then it is ``attached`` too), or none is."""
+        if self.external:
+            joined = any(path.stream is not None for path in self._paths)
+            return {"running": True, "external": True, "attached": joined, "peer": joined}
         if self._process is None:
             return {"running": False}
         code = self._process.poll()

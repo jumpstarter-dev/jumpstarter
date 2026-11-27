@@ -1,8 +1,12 @@
-"""A frame bridge beside a wmediumd Wi-Fi medium.
+"""A frame bridge beside a simulated Wi-Fi medium: wmediumd, or the kernel's ``mac80211_hwsim`` itself.
 
 It runs where the medium's API socket is, joins the medium as one of its stations, and serves the frames of
 that station on a TCP port: what the medium's other stations send comes out of the port, and what goes into the
 port is sent into the medium. Two such ports joined by a byte stream put two media on one air.
+
+With ``--hwsim`` there is no wmediumd: the bridge is the medium of the ``mac80211_hwsim`` radios of the kernel
+(and network namespace) it runs in, over generic netlink. That is for a Linux guest (QEMU) or host that has only
+the kernel module: the bridge runs inside it, as root, and its port is what leaves the guest.
 
 The port's wire format is a stream of records, each a 4-byte big-endian length and that many bytes: the framing
 QEMU's stream network devices use for Ethernet frames. A Wi-Fi record is a 4-byte big-endian frequency in MHz
@@ -11,6 +15,7 @@ followed by one 802.11 frame, without FCS.
 Standard library only: it is run with the Python of whatever container the medium is in.
 
     python3 agent.py --api-socket '/tmp/cf_env_*/env-*/wmediumd_api_server' --listen 127.0.0.1:7310
+    python3 agent.py --hwsim --listen 0.0.0.0:7310
 """
 
 from __future__ import annotations
@@ -30,9 +35,14 @@ import time
 MSG_ACK, MSG_REGISTER, MSG_NETLINK, MSG_SET_CONTROL = 1, 2, 4, 5
 CTL_RX_ALL_FRAMES = 1 << 1
 # mac80211_hwsim.h
-CMD_FRAME, CMD_ADD_MAC_ADDR = 2, 7
+CMD_REGISTER, CMD_FRAME, CMD_TX_INFO_FRAME, CMD_ADD_MAC_ADDR = 1, 2, 3, 7
 ATTR_ADDR_RECEIVER, ATTR_ADDR_TRANSMITTER, ATTR_FRAME, ATTR_FLAGS = 1, 2, 3, 4
-ATTR_TX_INFO, ATTR_COOKIE, ATTR_FREQ = 7, 8, 19
+ATTR_RX_RATE, ATTR_SIGNAL, ATTR_TX_INFO, ATTR_COOKIE, ATTR_FREQ = 5, 6, 7, 8, 19
+TX_CTL_NO_ACK, TX_STAT_ACK = 1 << 1, 1 << 2
+# netlink.h, genetlink.h
+NETLINK_GENERIC, NLM_F_REQUEST, NLMSG_ERROR, GENL_ID_CTRL = 16, 1, 2, 0x10
+CTRL_CMD_GETFAMILY, CTRL_ATTR_FAMILY_ID, CTRL_ATTR_FAMILY_NAME = 3, 1, 2
+SIGNAL = -30  # dBm: what a station in the same room is heard at
 
 MAX_RECORD = 1 << 16
 MAX_BACKLOG = 4 << 20  # what a slow peer may leave unsent before frames are dropped, as a radio drops them
@@ -157,6 +167,104 @@ class Medium:
         self.sock.close()
 
 
+class Hwsim:
+    """The ``mac80211_hwsim`` radios of this kernel and network namespace, with this bridge as their medium.
+
+    Once a process has registered, the kernel hands it every frame a radio sends and delivers nothing itself:
+    the bridge gives each frame to the other radios here, tells the sender how it went, and passes it on. When
+    the bridge's socket closes the kernel is the medium again.
+    """
+
+    def __init__(self) -> None:
+        self.sock = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, NETLINK_GENERIC)  # ty: ignore[unresolved-attribute]
+        self.sock.bind((0, 0))
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
+        self.sequence = 0
+        self.radios: set[bytes] = set()  # as the kernel names them: learned as each one first sends
+        self._send(GENL_ID_CTRL, CTRL_CMD_GETFAMILY, attribute(CTRL_ATTR_FAMILY_NAME, b"MAC80211_HWSIM\0"))
+        answer = self.sock.recv(65536)
+        kind = struct.unpack_from("<H", answer, 4)[0]
+        family = attributes(answer).get(CTRL_ATTR_FAMILY_ID, b"")
+        if kind == NLMSG_ERROR or len(family) != 2:
+            raise OSError("there is no mac80211_hwsim in this kernel (modprobe mac80211_hwsim)")
+        self.family = struct.unpack("<H", family)[0]
+        self._send(self.family, CMD_REGISTER)
+
+    def fileno(self) -> int:
+        return self.sock.fileno()
+
+    def _send(self, family: int, command: int, payload: bytes = b"") -> None:
+        self.sequence += 1
+        body = struct.pack("<BBH", command, 1, 0) + payload
+        try:
+            self.sock.send(struct.pack("<IHHII", 16 + len(body), family, NLM_F_REQUEST, self.sequence, 0) + body)
+        except BlockingIOError:
+            pass  # (the air is full: a frame is lost)
+
+    def receive(self) -> tuple[int, bytes] | None:
+        """One frame a radio here sent: the sender is told at once that it was heard, since nothing far away
+        can answer in the time a radio waits."""
+        try:
+            data = self.sock.recv(65536)
+        except OSError as error:
+            if error.errno == 105:  # ENOBUFS: frames were lost, as on a crowded air
+                return None
+            raise
+        if len(data) < 20:
+            return None
+        kind = struct.unpack_from("<H", data, 4)[0]
+        if kind == NLMSG_ERROR:
+            code = struct.unpack_from("<i", data, 16)[0]
+            if code == -1 and not self.radios:  # EPERM, to the registration
+                raise OSError("the bridge may not be the medium: it needs CAP_NET_ADMIN (run it as root)")
+            return None
+        if kind != self.family or data[16] != CMD_FRAME:
+            return None
+        found = attributes(data)
+        frame, radio = found.get(ATTR_FRAME), found.get(ATTR_ADDR_TRANSMITTER)
+        if not frame or len(frame) < 16 or not radio:
+            return None
+        self.radios.add(radio)
+        flags = struct.unpack("<I", found[ATTR_FLAGS])[0] if len(found.get(ATTR_FLAGS, b"")) == 4 else 0
+        if not flags & TX_CTL_NO_ACK:
+            flags |= TX_STAT_ACK
+        self._send(
+            self.family,
+            CMD_TX_INFO_FRAME,
+            attribute(ATTR_ADDR_TRANSMITTER, radio)
+            + attribute(ATTR_FLAGS, struct.pack("<I", flags))
+            + attribute(ATTR_SIGNAL, struct.pack("<i", SIGNAL))
+            + attribute(ATTR_TX_INFO, found.get(ATTR_TX_INFO, bytes(8)))
+            + attribute(ATTR_COOKIE, found.get(ATTR_COOKIE, bytes(8))),
+        )
+        freq = struct.unpack("<I", found[ATTR_FREQ])[0] if len(found.get(ATTR_FREQ, b"")) == 4 else 2412
+        self._deliver(freq, frame, skip=radio)
+        return freq, frame
+
+    def _deliver(self, freq: int, frame: bytes, skip: bytes = b"") -> None:
+        """Each radio is given the frame, and takes it if it is on that frequency and the frame is for it."""
+        for radio in self.radios:
+            if radio != skip:
+                self._send(
+                    self.family,
+                    CMD_FRAME,
+                    attribute(ATTR_ADDR_RECEIVER, radio)
+                    + attribute(ATTR_FRAME, frame)
+                    + attribute(ATTR_RX_RATE, struct.pack("<I", 0))
+                    + attribute(ATTR_SIGNAL, struct.pack("<I", SIGNAL & 0xFFFFFFFF))
+                    + attribute(ATTR_FREQ, struct.pack("<I", freq)),
+                )
+
+    def claim(self, address: bytes) -> None:
+        """Nothing to claim: the bridge is given every frame, whomever it is for."""
+
+    def transmit(self, freq: int, frame: bytes) -> None:
+        self._deliver(freq, frame)
+
+    def close(self) -> None:
+        self.sock.close()
+
+
 class Bridge:
     def __init__(self, api_socket: str, listen: tuple[str, int], station: bytes, ignore: list[bytes]) -> None:
         self.api_socket = api_socket
@@ -166,7 +274,7 @@ class Bridge:
         self.listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.listener.bind(listen)
         self.listener.listen(1)
-        self.medium: Medium | None = None
+        self.medium: Medium | Hwsim | None = None
         self.peer: socket.socket | None = None
         self.incoming = bytearray()
         self.outgoing = bytearray()  # the record being written to the peer
@@ -196,6 +304,15 @@ class Bridge:
         if time.monotonic() < self.next_look:
             return
         self.next_look = time.monotonic() + 1.0
+        if not self.api_socket:
+            try:
+                self.medium = Hwsim()
+            except OSError as error:
+                self.report("no-medium", reason=str(error))  # (the module is not loaded yet: looked for again)
+                return
+            self.remote.clear()
+            self.report("medium", path="mac80211_hwsim")
+            return
         for path in sorted(glob.glob(self.api_socket)):
             try:
                 self.medium = Medium(path, self.station)
@@ -344,7 +461,9 @@ class Bridge:
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--api-socket", required=True, help="the medium's API socket: a glob, retried until found")
+    medium = parser.add_mutually_exclusive_group(required=True)
+    medium.add_argument("--api-socket", default="", help="wmediumd's API socket: a glob, retried until found")
+    medium.add_argument("--hwsim", action="store_true", help="no wmediumd: be the medium of this kernel's radios")
     parser.add_argument("--listen", default="127.0.0.1:7310", help="where the frame port listens (port 0: any)")
     parser.add_argument("--station", default="02:15:b3:00:00:00", help="a station of the medium that nothing uses")
     parser.add_argument("--ignore", default="", help="senders not to pass on: comma separated address prefixes")

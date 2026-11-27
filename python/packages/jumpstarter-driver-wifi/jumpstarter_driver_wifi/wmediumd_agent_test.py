@@ -174,3 +174,85 @@ def test_a_frame_that_waited_too_long_for_a_peer_is_not_sent_to_it(medium, monke
     finally:
         bridge.peer.close()
         bridge.listener.close()
+
+
+class Netlink:
+    """The kernel's side of the bridge's netlink socket: what the bridge was sent, and what it then says."""
+
+    def __init__(self, *messages: bytes) -> None:
+        self.incoming, self.said = list(messages), []
+
+    def recv(self, size: int) -> bytes:
+        return self.incoming.pop(0)
+
+    def send(self, data: bytes) -> int:
+        self.said.append((data[16], wmediumd_agent.attributes(data)))
+        return len(data)
+
+
+def kernel_frame(radio: bytes, frame: bytes, flags: int = 1, freq: int = 5180) -> bytes:
+    body = struct.pack("<BBH", wmediumd_agent.CMD_FRAME, 1, 0) + b"".join(
+        wmediumd_agent.attribute(kind, payload)
+        for kind, payload in (
+            (wmediumd_agent.ATTR_ADDR_TRANSMITTER, radio),
+            (wmediumd_agent.ATTR_FRAME, frame),
+            (wmediumd_agent.ATTR_FLAGS, struct.pack("<I", flags)),
+            (wmediumd_agent.ATTR_TX_INFO, bytes(range(8))),
+            (wmediumd_agent.ATTR_COOKIE, struct.pack("<Q", 7)),
+            (wmediumd_agent.ATTR_FREQ, struct.pack("<I", freq)),
+        )
+    )
+    return struct.pack("<IHHII", 16 + len(body), 0x21, 0, 0, 0) + body
+
+
+def hwsim(*messages: bytes) -> tuple[wmediumd_agent.Hwsim, Netlink]:
+    medium, kernel = object.__new__(wmediumd_agent.Hwsim), Netlink(*messages)
+    medium.sock = kernel  # ty: ignore[invalid-assignment]
+    medium.family, medium.sequence, medium.radios = 0x21, 0, set()
+    return medium, kernel
+
+
+def test_without_wmediumd_the_bridge_is_the_medium_of_the_kernels_radios():
+    ap, sta = bytes.fromhex("420000000000"), bytes.fromhex("420000000100")
+    beacon, probe = frame(BROADCAST, HERE), frame(BROADCAST, THERE, b"probe")
+    medium, kernel = hwsim(kernel_frame(ap, beacon), kernel_frame(sta, probe, flags=2))
+
+    # The first radio to send: it is told that it was heard, and there is nobody here to give the frame to.
+    assert medium.receive() == (5180, beacon)
+    (command, told), = kernel.said
+    assert command == wmediumd_agent.CMD_TX_INFO_FRAME
+    assert told[wmediumd_agent.ATTR_ADDR_TRANSMITTER] == ap
+    assert struct.unpack("<I", told[wmediumd_agent.ATTR_FLAGS])[0] == 1 | wmediumd_agent.TX_STAT_ACK
+    assert told[wmediumd_agent.ATTR_TX_INFO] == bytes(range(8))
+    assert told[wmediumd_agent.ATTR_COOKIE] == struct.pack("<Q", 7)
+
+    # The second: a frame that wants no acknowledgement is not said to have had one, and the first radio is
+    # given the frame, on the frequency it was sent on.
+    kernel.said.clear()
+    assert medium.receive() == (5180, probe)
+    (_, told), (command, given) = kernel.said
+    assert struct.unpack("<I", told[wmediumd_agent.ATTR_FLAGS])[0] == 2
+    assert command == wmediumd_agent.CMD_FRAME
+    assert given[wmediumd_agent.ATTR_ADDR_RECEIVER] == ap and given[wmediumd_agent.ATTR_FRAME] == probe
+    assert struct.unpack("<I", given[wmediumd_agent.ATTR_FREQ])[0] == 5180
+
+    # A frame from the far side is given to every radio here.
+    kernel.said.clear()
+    far = frame(HERE, THERE, b"from afar")
+    medium.transmit(5180, far)
+    assert sorted(given[wmediumd_agent.ATTR_ADDR_RECEIVER] for _, given in kernel.said) == [ap, sta]
+    assert all(given[wmediumd_agent.ATTR_FRAME] == far for _, given in kernel.said)
+
+
+def test_what_the_kernel_says_that_is_not_a_frame_is_nothing():
+    error = struct.pack("<IHHIIi", 36, wmediumd_agent.NLMSG_ERROR, 0, 0, 0, 0) + bytes(16)
+    medium, kernel = hwsim(error, b"short")
+    assert medium.receive() is None and medium.receive() is None
+    assert kernel.said == []
+
+
+def test_the_medium_is_wmediumd_or_the_kernel_not_both():
+    with pytest.raises(SystemExit):
+        wmediumd_agent.main(["--hwsim", "--api-socket", "/tmp/x"])
+    with pytest.raises(SystemExit):
+        wmediumd_agent.main([])
