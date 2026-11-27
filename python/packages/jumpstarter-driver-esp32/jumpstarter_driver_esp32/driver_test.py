@@ -11,6 +11,12 @@ class _MockEsp:
     CHIP_NAME = "ESP32-D0WD-V3"
     IS_STUB = False
 
+    def __init__(self):
+        self.bauds = []
+
+    def change_baud(self, baud):
+        self.bauds.append(baud)
+
     def get_chip_description(self):
         return "ESP32-D0WD-V3 (revision v3.1)"
 
@@ -28,9 +34,9 @@ class _MockEsp:
         pass
 
 
-def _make_driver():
+def _make_driver(**config):
     serial = PySerial(url="loop://", check_present=False)
-    return Esp32Flasher(children={"serial": serial})
+    return Esp32Flasher(children={"serial": serial}, **config)
 
 
 @pytest.fixture()
@@ -77,6 +83,17 @@ def test_flash_default_address(mock_esptool, tmp_path):
 
     _, flash_entries = mock_esptool["write_flash"].call_args[0]
     assert flash_entries[0][0] == 0x0
+
+
+@pytest.mark.parametrize(("flash_baudrate", "bauds"), [(921600, [921600]), (57600, [57600])])
+def test_flash_baudrate(mock_esptool, tmp_path, flash_baudrate, bauds):
+    firmware = tmp_path / "firmware.bin"
+    firmware.write_bytes(b"\x00" * 64)
+
+    with serve(_make_driver(flash_baudrate=flash_baudrate)) as client:
+        client.flash(firmware)
+
+    assert mock_esptool["esp"].bauds == bauds
 
 
 def test_dump(mock_esptool, tmp_path):
