@@ -405,7 +405,7 @@ async def _cancel_if_connection_lost(monitor, coro):
 
 
 async def _run_shell_with_lease_async(lease, exporter_logs, config, command, cancel_scope):
-    """Run an interactive session, ignoring exporter loss that arrives after the shell exits.
+    """Run an interactive session, ignoring exporter loss or a lease end that arrives after the shell exits.
 
     The shell runs in a worker thread that anyio cannot cancel. If a
     per-connection Dial fails while the user is at the prompt, the listener's
@@ -423,12 +423,14 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
     try:
         return await _run_shell_session(lease, exporter_logs, config, command, cancel_scope, record_exit)
     except (BaseExceptionGroup, ExporterUnreachableError) as exc:
-        unreachable = (
-            find_exception_in_group(exc, ExporterUnreachableError) if isinstance(exc, BaseExceptionGroup) else exc
-        )
-        if unreachable is None or exit_code is None:
+        if isinstance(exc, BaseExceptionGroup):
+            unreachable = find_exception_in_group(exc, ExporterUnreachableError)
+            ended_quietly = lease.lease_ended and find_exception_in_group(exc, ExporterOfflineError) is None
+        else:
+            unreachable, ended_quietly = exc, False
+        if exit_code is None or (unreachable is None and not ended_quietly):
             raise
-        logger.debug("Exporter unreachable after shell exit, not reconnecting: %s", unreachable)
+        logger.debug("Session failed after the shell exited, keeping its exit code: %s", exc)
         return exit_code
 
 
@@ -489,10 +491,10 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                         reason = monitor.status_message or "beforeLease hook failed"
                         raise ExporterOfflineError(reason)
                     elif result is None:
-                        if monitor.connection_lost:  # pragma: no cover
-                            # Connection lost while waiting for hook - lease expired
-                            logger.info("Lease expired while waiting for beforeLease hook to complete")
-                            return 0
+                        if monitor.connection_lost:
+                            raise ExporterUnreachableError(
+                                f"Exporter {lease.exporter_name} was lost during the beforeLease hook"
+                            )
                         else:  # pragma: no cover
                             reason = monitor.status_message or "Timeout waiting for beforeLease hook"
                             raise ExporterOfflineError(reason)
@@ -638,7 +640,7 @@ async def _shell_with_signal_handling(  # noqa: C901
     retry_timeout=None, dial_timeout=None, allow_disabled=False,
 ):
     """Handle lease acquisition and shell execution with signal handling."""
-    exit_code = 0
+    exit_code = None
     cancelled_exc_class = get_cancelled_exc_class()
     lease_used = None
     token_state = {"expired_unrecovered": False}
@@ -701,7 +703,7 @@ async def _shell_with_signal_handling(  # noqa: C901
                                     exit_code = 2
                                     break
                                 if lease.lease_ended or await _lease_has_ended(lease):
-                                    break  # lease expired naturally — exit cleanly
+                                    break  # lease expired naturally, do not retry
                                 if lease.lease_transferred:
                                     raise ExporterOfflineError(
                                         "Lease has been transferred to another client. "
@@ -775,6 +777,9 @@ async def _shell_with_signal_handling(  # noqa: C901
                 with anyio.CancelScope(shield=True):
                     await telemetry.aclose()
 
+    if exit_code is None:
+        click.echo(click.style("Warning: the lease ended before the command ran", fg="yellow", bold=True), err=True)
+        return 1
     return exit_code
 
 
