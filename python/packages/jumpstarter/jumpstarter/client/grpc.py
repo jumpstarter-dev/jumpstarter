@@ -507,13 +507,14 @@ class ClientService:
     def __post_init__(self):
         self.stub = client_pb2_grpc.ClientServiceStub(channel=self.channel)
 
-    async def GetExporter(self, *, name: str, show_hidden_labels: bool = False):
+    async def GetExporter(self, *, name: str, show_hidden_labels: bool = False, timeout: float | None = None):
         with translate_grpc_exceptions():
             exporter = await self.stub.GetExporter(
                 client_pb2.GetExporterRequest(
                     name=f"namespaces/{self.namespace}/exporters/{name}",
                     show_hidden_labels=show_hidden_labels,
-                )
+                ),
+                timeout=timeout,
             )
         return Exporter.from_protobuf(exporter)
 
