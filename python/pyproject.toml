@@ -144,7 +144,7 @@ docs = [
     "pyyaml>=6.0",
 ]
 dev = [
-    "ruff==0.16.10",
+    "ruff==0.17.6",
     "typos>=1.23.6",
     "pre-commit>=3.8.0",
     "esbonio>=0.16.5",
