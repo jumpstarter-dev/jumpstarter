@@ -1036,6 +1036,14 @@ async def test_exporter_from_protobuf_empty_deprecated_labels():
     assert exporter.deprecated_labels == {}
 
 
+def test_exporter_from_protobuf_reads_deprecated_online_field():
+    from jumpstarter_protocol import client_pb2
+
+    proto_exporter = client_pb2.Exporter(name="namespaces/default/exporters/test-exp", online=True)
+
+    assert Exporter.from_protobuf(proto_exporter).online is True
+
+
 @pytest.mark.anyio
 async def test_lease_from_protobuf_parses_deprecated_labels():
     from jumpstarter_protocol import client_pb2
