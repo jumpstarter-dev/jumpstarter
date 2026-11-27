@@ -33,7 +33,7 @@ import (
 )
 
 // updateStatus updates the status conditions of the Jumpstarter resource.
-func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, serviceMonitor serviceMonitorResult) error {
+func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1alpha1.Jumpstarter, observability observabilityResult) error {
 	log := logf.FromContext(ctx)
 
 	prevReady := meta.IsStatusConditionTrue(js.Status.Conditions, operatorv1alpha1.ConditionTypeReady)
@@ -169,7 +169,7 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 
 	// The Prometheus Operator integration is informational and deliberately
 	// excluded from allReady: its absence must not report Jumpstarter as degraded.
-	emitServiceMonitorCRDMissing := reconcileObservabilityStatus(js, serviceMonitor)
+	emitServiceMonitorCRDMissing, emitPrometheusRulesCRDMissing, dashboardReason := reconcileObservabilityStatus(js, observability)
 
 	// Set overall Ready condition
 	readyMessage := "All components are ready"
@@ -205,6 +205,18 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 		r.emitEventf(js, corev1.EventTypeWarning, "ServiceMonitorCRDMissing",
 			"monitoring.coreos.com/v1 ServiceMonitor CRD is not installed; Prometheus autodiscovery is inactive")
 	}
+	if emitPrometheusRulesCRDMissing {
+		r.emitEventf(js, corev1.EventTypeWarning, "PrometheusRuleCRDMissing",
+			"monitoring.coreos.com/v1 PrometheusRule CRD is not installed; starter alert rules are inactive")
+	}
+	switch dashboardReason {
+	case serviceMonitorReasonCRDNotFound:
+		r.emitEventf(js, corev1.EventTypeWarning, "PersesDashboardCRDMissing",
+			"perses.dev/v1alpha2 PersesDashboard CRD is not installed; dashboards are inactive")
+	case serviceMonitorReasonNotConfigured:
+		r.emitEventf(js, corev1.EventTypeWarning, "DashboardsNotConfigured",
+			"dashboards are enabled but spec.telemetry.metrics.persesInstanceSelector is empty")
+	}
 
 	log.V(1).Info("Status updated", "ready", allReady)
 	return nil
@@ -213,9 +225,9 @@ func (r *JumpstarterReconciler) updateStatus(ctx context.Context, js *operatorv1
 // reconcileObservabilityStatus sets the informational observability conditions
 // and reports which transition events should be emitted. Keeping it separate
 // from updateStatus keeps that function's complexity within the lint threshold.
-func reconcileObservabilityStatus(js *operatorv1alpha1.Jumpstarter, serviceMonitor serviceMonitorResult) bool {
-	smReady, smReason, smMessage := serviceMonitor.condition()
-	reasonChanged := setConditionAndReportReasonChange(
+func reconcileObservabilityStatus(js *operatorv1alpha1.Jumpstarter, observability observabilityResult) (emitServiceMonitorCRDMissing, emitPrometheusRulesCRDMissing bool, dashboardReason string) {
+	smReady, smReason, smMessage := observability.serviceMonitor.condition()
+	smChanged := setConditionAndReportReasonChange(
 		js,
 		operatorv1alpha1.ConditionTypeServiceMonitorReady,
 		smReady,
@@ -223,7 +235,30 @@ func reconcileObservabilityStatus(js *operatorv1alpha1.Jumpstarter, serviceMonit
 		smMessage,
 	)
 
-	return smReason == serviceMonitorReasonCRDNotFound && reasonChanged
+	prReady, prReason, prMessage := observability.prometheusRules.condition()
+	prChanged := setConditionAndReportReasonChange(
+		js,
+		operatorv1alpha1.ConditionTypePrometheusRulesReady,
+		prReady,
+		prReason,
+		prMessage,
+	)
+
+	dashReady, dashReason, dashMessage := observability.dashboards.condition()
+	dashChanged := setConditionAndReportReasonChange(
+		js,
+		operatorv1alpha1.ConditionTypeDashboardsReady,
+		dashReady,
+		dashReason,
+		dashMessage,
+	)
+	if dashChanged && (dashReason == serviceMonitorReasonCRDNotFound || dashReason == serviceMonitorReasonNotConfigured) {
+		dashboardReason = dashReason
+	}
+
+	return smReason == serviceMonitorReasonCRDNotFound && smChanged,
+		prReason == serviceMonitorReasonCRDNotFound && prChanged,
+		dashboardReason
 }
 
 // setConditionAndReportReasonChange updates a condition and reports whether its

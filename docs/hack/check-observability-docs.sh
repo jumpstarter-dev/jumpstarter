@@ -35,13 +35,18 @@ fail() {
   status=1
 }
 
-require() {
-  local description=$1
-  local pattern=$2
+require_in() {
+  local file=$1
+  local description=$2
+  local pattern=$3
 
-  if ! grep -qF -- "$pattern" "$doc"; then
-    fail "$(realpath --relative-to="$repo_root" "$doc"): missing $description"
+  if ! grep -qF -- "$pattern" "$file"; then
+    fail "$(realpath --relative-to="$repo_root" "$file"): missing $description"
   fi
+}
+
+require() {
+  require_in "$doc" "$1" "$2"
 }
 
 forbid() {
@@ -70,6 +75,63 @@ fi
 # Shipper contract: every shipper configuration selects on these exact labels.
 require 'log-scrape discovery label' 'jumpstarter.dev/log-scrape="true"'
 require 'log-format discovery label' 'jumpstarter.dev/log-format="json"'
+
+# Phase 6 starter alert rules contract.
+require 'PrometheusRulesReady condition' 'PrometheusRulesReady'
+require 'starter alert rules field' 'prometheusRules'
+
+# Phase 6 dashboard and datasource contract: the page exists and names the
+# Perses API surface it depends on. Wording, vendor versions and internal test
+# names are deliberately not pinned.
+require 'link to dashboard docs' 'dashboards-alerting.md'
+dash_doc="$config_docs/dashboards-alerting.md"
+if [ ! -f "$dash_doc" ]; then
+  fail "$(realpath --relative-to="$repo_root" "$dash_doc" 2>/dev/null || printf '%s' "$dash_doc"): file not found"
+else
+  require_in "$dash_doc" 'dashboards enablement field' 'dashboards: true'
+  require_in "$dash_doc" 'Perses instance selector field' 'persesInstanceSelector'
+  require_in "$dash_doc" 'global datasource example' 'PersesGlobalDatasource'
+  require_in "$dash_doc" 'project datasource example' 'PersesDatasource'
+  require_in "$dash_doc" 'Prometheus datasource kind' 'PrometheusDatasource'
+  require_in "$dash_doc" 'Loki datasource kind' 'LokiDatasource'
+  require_in "$dash_doc" 'DashboardsReady condition' 'DashboardsReady'
+fi
+
+# The optional Grafana sample must exist, parse, and stay importable.
+grafana_sample="$repo_root/docs/source/_static/jumpstarter-grafana-dashboard.json"
+if [ ! -f "$grafana_sample" ]; then
+  fail "$(realpath --relative-to="$repo_root" "$grafana_sample" 2>/dev/null || printf '%s' "$grafana_sample"): file not found"
+elif ! command -v python3 >/dev/null 2>&1; then
+  fail 'python3 is required to validate the Grafana dashboard sample'
+elif ! python3 - "$grafana_sample" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    dashboard = json.load(handle)
+
+problems = []
+if dashboard.get("uid") != "jumpstarter-overview":
+    problems.append("uid must be jumpstarter-overview")
+panels = dashboard.get("panels") or []
+if len(panels) != 10:
+    problems.append(f"expected 10 panels, found {len(panels)}")
+for panel in panels:
+    if not panel.get("title") or not panel.get("type"):
+        problems.append(f"panel {panel.get('id')} is missing a title or type")
+    if not (panel.get("datasource") or {}).get("uid"):
+        problems.append(f"panel {panel.get('title')!r} has no datasource uid")
+    for target in panel.get("targets") or []:
+        if not (target.get("expr") or "").strip():
+            problems.append(f"panel {panel.get('title')!r} has an empty expression")
+
+if problems:
+    print("\n".join(problems), file=sys.stderr)
+    sys.exit(1)
+PY
+then
+  fail 'Grafana dashboard sample is not importable'
+fi
 
 # The operator no longer owns shipper configuration: neither the API, the
 # condition, nor the generated ConfigMap may reappear in the configuration docs.

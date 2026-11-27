@@ -153,7 +153,7 @@ func TestReconcileObservabilityReportsMetricsServiceFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "injected metrics Service create failure") {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	ready, reason, message := result.condition()
+	ready, reason, message := result.serviceMonitor.condition()
 	if ready || reason != serviceMonitorReasonFailed {
 		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
 	}
@@ -185,7 +185,7 @@ func TestReconcileObservabilityReportsServiceMonitorCleanupFailureWhenDisabled(t
 	if err == nil {
 		t.Fatal("reconcileObservability should report the ServiceMonitor cleanup failure for retry")
 	}
-	ready, reason, message := result.condition()
+	ready, reason, message := result.serviceMonitor.condition()
 	if ready || reason != serviceMonitorReasonFailed {
 		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
 	}
@@ -236,7 +236,8 @@ type serviceMonitorListNotFoundClient struct {
 }
 
 func (c *serviceMonitorListNotFoundClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
-	if _, ok := list.(*unstructured.UnstructuredList); ok {
+	if monitors, ok := list.(*unstructured.UnstructuredList); ok &&
+		monitors.GroupVersionKind().Kind == serviceMonitorKind+"List" {
 		return apierrors.NewNotFound(schema.GroupResource{
 			Group: serviceMonitorGroup, Resource: "servicemonitors",
 		}, "")
@@ -255,8 +256,8 @@ func TestReconcileObservabilityTreatsListNotFoundAsAbsentCRD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcileObservability must not fail when the API is gone: %v", err)
 	}
-	if result.reason != serviceMonitorReasonCRDNotFound {
-		t.Fatalf("reason = %q, want %s", result.reason, serviceMonitorReasonCRDNotFound)
+	if result.serviceMonitor.reason != serviceMonitorReasonCRDNotFound {
+		t.Fatalf("reason = %q, want %s", result.serviceMonitor.reason, serviceMonitorReasonCRDNotFound)
 	}
 }
 
@@ -409,7 +410,7 @@ func TestReconcileObservabilityReportsMetricsServiceFailureWhenCRDAbsent(t *test
 	if err == nil {
 		t.Fatal("reconcileObservability should report the metrics Service failure for retry")
 	}
-	ready, reason, message := result.condition()
+	ready, reason, message := result.serviceMonitor.condition()
 	if ready || reason != serviceMonitorReasonFailed {
 		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
 	}
@@ -445,7 +446,7 @@ func TestReconcileObservabilityReportsMetricsServiceFailureWhenDisabled(t *testi
 	if err == nil {
 		t.Fatal("reconcileObservability should report the metrics Service failure for retry")
 	}
-	ready, reason, message := result.condition()
+	ready, reason, message := result.serviceMonitor.condition()
 	if ready || reason != serviceMonitorReasonFailed {
 		t.Fatalf("condition = %v/%q, want false/%s", ready, reason, serviceMonitorReasonFailed)
 	}

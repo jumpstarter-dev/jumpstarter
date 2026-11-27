@@ -1,0 +1,43 @@
+# Minimal structural CRD for a legacy perses-operator install that serves only
+# perses.dev/v1alpha1 PersesDashboard (perses-operator <= v0.2.0). The operator
+# must report DashboardsReady=False/CRDNotFound with an actionable message
+# instead of writing a v1alpha2 object the cluster cannot serve.
+#
+# Not loaded by the default envtest suite: it shares its CRD name with the real
+# v0.6.0 CRD under config/test/perses.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: persesdashboards.perses.dev
+spec:
+  group: perses.dev
+  names:
+    kind: PersesDashboard
+    listKind: PersesDashboardList
+    plural: persesdashboards
+    shortNames:
+      - perdb
+    singular: persesdashboard
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      deprecated: true
+      deprecationWarning: perses.dev/v1alpha1 is deprecated; use perses.dev/v1alpha2
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          description: Legacy PersesDashboard schema (v1alpha1 only).
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              x-kubernetes-preserve-unknown-fields: true
+      subresources:
+        status: {}

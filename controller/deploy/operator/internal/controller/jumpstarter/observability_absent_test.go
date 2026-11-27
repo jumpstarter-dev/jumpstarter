@@ -120,11 +120,11 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 
 		elapsed := time.Duration(0)
 		for i := range requeueCycles {
-			serviceMonitor, err := r.reconcileObservability(ctx, js)
+			observability, err := r.reconcileObservability(ctx, js)
 			if err != nil {
 				t.Fatalf("reconcile %d must succeed without the CRD: %v", i+1, err)
 			}
-			if err := r.updateStatus(ctx, js, serviceMonitor); err != nil {
+			if err := r.updateStatus(ctx, js, observability); err != nil {
 				t.Fatalf("status update %d must succeed: %v", i+1, err)
 			}
 
@@ -164,6 +164,14 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 		}
 	})
 
+	t.Run("PrometheusRules CRD absent reports CRDNotFound", func(t *testing.T) {
+		assertPrometheusRulesCRDAbsent(t, ctx, c, r, js)
+	})
+
+	t.Run("Dashboards CRD absent reports CRDNotFound", func(t *testing.T) {
+		assertDashboardsCRDAbsent(t, ctx, c, r, js)
+	})
+
 	t.Run("emits transition events for existing condition reasons", func(t *testing.T) {
 		transitionRecorder := record.NewFakeRecorder(16)
 		transitionReconciler := &JumpstarterReconciler{
@@ -179,11 +187,11 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 			LastTransitionTime: metav1.Now(),
 			ObservedGeneration: transitionJS.Generation,
 		}}
-		serviceMonitor, err := transitionReconciler.reconcileObservability(ctx, transitionJS)
+		observability, err := transitionReconciler.reconcileObservability(ctx, transitionJS)
 		if err != nil {
 			t.Fatalf("reconcileObservability for ServiceMonitor transition: %v", err)
 		}
-		if err := transitionReconciler.updateStatus(ctx, transitionJS, serviceMonitor); err != nil {
+		if err := transitionReconciler.updateStatus(ctx, transitionJS, observability); err != nil {
 			t.Fatalf("updateStatus for ServiceMonitor transition: %v", err)
 		}
 		if events := eventText(transitionRecorder); !strings.Contains(events, "ServiceMonitorCRDMissing") {
@@ -191,4 +199,69 @@ func TestServiceMonitorCRDAbsent(t *testing.T) {
 		}
 
 	})
+}
+
+// assertPrometheusRulesCRDAbsent verifies the PrometheusRulesReady condition
+// when the optional PrometheusRule CRD is not installed.
+func assertPrometheusRulesCRDAbsent(t *testing.T, ctx context.Context, c client.Client, r *JumpstarterReconciler, js *operatorv1alpha1.Jumpstarter) {
+	t.Helper()
+
+	if err := c.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, js); err != nil {
+		t.Fatalf("re-read jumpstarter: %v", err)
+	}
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.PrometheusRules = new(true)
+	if err := c.Update(ctx, js); err != nil {
+		t.Fatalf("update jumpstarter: %v", err)
+	}
+
+	observability, err := r.reconcileObservability(ctx, js)
+	if err != nil {
+		t.Fatalf("reconcileObservability must succeed without the PrometheusRule CRD: %v", err)
+	}
+	if err := r.updateStatus(ctx, js, observability); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
+	condition := apimeta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypePrometheusRulesReady)
+	if condition == nil {
+		t.Fatal("PrometheusRulesReady condition missing")
+	}
+	if condition.Status != metav1.ConditionFalse || condition.Reason != "CRDNotFound" {
+		t.Fatalf("PrometheusRulesReady = %s/%s, want False/CRDNotFound", condition.Status, condition.Reason)
+	}
+}
+
+// assertDashboardsCRDAbsent verifies the DashboardsReady condition when the
+// optional PersesDashboard CRD is not installed.
+func assertDashboardsCRDAbsent(t *testing.T, ctx context.Context, c client.Client, r *JumpstarterReconciler, js *operatorv1alpha1.Jumpstarter) {
+	t.Helper()
+
+	if err := c.Get(ctx, types.NamespacedName{Name: js.Name, Namespace: js.Namespace}, js); err != nil {
+		t.Fatalf("re-read jumpstarter: %v", err)
+	}
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.Dashboards = new(true)
+	js.Spec.Telemetry.Metrics.PersesInstanceSelector = map[string]string{
+		"app.kubernetes.io/instance": "perses-sample",
+	}
+	if err := c.Update(ctx, js); err != nil {
+		t.Fatalf("update jumpstarter: %v", err)
+	}
+
+	observability, err := r.reconcileObservability(ctx, js)
+	if err != nil {
+		t.Fatalf("reconcileObservability must succeed without the PersesDashboard CRD: %v", err)
+	}
+	if err := r.updateStatus(ctx, js, observability); err != nil {
+		t.Fatalf("updateStatus: %v", err)
+	}
+
+	condition := apimeta.FindStatusCondition(js.Status.Conditions, operatorv1alpha1.ConditionTypeDashboardsReady)
+	if condition == nil {
+		t.Fatal("DashboardsReady condition missing")
+	}
+	if condition.Status != metav1.ConditionFalse || condition.Reason != "CRDNotFound" {
+		t.Fatalf("DashboardsReady = %s/%s, want False/CRDNotFound", condition.Status, condition.Reason)
+	}
 }

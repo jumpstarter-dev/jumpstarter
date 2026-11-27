@@ -1761,6 +1761,19 @@ all subsequent phases have E2E coverage from the start.
 - Operator E2E result on this branch: 64 passed, 0 failed, 1 skipped, with the
   gated shipper delivery and Prometheus target-health tests passing
   separately. The monorepo CLI E2E suite was not rerun: 2026-11-04
+- Phase 6 core implemented on the `jep-0013-phase6-dashboards-alerting`
+  branch: starter `PrometheusRule` alerts, `PrometheusRulesReady` and
+  `DashboardsReady` conditions, a Perses overview dashboard with explicit
+  datasource selectors, offline `promtool`/`percli` validation, and gated Kind
+  e2e coverage. Dashboards target `perses.dev/v1alpha2` only; legacy
+  perses-operator installs that serve `v1alpha1` only are detected and reported
+  as unsupported, because the CRD has no conversion webhook and upstream
+  reconciles `v1alpha2` only: 2026-11-18
+- Optional Grafana dashboard sample published with the docs
+  (`docs/source/_static/jumpstarter-grafana-dashboard.json`) and checked against
+  the generated Perses panels by `TestGrafanaSampleMatchesPersesDashboard`, so
+  panel titles and `jumpstarter_*` metric usage cannot drift; the operator never
+  manages Grafana resources: 2026-11-19
 
 ## References
 
