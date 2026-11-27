@@ -53,6 +53,22 @@ Each driver can expose different commands through this interface, making it easy
 to interact with the mock hardware. The command structure follows `j
 <driver_type> <action>`, where available actions depend on the specific driver.
 
+## Tab Completion
+
+In bash 4.2 or later, the {term}`exporter shell` completes `j` commands with
+TAB: driver names, their commands, options, and the values an option accepts. A double TAB lists the commands and options together,
+and where nothing else applies, TAB completes filenames.
+
+```console
+$ j power <TAB><TAB>
+--help  cycle   off     on      read    status
+```
+
+The commands are read from the exporter's drivers once, when the shell starts,
+so TAB never contacts the exporter. Completion is not registered when your
+client config sets `shell: use_profiles: true`, since bash then loads your own
+profile.
+
 ## The Shell Prompt
 
 The {term}`exporter shell` prompt is displayed as `jumpstarter ⚡<exporter>

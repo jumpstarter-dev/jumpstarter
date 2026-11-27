@@ -23,9 +23,11 @@ from jumpstarter_cli_common.exceptions import find_exception_in_group, handle_ex
 from jumpstarter_cli.shell import (
     _attempt_token_recovery,
     _cancel_if_connection_lost,
+    _local_client,
     _monitor_shared_access,
     _monitor_token_expiry,
     _resolve_lease_from_active_async,
+    _run_shell_only,
     _run_shell_with_lease_async,
     _shell_with_signal_handling,
     _try_refresh_token,
@@ -43,6 +45,8 @@ from jumpstarter.common.utils import launch_shell
 from jumpstarter.config.client import ClientConfigV1Alpha1
 from jumpstarter.config.env import JMP_LEASE
 from jumpstarter.config.exporter import ExporterConfigV1Alpha1
+from jumpstarter.driver import Driver
+from jumpstarter.exporter.session import Session
 
 pytestmark = pytest.mark.anyio
 
@@ -1086,12 +1090,14 @@ class TestRunShellWithLeaseAsync:
 
         with (
             patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
-            patch("jumpstarter_cli.shell._run_shell_only", return_value=0),
+            patch("jumpstarter_cli.shell._run_shell_only", return_value=0) as run_shell,
         ):
             exit_code = await _run_shell_with_lease_async(lease, False, None, (), cancel_scope)
 
         assert exit_code == 0
         client.end_session_async.assert_called_once()
+        # The connected client reaches the shell, to snapshot `j` for completion
+        assert run_shell.call_args.args[-1] is client
 
     async def test_unresponsive_controller_times_out_the_ownership_check_not_the_session(self, monkeypatch):
         """A controller that stops answering at the ownership check counts as no.
@@ -1630,6 +1636,90 @@ def test_shell_exporter_config_propagates_exit_code(tmp_path, expected):
         result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), "--", "sh", "-c", "true"])
     assert launched.called
     assert result.exit_code == expected
+
+
+@pytest.mark.parametrize(
+    ("shell_path", "args", "connect"),
+    [
+        ("/bin/bash", [], True),
+        ("/bin/bash", ["--", "true"], False),
+        ("/usr/bin/zsh", [], False),
+        ("/usr/bin/fish", [], False),
+    ],
+    ids=["bash", "command", "zsh", "fish"],
+)
+def test_shell_exporter_config_passes_a_local_client(tmp_path, monkeypatch, shell_path, args, connect):
+    """An interactive local bash gets a client for `j` completion; nothing else uses one."""
+    monkeypatch.setenv("SHELL", shell_path)
+    config_path = _write_exporter_config(tmp_path)
+    client = object()
+    requested = []
+
+    @contextmanager
+    def fake_local_client(path, *, connect=True):
+        requested.append((path, connect))
+        yield client if connect else None
+
+    with (
+        patch.object(ExporterConfigV1Alpha1, "serve_unix", _fake_serve_unix),
+        patch("jumpstarter_cli.shell._local_client", fake_local_client),
+        patch("jumpstarter_cli.shell.launch_shell", return_value=0) as launched,
+    ):
+        result = CliRunner().invoke(shell, ["--exporter-config", str(config_path), *args])
+    assert result.exit_code == 0
+    assert requested == [("/tmp/fake.sock", connect)]
+    assert launched.call_args.kwargs["client"] is (client if connect else None)
+
+
+class _LocalDriver(Driver):
+    @classmethod
+    def client(cls):
+        return "jumpstarter.client.DriverClient"
+
+
+def test_local_client_connects_to_the_local_exporter():
+    with Session(root_device=_LocalDriver()) as session, session.serve_unix() as path:
+        session.update_status(ExporterStatus.LEASE_READY)
+        with _local_client(str(path)) as client:
+            assert client is not None
+            assert client.uuid == session.root_device.uuid
+
+
+def test_local_client_is_optional(tmp_path):
+    with _local_client(str(tmp_path / "missing.sock"), connect=False) as client:
+        assert client is None
+
+
+def test_local_client_bounds_its_connection():
+    """A local exporter that does not answer must not hold the shell back."""
+    captured = {}
+
+    def fake_client_from_path(*args, **kwargs):
+        captured.update(kwargs)
+        raise OSError("stop here")
+
+    with (
+        patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+        _local_client("/tmp/sock") as client,
+    ):
+        assert client is None
+    assert captured["report_timeout"] == 5
+
+
+def test_local_client_yields_none_when_it_cannot_connect(tmp_path):
+    with (
+        patch("jumpstarter_cli.shell.client_from_path", side_effect=OSError("no exporter")),
+        _local_client(str(tmp_path / "missing.sock")) as client,
+    ):
+        assert client is None
+
+
+def test_run_shell_only_passes_the_client_to_launch_shell():
+    lease = SimpleNamespace(exporter_name="exp", allow=[], unsafe=False)
+    client = object()
+    with patch("jumpstarter_cli.shell.launch_shell", return_value=0) as launched:
+        _run_shell_only(lease, None, (), "/tmp/sock", None, client)
+    assert launched.call_args.kwargs["client"] is client
 
 
 def _rpc_error(code: grpc.StatusCode, details: str) -> grpc.aio.AioRpcError:

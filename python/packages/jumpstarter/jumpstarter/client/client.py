@@ -47,12 +47,14 @@ async def client_from_path(
     grpc_options: dict | None = None,
     insecure: bool = False,
     passphrase: str | None = None,
+    report_timeout: float | None = None,
 ):
     """Create a DriverClient from a Unix socket path or a TCP address (host:port).
 
     When path is a TCP address (e.g. exporter.host.name:1234), use tls_config and
     insecure to build the channel. When path is a Unix path, those are ignored.
     passphrase, if set, is injected as metadata on every RPC via client interceptors.
+    report_timeout, if set, is the gRPC deadline of the initial GetReport call.
     """
     interceptors = None
     if passphrase:
@@ -62,7 +64,7 @@ async def client_from_path(
 
     async def _connect(channel):
         try:
-            return await client_from_channel(channel, portal, stack, allow, unsafe)
+            return await client_from_channel(channel, portal, stack, allow, unsafe, report_timeout=report_timeout)
         except AioRpcError as e:
             if e.code() in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
                 raise ExporterUnreachableError(
@@ -103,6 +105,8 @@ async def client_from_channel(
     stack: ExitStack,
     allow: list[str],
     unsafe: bool,
+    *,
+    report_timeout: float | None = None,
 ) -> DriverClient:
     topo = defaultdict(list)
     last_seen = {}
@@ -111,7 +115,7 @@ async def client_from_channel(
 
     stub = MultipathExporterStub([channel])  # type: ignore[arg-type]
 
-    response = await stub.GetReport(empty_pb2.Empty())
+    response = await stub.GetReport(empty_pb2.Empty(), timeout=report_timeout)
 
     for index, report in enumerate(response.reports):
         topo[index] = []
