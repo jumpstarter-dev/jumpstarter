@@ -24,7 +24,6 @@ import (
 	"strings"
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -139,8 +138,18 @@ func (r *JumpstarterReconciler) persesDashboardCRDAvailable(ctx context.Context)
 // servedPersesDashboardVersions returns the served versions recorded in the
 // installed persesdashboards.perses.dev CRD, sorted, or nil when the CRD is
 // absent.
+//
+// The CRD is read as an unstructured object with an explicit GVK. The manager
+// scheme does not register apiextensions.k8s.io/v1, so a typed Get would fail
+// with an unregistered-type error before it could ever report NotFound, and
+// the condition would read "failed to detect" instead of "not installed".
+// Unstructured reads also bypass the cache, so probing for a CRD does not
+// start a cluster-wide CRD informer.
 func (r *JumpstarterReconciler) servedPersesDashboardVersions(ctx context.Context) ([]string, error) {
-	crd := &apiextensionsv1.CustomResourceDefinition{}
+	crd := &unstructured.Unstructured{}
+	crd.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition",
+	})
 	err := r.Get(ctx, types.NamespacedName{Name: persesDashboardCRDName}, crd)
 	if apierrors.IsNotFound(err) {
 		return nil, nil
@@ -149,11 +158,30 @@ func (r *JumpstarterReconciler) servedPersesDashboardVersions(ctx context.Contex
 		return nil, fmt.Errorf("get %s: %w", persesDashboardCRDName, err)
 	}
 
-	served := make([]string, 0, len(crd.Spec.Versions))
-	for _, version := range crd.Spec.Versions {
-		if version.Served {
-			served = append(served, version.Name)
+	entries, found, err := unstructured.NestedSlice(crd.Object, "spec", "versions")
+	if err != nil {
+		return nil, fmt.Errorf("read %s versions: %w", persesDashboardCRDName, err)
+	}
+	if !found {
+		return nil, nil
+	}
+
+	served := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		version, ok := entry.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf(
+				"read %s versions: unexpected entry of type %T", persesDashboardCRDName, entry)
 		}
+		if isServed, _ := version["served"].(bool); !isServed {
+			continue
+		}
+		name, ok := version["name"].(string)
+		if !ok {
+			return nil, fmt.Errorf(
+				"read %s versions: served entry has no name", persesDashboardCRDName)
+		}
+		served = append(served, name)
 	}
 	slices.Sort(served)
 	return served, nil

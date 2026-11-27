@@ -318,6 +318,46 @@ func TestReconcilePersesDashboardsReportsPruneFailureWhenDisabled(t *testing.T) 
 	}
 }
 
+// TestServedPersesDashboardVersionsWithoutCRDScheme pins the read to the
+// unstructured path. The manager's scheme does not register
+// apiextensions.k8s.io/v1, so a typed Get would fail before reporting NotFound.
+func TestServedPersesDashboardVersionsWithoutCRDScheme(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+	if s.Recognizes(schema.GroupVersionKind{
+		Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition",
+	}) {
+		t.Fatal("test scheme must not register apiextensions.k8s.io/v1")
+	}
+
+	crd := &unstructured.Unstructured{}
+	crd.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: "apiextensions.k8s.io", Version: "v1", Kind: "CustomResourceDefinition",
+	})
+	crd.SetName(persesDashboardCRDName)
+	crd.Object["spec"] = map[string]any{
+		"versions": []any{
+			map[string]any{"name": "v1alpha1", "served": true},
+			map[string]any{"name": "v1alpha2", "served": true},
+			map[string]any{"name": "v1alpha3", "served": false},
+		},
+	}
+
+	r := &JumpstarterReconciler{
+		Client: fake.NewClientBuilder().WithScheme(s).WithObjects(crd).Build(),
+		Scheme: s,
+	}
+	got, err := r.servedPersesDashboardVersions(context.Background())
+	if err != nil {
+		t.Fatalf("servedPersesDashboardVersions() error = %v", err)
+	}
+	if want := []string{"v1alpha1", "v1alpha2"}; !slices.Equal(got, want) {
+		t.Fatalf("servedPersesDashboardVersions() = %v, want %v", got, want)
+	}
+}
+
 func TestDashboardCRDUnavailableMessage(t *testing.T) {
 	tests := []struct {
 		name   string
