@@ -108,14 +108,16 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
 ##@ Build
+# The installer pins the operator to the controller and exporterset-controller
+# images built here, which it deploys for a Jumpstarter that names none.
 .PHONY: build-operator
 build-operator:
-	$(MAKE) -C deploy/operator build-installer
+	$(MAKE) -C deploy/operator build-installer CONTROLLER_IMG=$(IMG) EXPORTER_SET_CONTROLLER_IMG=$(EXPORTER_SET_CONTROLLER_IMG)
 	$(MAKE) -C deploy/operator docker-build
 
 .PHONY: build-operator-ci
 build-operator-ci:
-	$(MAKE) -C deploy/operator build-installer
+	$(MAKE) -C deploy/operator build-installer CONTROLLER_IMG=$(IMG) EXPORTER_SET_CONTROLLER_IMG=$(EXPORTER_SET_CONTROLLER_IMG)
 	$(MAKE) -C deploy/operator docker-build-ci
 
 .PHONY: build

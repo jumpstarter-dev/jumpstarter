@@ -74,6 +74,10 @@ The {term}`operator` reconciles the `Jumpstarter` CR and creates Deployments,
 Services, and networking resources for {term}`controller`/{term}`router`/login
 endpoints.
 
+The {term}`operator` runs the {term}`controller` and {term}`router` images of
+its own release and moves them along when the {term}`operator` is upgraded. Set
+`spec.controller.image` and `spec.routers.image` only to run a different build.
+
 ````{tab} Kubernetes
 ```{code-block} yaml
 apiVersion: operator.jumpstarter.dev/v1alpha1
@@ -86,8 +90,6 @@ spec:
   certManager:
     enabled: true
   controller:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
-    imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
       endpoints:
@@ -102,8 +104,6 @@ spec:
             enabled: true
             class: nginx
   routers:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
-    imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
       endpoints:
@@ -126,8 +126,6 @@ spec:
   certManager:
     enabled: true
   controller:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
-    imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
       endpoints:
@@ -140,8 +138,6 @@ spec:
           route:
             enabled: true
   routers:
-    image: quay.io/jumpstarter-dev/jumpstarter-controller:0.8.1-rc.2
-    imagePullPolicy: IfNotPresent
     replicas: 1
     grpc:
       endpoints:

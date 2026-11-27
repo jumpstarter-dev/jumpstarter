@@ -23,7 +23,7 @@ Release input: $ARGUMENTS
 - The `bundle/` directory is NOT committed to the repo.
 - `GITHUB_USER` env var controls the fork for community-operators and for pushing version-bump PRs. Auto-detected via `gh api user -q .login` if not set.
 - `UV_PUBLISH_TOKEN` env var is required for the manual PyPI publish fallback (final releases only). Must be set before running `uv publish`. The `publish-pypi.yaml` workflow uses OIDC trusted publishing and needs no token.
-- Do NOT modify `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go` — the operator resolves `:latest` image defaults to its own version at runtime.
+- Do NOT add image defaults to `controller/deploy/operator/api/v1alpha1/jumpstarter_types.go`. A Jumpstarter that names no image gets the ones in the operator's `RELATED_IMAGE_*` variables, which `make build-installer` and `make bundle` set to the operator's own tag.
 
 ## Ordering constraint
 
@@ -259,9 +259,9 @@ git pull origin release-X.Y
    ```bash
    cd controller/deploy/operator
    make build-installer
-   grep newTag config/manager/kustomization.yaml   # must show X.Y.Z
+   grep newTag config/manager/kustomization.yaml   # all three must show X.Y.Z
    ```
-   `build-installer` runs `make manifests generate` and then sets `newTag` in `config/manager/kustomization.yaml` from `VERSION`. It needs no images, so it belongs in this pre-tag commit. `make bundle` in step 2D sets the same tag, but only after the tag is cut, so without this step the tagged tree keeps the previous release's image tag.
+   `build-installer` runs `make manifests generate` and then sets the operator, controller and exporterset-controller `newTag` in `config/manager/kustomization.yaml` from `VERSION`. It needs no images, so it belongs in this pre-tag commit. `make bundle` in step 2D sets the same tag, but only after the tag is cut, so without this step the tagged tree keeps the previous release's image tag.
 
 4. **Commit and push via PR** — release branches are protected and require merge queue, so direct pushes will be rejected. Files to include:
    - `controller/deploy/operator/Makefile`

@@ -866,10 +866,9 @@ spec:
                         type: object
                     type: object
                   image:
-                    default: quay.io/jumpstarter-dev/jumpstarter-controller:latest
                     description: |-
                       Container image for the controller pods in 'registry/repository/image:tag' format.
-                      If not specified, defaults to the latest stable version of the Jumpstarter controller.
+                      If not specified, the operator uses the controller image of its own release.
                     type: string
                   imagePullPolicy:
                     default: IfNotPresent
@@ -1385,8 +1384,9 @@ spec:
                   provisioner using the same exporter-set-controller image with a --provisioner flag.
                 properties:
                   image:
-                    default: quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
-                    description: Image for all provisioner controller Deployments.
+                    description: |-
+                      Image for all provisioner controller Deployments.
+                      If not specified, the operator uses the exporterset-controller image of its own release.
                     type: string
                   imagePullPolicy:
                     default: IfNotPresent
@@ -1849,10 +1849,9 @@ spec:
                         type: object
                     type: object
                   image:
-                    default: quay.io/jumpstarter-dev/jumpstarter-controller:latest
                     description: |-
                       Container image for the router pods in 'registry/repository/image:tag' format.
-                      If not specified, defaults to the latest stable version of the Jumpstarter router.
+                      If not specified, the operator uses the controller image of its own release.
                     type: string
                   imagePullPolicy:
                     default: IfNotPresent
@@ -2355,9 +2354,10 @@ spec:
                         type: object
                     type: object
                   image:
-                    default: quay.io/jumpstarter-dev/jumpstarter-telemetry:latest
-                    description: Container image for the telemetry pod in 'registry/repository/image:tag'
-                      format.
+                    description: |-
+                      Container image for the telemetry pod in 'registry/repository/image:tag' format.
+                      If not specified, the operator uses the controller image of its own release,
+                      which also contains the telemetry service.
                     type: string
                   imagePullPolicy:
                     default: IfNotPresent

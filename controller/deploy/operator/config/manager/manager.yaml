@@ -66,6 +66,14 @@ spec:
         image: quay.io/jumpstarter-dev/jumpstarter-operator:latest
         imagePullPolicy: IfNotPresent
         name: manager
+        # Images deployed for a Jumpstarter that does not name its own.
+        # kustomize sets their tags together with the operator's (see
+        # kustomizeconfig.yaml), so the operator deploys its own release.
+        env:
+        - name: RELATED_IMAGE_CONTROLLER
+          value: quay.io/jumpstarter-dev/jumpstarter-controller:latest
+        - name: RELATED_IMAGE_EXPORTERSET_CONTROLLER
+          value: quay.io/jumpstarter-dev/jumpstarter-exporterset-controller:latest
         ports: []
         securityContext:
           allowPrivilegeEscalation: false
