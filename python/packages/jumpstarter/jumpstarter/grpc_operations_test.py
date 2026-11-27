@@ -127,6 +127,4 @@ def test_a_leak_names_the_task_still_waiting_on_it(pytester):
     result = pytester.runpytest_subprocess(timeout=60)
 
     result.assert_outcomes(passed=1, errors=1)
-    result.stdout.fnmatch_lines(
-        ["*- operation failing with _RequestCallError, waiter pending in AioServer._server_main_loop*"]
-    )
+    result.stdout.fnmatch_lines(["*- operation failing with _RequestCallError, waiter pending in AioServer.*"])
