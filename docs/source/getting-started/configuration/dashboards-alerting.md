@@ -64,6 +64,12 @@ Perses resolves datasource names across scopes: global, project, and dashboard,
 with the lower scope taking precedence. The operator references the configured
 names directly, so create matching datasources in one of these scopes.
 
+Both examples below use `proxy`, so the Perses server runs the query. That is
+what a cluster-internal Service address needs: the browser never resolves
+`*.svc` names. `directUrl` is the alternative, and it makes the browser query
+the datasource itself, so use it only for an endpoint the user's browser can
+reach; the Prometheus and Loki datasources accept exactly one of the two.
+
 ### Global datasources
 
 ```yaml
@@ -80,7 +86,10 @@ spec:
     plugin:
       kind: PrometheusDatasource
       spec:
-        directUrl: http://prometheus.monitoring.svc:9090
+        proxy:
+          kind: HTTPProxy
+          spec:
+            url: http://prometheus.monitoring.svc:9090
 ---
 apiVersion: perses.dev/v1alpha2
 kind: PersesGlobalDatasource
@@ -94,7 +103,10 @@ spec:
     plugin:
       kind: LokiDatasource
       spec:
-        directUrl: http://loki-gateway.monitoring.svc:3100
+        proxy:
+          kind: HTTPProxy
+          spec:
+            url: http://loki-gateway.monitoring.svc:3100
 ```
 
 ### Project datasources
@@ -117,7 +129,10 @@ spec:
     plugin:
       kind: PrometheusDatasource
       spec:
-        directUrl: http://prometheus.monitoring.svc:9090
+        proxy:
+          kind: HTTPProxy
+          spec:
+            url: http://prometheus.monitoring.svc:9090
 ```
 
 The datasource name in the selector is the CR's `metadata.name`; the
