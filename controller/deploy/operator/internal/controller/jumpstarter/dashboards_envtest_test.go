@@ -86,6 +86,27 @@ var _ = Describe("Perses dashboard reconciliation", func() {
 		Expect(config).To(HaveKey("layouts"))
 		Expect(config).NotTo(HaveKey("datasources"))
 
+		// Change what the dashboard should carry while it stays enabled: the
+		// reconcile must apply the new selector and labels, not just create.
+		js.Spec.Telemetry.Metrics.PersesInstanceSelector = map[string]string{
+			"app.kubernetes.io/instance": "perses-other",
+		}
+		js.Spec.Telemetry.Metrics.DashboardLabels = map[string]string{"team": "platform"}
+		Expect(k8sClient.Update(ctx, js)).To(Succeed())
+
+		_, err = r.reconcileObservability(ctx, js)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, key, dashboard)).To(Succeed())
+		Expect(dashboard.GetLabels()).To(HaveKeyWithValue("team", "platform"))
+
+		spec, ok = dashboard.Object["spec"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		selector, ok := spec["instanceSelector"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		matchLabels, ok := selector["matchLabels"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(matchLabels).To(HaveKeyWithValue("app.kubernetes.io/instance", "perses-other"))
+
 		resourceVersion := dashboard.GetResourceVersion()
 		_, err = r.reconcileObservability(ctx, js)
 		Expect(err).NotTo(HaveOccurred())
