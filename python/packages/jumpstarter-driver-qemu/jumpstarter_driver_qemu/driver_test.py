@@ -292,6 +292,51 @@ async def test_virtio_transport_mmio(cmdline_test):
 
 
 @pytest.mark.anyio
+async def test_serial_ports_are_sockets_beside_qemu(cmdline_test):
+    """A serial port of the guest is a socket on the exporter: one QEMU listens on, one QEMU dials."""
+    cmdline = await _captured_cmdline(
+        cmdline_test(
+            serial_ports={
+                "bluetooth": {"listen": "127.0.0.1:7301"},
+                "debug": {"device": "pci-serial", "connect": "127.0.0.1:7400"},
+            }
+        )
+    )
+
+    assert cmdline.count("virtio-serial-pci") == 1
+    at = cmdline.index("socket,id=bluetooth,host=127.0.0.1,port=7301,nodelay=on,server=on,wait=off")
+    assert cmdline[at - 1 : at + 3] == ["-chardev", cmdline[at], "-device", "virtconsole,chardev=bluetooth"]
+    assert "socket,id=debug,host=127.0.0.1,port=7400,nodelay=on,reconnect-ms=1000" in cmdline
+    assert "pci-serial,chardev=debug" in cmdline
+
+
+@pytest.mark.anyio
+async def test_no_serial_ports_no_serial_bus(cmdline_test):
+    cmdline = await _captured_cmdline(cmdline_test())
+
+    assert not any("virtio-serial" in str(argument) for argument in cmdline)
+
+
+@pytest.mark.anyio
+async def test_serial_ports_mmio(cmdline_test):
+    cmdline = await _captured_cmdline(
+        cmdline_test(virtio_transport="mmio", mem="4G", serial_ports={"bluetooth": {"listen": "127.0.0.1:7301"}})
+    )
+
+    assert "virtio-serial-device" in cmdline
+    assert "virtconsole,chardev=bluetooth" in cmdline
+
+
+@pytest.mark.parametrize(
+    "port",
+    [{}, {"listen": "127.0.0.1:7301", "connect": "127.0.0.1:7302"}, {"listen": "7301"}, {"connect": "host:0"}],
+)
+def test_serial_port_needs_one_address(port):
+    with pytest.raises(ValueError, match="serial port"):
+        Qemu(serial_ports={"bluetooth": port})
+
+
+@pytest.mark.anyio
 async def test_virtio_transport_mmio_requires_4g(cmdline_test):
     """mmio boots AIB aboot images whose DTB hardcodes a 4G memory layout, so
     too-little memory must fail loudly instead of silently failing to boot."""

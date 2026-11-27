@@ -20,7 +20,7 @@ from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
 from jumpstarter_driver_pyserial.driver import PySerial
-from pydantic import BaseModel, ByteSize, Field, TypeAdapter, ValidationError, validate_call
+from pydantic import BaseModel, ByteSize, Field, TypeAdapter, ValidationError, model_validator, validate_call
 from qemu.qmp import QMPClient
 from qemu.qmp.protocol import ConnectError, Runstate
 
@@ -256,6 +256,8 @@ class QemuPower(PowerInterface, Driver):
         for device in devices:
             cmdline += ["-device", device]
 
+        cmdline += self.parent._serial_port_arguments()
+
         if bios.exists() or self.parent._runtime_firmware_path(bios):
             cmdline += [
                 "-bios",
@@ -399,6 +401,38 @@ class Hostfwd(BaseModel):
     guestport: int = Field(ge=1, le=65535)
 
 
+class SerialPort(BaseModel):
+    """A serial port of the guest whose other end is a TCP socket beside QEMU: a byte stream between
+    something in the guest and something on the exporter. A guest's Bluetooth is one such: its HCI (H4) on a
+    serial port, as on a board whose controller is on a UART, with a controller or a
+    ``jumpstarter_driver_bluetooth`` link at the socket.
+
+    Exactly one of ``listen`` and ``connect``, each ``host:port``. With ``listen`` QEMU has the port from when
+    it starts, and takes one client at a time; what the guest says while nobody is there is lost. With
+    ``connect`` QEMU dials, and dials again a second after the connection went away (QEMU 9.2 or newer).
+    """
+
+    # "virtconsole": /dev/hvcN in a Linux guest (virtio_console), the first one hvc0.
+    # "pci-serial": a 16550 UART on PCI, /dev/ttySN: for a guest without virtio_console.
+    device: Literal["virtconsole", "pci-serial"] = "virtconsole"
+    listen: str | None = None
+    connect: str | None = None
+
+    @model_validator(mode="after")
+    def _one_end(self) -> SerialPort:
+        if (self.listen is None) == (self.connect is None):
+            raise ValueError("a serial port has either 'listen' or 'connect'")
+        host, _, port = (self.listen or self.connect or "").rpartition(":")
+        if not host or not port.isdigit() or not 0 < int(port) < 65536:
+            raise ValueError("a serial port's address is host:port")
+        return self
+
+    def chardev(self, name: str) -> str:
+        host, _, port = (self.listen or self.connect or "").rpartition(":")
+        end = "server=on,wait=off" if self.listen else "reconnect-ms=1000"
+        return f"socket,id={name},host={host},port={port},nodelay=on,{end}"
+
+
 @dataclass(kw_only=True)
 class Qemu(Driver):
     """QEMU virtual machine management driver."""
@@ -427,6 +461,10 @@ class Qemu(Driver):
 
     hostfwd: dict[str, Hostfwd] = field(default_factory=dict)
 
+    # Serial ports of the guest that are sockets on the exporter, by name, in the order the guest numbers
+    # them: see SerialPort.
+    serial_ports: dict[str, SerialPort] = field(default_factory=dict)
+
     # FLS configuration for OCI flashing
     fls_version: str | None = field(default=None)
     fls_allow_custom_binaries: bool = field(default=False)
@@ -449,6 +487,7 @@ class Qemu(Driver):
             super().__post_init__()
 
         self.hostfwd = {k: Hostfwd.model_validate(v) for k, v in self.hostfwd.items()}
+        self.serial_ports = {k: SerialPort.model_validate(v) for k, v in self.serial_ports.items()}
         self.default_partitions = {k: Path(v) for k, v in self.default_partitions.items()}
 
         self.children["power"] = QemuPower(parent=self)
@@ -509,6 +548,18 @@ class Qemu(Driver):
     @property
     def _qmp(self) -> str:
         return str(Path(self._work_dir) / "qmp")
+
+    def _serial_port_arguments(self) -> list[str]:
+        """The chardev and the device of each of `serial_ports`, in their order."""
+        arguments: list[str] = []
+        mmio = self.virtio_transport == "mmio"
+        if any(port.device == "virtconsole" for port in self.serial_ports.values()):
+            arguments += ["-device", "virtio-serial-device" if mmio else "virtio-serial-pci"]
+        for name, port in self.serial_ports.items():
+            if port.device == "pci-serial" and mmio:
+                raise ValueError(f"serial port '{name}': 'pci-serial' is not for virtio_transport='mmio'")
+            arguments += ["-chardev", port.chardev(name), "-device", f"{port.device},chardev={name}"]
+        return arguments
 
     def _wrap_command(self, cmd: list[str]) -> list[str]:
         """Wrap a command with jumpstarter-exec for remote execution in sidecar mode."""
