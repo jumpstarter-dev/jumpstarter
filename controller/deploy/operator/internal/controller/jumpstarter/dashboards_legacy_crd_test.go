@@ -29,6 +29,7 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -139,5 +140,19 @@ func TestPersesDashboardCRDv1alpha1Only(t *testing.T) {
 	}
 	if !apimeta.IsNoMatchError(err) {
 		t.Fatalf("expected NoMatch error for the unserved version, got %v", err)
+	}
+
+	// The v1alpha2 Get above cannot see a write through the served legacy
+	// endpoint, so check the version the API server does serve.
+	legacy := &unstructured.UnstructuredList{}
+	legacy.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: persesGroup, Version: "v1alpha1", Kind: persesDashboardKind + "List",
+	})
+	if err := c.List(ctx, legacy, client.InNamespace(ns.Name)); err != nil {
+		t.Fatalf("list v1alpha1 PersesDashboards: %v", err)
+	}
+	if len(legacy.Items) != 0 {
+		t.Fatalf("reconciliation wrote %d v1alpha1 PersesDashboard(s); the legacy API must not be written",
+			len(legacy.Items))
 	}
 }
