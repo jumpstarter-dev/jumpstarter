@@ -1721,14 +1721,14 @@ func (s *ControllerService) Start(ctx context.Context) error {
 		server.Stop()
 	}()
 
-	return http.Serve(listener, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return serveUntilDone(ctx, &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ProtoMajor == 2 && strings.HasPrefix(
 			r.Header.Get("Content-Type"), "application/grpc") {
 			server.ServeHTTP(w, r)
 		} else {
 			gwmux.ServeHTTP(w, r)
 		}
-	}))
+	})}, listener)
 }
 
 // SetupWithManager sets up the controller with the Manager.

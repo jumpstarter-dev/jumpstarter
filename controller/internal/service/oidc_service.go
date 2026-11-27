@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"net/http"
 
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/ginlog"
 	"github.com/jumpstarter-dev/jumpstarter/controller/internal/oidc"
@@ -30,7 +31,7 @@ func (s *OIDCService) Start(ctx context.Context) error {
 		Certificates: []tls.Certificate{*s.Cert},
 	})
 
-	return r.RunListener(tlslis)
+	return serveUntilDone(ctx, &http.Server{Handler: r.Handler()}, tlslis)
 }
 
 func (s *OIDCService) NeedLeaderElection() bool {
