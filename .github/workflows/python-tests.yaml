@@ -21,7 +21,7 @@ concurrency:
 
 env:
   # renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
-  FEDORA_CLOUD_VERSION: 43-1.6
+  FEDORA_CLOUD_VERSION: 45-1.4
 
 jobs:
   changes:
