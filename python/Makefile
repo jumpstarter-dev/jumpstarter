@@ -81,7 +81,7 @@ build:
 	printf '%s\n' packages/*/ | xargs -P $(BUILD_JOBS) -I{} uv build {} --out-dir dist
 
 # renovate: datasource=docker depName=docker.io/bufbuild/buf
-BUF_VERSION ?= 1.73.0
+BUF_VERSION ?= 1.75.0
 
 protobuf-gen:
 	podman run --volume "$(shell cd .. && pwd):/workspace" --workdir /workspace/python docker.io/bufbuild/buf:$(BUF_VERSION) generate

@@ -315,7 +315,7 @@ $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
 
 # renovate: datasource=docker depName=docker.io/bufbuild/buf
-BUF_VERSION ?= 1.73.0
+BUF_VERSION ?= 1.75.0
 
 .PHONY: protobuf-gen
 protobuf-gen:
