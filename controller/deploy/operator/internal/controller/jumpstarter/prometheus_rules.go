@@ -310,7 +310,10 @@ func (r *JumpstarterReconciler) prunePrometheusRules(ctx context.Context, js *op
 		if !metav1.IsControlledBy(rule, js) {
 			continue
 		}
-		if err := r.Delete(ctx, rule); err != nil && !apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+		// Pin the delete to the object whose ownership was just checked; a
+		// conflict means it was replaced and the next pass re-reads it.
+		if err := r.Delete(ctx, rule, deletePreconditions(rule)); err != nil &&
+			!apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
 			return fmt.Errorf("delete stale prometheusrule %s: %w", rule.GetName(), err)
 		}
 		logf.FromContext(ctx).Info("Deleted stale PrometheusRule", "name", rule.GetName())
