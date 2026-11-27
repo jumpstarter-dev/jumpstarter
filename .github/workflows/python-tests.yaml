@@ -262,7 +262,7 @@ jobs:
   # merge-queue run can restore.
   fedora-cloud-image:
     if: github.repository_owner == 'jumpstarter-dev' && github.event_name == 'push'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Look up Fedora Cloud image
         id: cache
