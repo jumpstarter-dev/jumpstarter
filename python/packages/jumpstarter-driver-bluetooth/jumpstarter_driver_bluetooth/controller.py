@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import Literal
 
 import anyio
 from anyio.abc import ByteStream, TaskGroup
@@ -41,6 +42,8 @@ _HEADERS = {
 # What a path is asked first, to know that a controller is at its far end: Reset, then Read BD_ADDR.
 _RESET = bytes.fromhex("01030c00")
 _READ_ADDRESS = bytes.fromhex("01091000")
+# What a controller says of itself when it has lost what it was told: the Hardware Error event.
+_HARDWARE_ERROR = bytes.fromhex("04100100")
 _GONE = (anyio.EndOfStream, anyio.BrokenResourceError, anyio.ClosedResourceError, OSError)
 
 
@@ -171,10 +174,19 @@ class BluetoothRemoteController(BluetoothDriver):
     what a stack does to start with a controller. Bonds are the stack's own and stay.
 
     The far device must be powered on first: Android does not finish booting without a controller.
+
+    A QEMU guest is such a device too, with its HCI on a serial port whose other end is a socket beside QEMU
+    (the ``serial_ports`` of ``jumpstarter_driver_qemu``): in a Linux guest ``btattach -B /dev/hvc0 -P h4``
+    makes that port the kernel's ``hci0``. A serial port that dials is a connector like Cuttlefish's. One
+    that listens is dialed by this driver (``guest_listens``), and dialed again when QEMU went away. Such a
+    guest has no ADB: it is told of a new controller in its own HCI (``new_controller: hardware-error``).
     """
 
     # Where the device's connector dials: 7300 + rootcanal_instance_num - 1.
     guest: str = "127.0.0.1:7301"
+    # Who dials. False: the device's connector dials `guest`, where this driver listens. True: the device's
+    # end listens at `guest` (a QEMU serial port with `listen`), and this driver dials it.
+    guest_listens: bool = False
     # Where the exporter listens for this driver's connections to the far controller (the port's `listen`).
     listen: str = "127.0.0.1:7311"
     # Seconds before a path that is not there, or went away, is looked for again.
@@ -185,6 +197,11 @@ class BluetoothRemoteController(BluetoothDriver):
     adb_server_port: int = 15037
     adb_path: str = "adb"
     adb_timeout: float = 30.0
+    # How the device's stack is told that its controller is a new one. "adb": an Android device's Bluetooth
+    # is switched off and on. "hardware-error": the device is sent the HCI Hardware Error event, as a
+    # controller that lost its state would say; a Linux host then closes its controller and sets it up
+    # again. "none": nothing, and a test has to. None: "adb" where `adb` is set, else "none".
+    new_controller: Literal["adb", "hardware-error", "none"] | None = None
     # Look for the path from the start of the lease. False: only `start` does.
     autostart: bool = True
 
@@ -218,11 +235,25 @@ class BluetoothRemoteController(BluetoothDriver):
             raise ValueError("BluetoothRemoteController: its port is 'requires', with 'listen'")
         if parse_port_address(self.guest) == port.listen_address:
             raise ValueError("BluetoothRemoteController: 'guest' and 'listen' are two addresses")
+        if self.new_controller is None:
+            self.new_controller = "adb" if self.adb is not None else "none"
+        elif self.new_controller == "adb" and self.adb is None:
+            raise ValueError("BluetoothRemoteController: 'new_controller: adb' needs 'adb'")
 
     # The device's side: kept for as long as the device has it.
 
     async def _serve_device(self, *, task_status=anyio.TASK_STATUS_IGNORED) -> None:
         host, port = parse_port_address(self.guest)
+        if self.guest_listens:
+            task_status.started()
+            while True:  # (the device is not powered on yet, or was powered off: it is looked for again)
+                try:
+                    stream = await anyio.connect_tcp(host, port)
+                except OSError:
+                    stream = None
+                if stream is not None:
+                    await self._device_connected(stream)
+                await anyio.sleep(self.retry)
         async with await anyio.create_tcp_listener(local_host=host, local_port=port) as listener:
             self._listening = True
             task_status.started()
@@ -303,7 +334,7 @@ class BluetoothRemoteController(BluetoothDriver):
         self._paths += 1
         self._error = ""
         self.logger.info("Bluetooth: the path to the far controller is open")
-        if self.adb is not None and (carried or dropped):
+        if self.new_controller != "none" and (carried or dropped):
             tasks.start_soon(self._new_controller, carried > 0)
         # (a device that has said nothing yet finds its controller by itself)
         while True:
@@ -319,7 +350,16 @@ class BluetoothRemoteController(BluetoothDriver):
 
     async def _new_controller(self, was_set_up: bool) -> None:
         try:
-            await self._restart_bluetooth(was_set_up=was_set_up)
+            if self.new_controller == "hardware-error":
+                # (a host that is down does not hear it: one that only ever talked to nobody may have given
+                # up, and is then switched on by whoever uses the device)
+                device = self._device
+                if device is None:
+                    return
+                self.logger.info("Bluetooth: a new controller: the device is told of a hardware error")
+                await device.send(_HARDWARE_ERROR)
+            else:
+                await self._restart_bluetooth(was_set_up=was_set_up)
             self._restarts += 1
         except Exception as error:  # noqa: BLE001 - the device is off or booting: its stack starts by itself
             self.logger.info("Bluetooth: the device's Bluetooth was not restarted: %s", error)
@@ -376,7 +416,8 @@ class BluetoothRemoteController(BluetoothDriver):
 
     @export
     async def status(self) -> dict:
-        """``attached``: the device's connector is here (the device is powered on). ``peer``: the path to the
+        """``attached``: the device's end is here (the device is powered on); ``listening``: this driver
+        listens for it (false with ``guest_listens``, where it dials). ``peer``: the path to the
         far controller is open, and ``controller`` is the address it has there. ``paths``: how many there
         have been; ``restarts``: how often the device's Bluetooth was switched off and on for a new one.
         ``heard`` counts the packets the device said, ``carried`` those of them a controller was given,

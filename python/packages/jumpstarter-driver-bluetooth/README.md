@@ -497,6 +497,45 @@ far device is powered on.
 `stop` leaves the far controller (the device's Bluetooth hears nothing, and the device stays up); `start`
 looks for it again.
 
+### A QEMU guest
+
+A Linux guest in QEMU is a device without a simulator as well. Its HCI is a serial port of the guest (H4, as on
+a board whose controller is on a UART) whose other end is a socket beside QEMU: the `serial_ports` of
+[`jumpstarter-driver-qemu`](qemu.md). In the guest, `btattach -B /dev/hvc0 -P h4` makes it the kernel's `hci0`,
+with BlueZ on top; nothing else in the guest knows that the controller is far away.
+
+```yaml
+export:
+  qemu:
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      serial_ports:
+        bluetooth: { listen: 127.0.0.1:7301 }   # /dev/hvc0 in the guest
+  bluetooth:
+    type: jumpstarter_driver_bluetooth.driver.Bluetooth
+    config:
+      link: remote-controller
+      guest: 127.0.0.1:7301
+      guest_listens: true              # the serial port listens: the driver dials it
+      new_controller: hardware-error   # there is no ADB
+```
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `guest_listens` | The device's end listens at `guest` and the driver dials it, and again whenever it went away (QEMU was stopped). `false`: the device's connector dials `guest` | `false` |
+| `new_controller` | How the device's stack is told that its controller is a new one. `adb`: an Android device's Bluetooth is switched off and on. `hardware-error`: the device is sent the HCI Hardware Error event, as a controller that lost its state would say; Linux then closes its controller and sets it up again, and the adapter stays powered. `none`: nothing | `adb` with `adb` (or a `device`), else `none` |
+
+Two things the guest's image has to see to. systemd starts a login prompt on a virtio console by itself,
+and what it prints there is not HCI: `systemctl mask serial-getty@hvc0`. And `btattach` sets the controller up
+once, when it starts: started while no controller is at the far end, the kernel gives the adapter up, and
+`btattach` has to be started again (a service that restarts it until `hci0` is up).
+
+A host that is down does not hear a hardware error. A guest whose stack gave up on a controller that never
+answered (it was powered on before the far device) has to switch its adapter on itself once the path is there.
+
+`examples/exporter-qemu-headunit.yaml` is such a head unit, with its simulated Wi-Fi beside it, and the lease
+template `phone-qemu-headunit` joins it to a Cuttlefish phone that has the simulator.
+
 ### Joining them
 
 ```yaml
@@ -517,6 +556,7 @@ $ j phone bluetooth status           # peer: true, controller: the phone's addre
 ### What it does not do
 
 - It does not work with a physical device, or with a device that keeps its own simulator: use the bridge.
+- A QEMU guest has no device view yet: its own stack (BlueZ) is asked by the suite, over SSH or its console.
 - One device of the lease must have the simulator and be powered on first. When that device is powered off,
   the other loses its controller, and gets a new one (and its Bluetooth restarted) when it is back.
 - The addresses are the simulator's: it gives its hosts consecutive ones, in the order they connect.

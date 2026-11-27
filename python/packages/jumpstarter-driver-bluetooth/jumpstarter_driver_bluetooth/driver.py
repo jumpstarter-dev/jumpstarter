@@ -34,7 +34,7 @@ LINKS: dict[str, type[BluetoothDriver]] = {
 # What of the configuration is the link's: each link takes those of these that are its own.
 LINK_OPTIONS = (
     "transport", "host", "port", "name", "address", "class_of_device", "identity_from", "learn_name",
-    "call_timeout", "pair_timeout", "retry", "autostart", "guest", "listen",
+    "call_timeout", "pair_timeout", "retry", "autostart", "guest", "listen", "guest_listens", "new_controller",
 )  # fmt: skip
 DEVICE_OPTIONS = {"adb", "adb_path", "server_port", "timeout", "snoop_log", "poll"}
 
@@ -76,6 +76,8 @@ class Bluetooth(BluetoothDriver):
     autostart: bool | None = None
     guest: str | None = None
     listen: str | None = None
+    guest_listens: bool | None = None
+    new_controller: str | None = None
 
     _link: BluetoothDriver | None = field(init=False, default=None, repr=False)
     _view: AndroidBluetooth | None = field(init=False, default=None, repr=False)

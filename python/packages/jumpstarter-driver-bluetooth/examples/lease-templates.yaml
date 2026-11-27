@@ -105,3 +105,32 @@ spec:
         - { member: headunit, port: bluetooth } # provides (link: controller-port)
   defaults:
     duration: 45m
+---
+# A virtual phone (Cuttlefish) and a Linux head unit in QEMU (exporter-qemu-headunit.yaml): the head unit's
+# Bluetooth is one more host of the phone's controller simulator, and its simulated Wi-Fi is on the phone's air.
+# The phone is as exporter-cuttlefish-headunit-direct.yaml (`link: controller-port`), with a phone's image and
+# the Wi-Fi entry of exporter-cuttlefish-phone.yaml.
+apiVersion: jumpstarter.dev/v1alpha1
+kind: LeaseTemplate
+metadata:
+  name: phone-qemu-headunit
+  namespace: jumpstarter-lab
+spec:
+  description: "A virtual phone and a Linux head unit in QEMU whose Wi-Fi and Bluetooth are joined"
+  members:
+    - name: phone
+      selector: { matchLabels: { type: phone-controller } }
+    - name: headunit
+      selector: { matchLabels: { type: qemu-head-unit } }
+  forwards:
+    - name: wifi
+      endpoints:
+        - { member: phone, port: hwsim }
+        - { member: headunit, port: hwsim }
+    - name: bluetooth
+      endpoints:
+        - { member: headunit, port: bluetooth } # requires (link: remote-controller)
+        - { member: phone, port: bluetooth }    # provides (link: controller-port)
+  defaults:
+    duration: 45m
+

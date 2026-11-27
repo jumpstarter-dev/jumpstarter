@@ -212,6 +212,63 @@ async def test_a_device_keeps_its_connector_while_the_path_comes_and_goes():
 
 
 @pytest.mark.anyio
+async def test_a_guest_whose_serial_port_listens_is_dialed_and_told_of_a_new_controller_in_its_own_hci():
+    """A QEMU guest: its HCI is a serial port that listens beside QEMU, and it has no ADB."""
+    forward = Forward(free_port())
+    guest_port = free_port()
+    guests: list = []
+    radio = BluetoothRemoteController(
+        guest=f"127.0.0.1:{guest_port}",
+        guest_listens=True,
+        listen=f"127.0.0.1:{forward.port}",
+        retry=0.02,
+        new_controller="hardware-error",
+    )
+
+    async def qemu(*, task_status=anyio.TASK_STATUS_IGNORED) -> None:
+        async def connected(stream) -> None:
+            guests.append(stream)
+            await anyio.sleep_forever()
+
+        async with await anyio.create_tcp_listener(local_host="127.0.0.1", local_port=guest_port) as listener:
+            task_status.started()
+            await listener.serve(connected)
+
+    async with anyio.create_task_group() as tasks:
+        await tasks.start(forward.serve)
+        async with radio.serving():
+            # The guest is not powered on yet: it is looked for, and nothing listens here for it.
+            await until(lambda: radio._joined)
+            status = await radio.status()
+            assert not status["listening"] and not status["attached"]
+
+            await tasks.start(qemu)
+            await until(lambda: radio._device is not None and len(guests) == 1)
+            guest = guests[0]
+            await guest.send(RESET)
+            assert await guest.receive() == RESET_DONE
+
+            # A new controller: the guest's stack had set the old one up, and is told so as a controller would.
+            await forward.cut()
+            await until(lambda: radio._restarts == 1)
+            assert await guest.receive() == bytes.fromhex("04100100")
+            assert (await radio.status())["paths"] == 2
+
+            # QEMU goes away (the guest is powered off) and comes back: it is dialed again.
+            await guest.aclose()
+            await until(lambda: len(guests) == 2 and radio._device is not None)
+        tasks.cancel_scope.cancel()
+
+
+def test_how_a_device_is_told_of_a_new_controller():
+    assert BluetoothRemoteController().new_controller == "none"
+    assert BluetoothRemoteController(adb="127.0.0.1:6520").new_controller == "adb"
+    assert BluetoothRemoteController(adb="127.0.0.1:6520", new_controller="none").new_controller == "none"
+    with pytest.raises(ValueError, match="needs 'adb'"):
+        BluetoothRemoteController(new_controller="adb")
+
+
+@pytest.mark.anyio
 async def test_a_device_that_only_ever_talked_to_nobody_is_switched_on_not_off_and_on():
     forward = Forward(free_port())
     forward.reachable = False

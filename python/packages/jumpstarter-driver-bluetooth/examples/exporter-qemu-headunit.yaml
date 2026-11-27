@@ -1,0 +1,55 @@
+# A Linux head unit in QEMU, with a Bluetooth and a Wi-Fi that other devices of a lease can be joined to. It
+# has no radio simulator of its own:
+#
+# - Bluetooth: the guest's HCI is a serial port (H4), as on a board whose controller is on a UART. Its other
+#   end is a socket beside QEMU, which the `bluetooth` entry joins to the controller simulator of another
+#   device of the lease (a Cuttlefish phone with `link: controller-port`): the two are then on one air.
+# - Wi-Fi: the guest has `mac80211_hwsim` radios and runs the frame bridge itself; its frame port is a
+#   forwarded port of the guest.
+#
+# What the guest's image does when it boots, as root (a standard kernel with the modules `hci_uart` and
+# `mac80211_hwsim`; BlueZ, `iw` and Python 3):
+#
+#     systemctl mask --now serial-getty@hvc0        # systemd puts a login prompt on a virtio console
+#     btattach -B /dev/hvc0 -P h4 &                 # the serial port below is the kernel's hci0
+#     modprobe mac80211_hwsim radios=1
+#     ip link set wlan0 address 02:51:00:00:00:01   # not 02:00:00:00:…: that is every simulated radio's own
+#     python3 wmediumd_agent.py --hwsim --listen 0.0.0.0:7310 &
+#
+# (`wmediumd_agent.py` is one file of jumpstarter-driver-wifi, standard library only. An access point on
+# 5 GHz also needs a country: `options cfg80211 ieee80211_regdom=US` and the regulatory database.)
+apiVersion: jumpstarter.dev/v1alpha1
+kind: ExporterConfig
+metadata:
+  namespace: default
+  name: qemu-headunit
+endpoint: grpc.jumpstarter.example.com:443
+token: "<token>"
+export:
+  qemu:
+    type: jumpstarter_driver_qemu.driver.Qemu
+    config:
+      smp: 4
+      mem: 4G
+      hostfwd:
+        ssh: { hostport: 2222, guestport: 22 }
+        hwsim: { hostport: 7310, guestport: 7310 } # the guest's frame bridge
+      serial_ports:
+        bluetooth: { listen: 127.0.0.1:7301 } # /dev/hvc0 in the guest
+  # Port `bluetooth` (requires, hci-h4): the guest's HCI, to the simulator of another device. The driver dials
+  # the serial port's socket, and again whenever QEMU was away; a controller that is a new one is said to the
+  # guest in its own HCI, since there is no ADB to switch its Bluetooth off and on.
+  bluetooth:
+    type: jumpstarter_driver_bluetooth.driver.Bluetooth
+    config:
+      link: remote-controller
+      guest: 127.0.0.1:7301
+      guest_listens: true
+      new_controller: hardware-error
+      listen: 127.0.0.1:7311
+  # Port `hwsim` (connects, ieee80211-frames): the bridge runs in the guest, and is not this driver's to start.
+  wifi:
+    type: jumpstarter_driver_wifi.driver.WifiMedium
+    config:
+      external: true
+      port: 7310

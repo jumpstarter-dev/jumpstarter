@@ -70,6 +70,7 @@ def test_the_lease_templates_join_ports_the_example_exporters_declare():
         "phone-headunit-bluetooth",
         "tablet-headunit",
         "phone-headunit-direct",
+        "phone-qemu-headunit",
     ]
     for template in filter(None, templates):
         members = {member["name"] for member in template["spec"]["members"]}
@@ -78,3 +79,15 @@ def test_the_lease_templates_join_ports_the_example_exporters_declare():
             assert len(ends) == 2 and {end["member"] for end in ends} <= members
             for end in ends:
                 assert end["port"] in declared[end["member"]], (template["metadata"]["name"], end)
+
+
+def test_a_qemu_guest_has_its_hci_on_a_serial_port_and_no_adb():
+    assert bluetooth("exporter-qemu-headunit.yaml") == {"bluetooth": [("bluetooth", "requires", "hci-h4")]}
+    (entry,) = entries("exporter-qemu-headunit.yaml").values()
+    link = entry._link
+    assert (link.guest, link.guest_listens, link.new_controller, entry._view) == (
+        "127.0.0.1:7301", True, "hardware-error", None,
+    )  # fmt: skip
+    # ... and the serial port it dials is the one the QEMU entry of the same exporter listens on
+    config = yaml.safe_load((EXAMPLES / "exporter-qemu-headunit.yaml").read_text())
+    assert config["export"]["qemu"]["config"]["serial_ports"]["bluetooth"] == {"listen": link.guest}
