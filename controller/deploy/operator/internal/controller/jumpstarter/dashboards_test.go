@@ -379,8 +379,8 @@ func TestDashboardCRDUnavailableMessage(t *testing.T) {
 		{
 			name:   "v1alpha2 served but undiscoverable",
 			served: []string{"v1alpha1", "v1alpha2"},
-			want:   []string{"not installed", "v0.3.0"},
-			absent: []string{"serves only"},
+			want:   []string{"v1alpha2", "not discoverable", "Established"},
+			absent: []string{"serves only", "not installed"},
 		},
 	}
 

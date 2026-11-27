@@ -191,12 +191,19 @@ func (r *JumpstarterReconciler) servedPersesDashboardVersions(ctx context.Contex
 // used. A legacy perses-operator that serves v1alpha1 only is named explicitly
 // so the fix (upgrade the operator) is obvious from the condition message.
 func dashboardCRDUnavailableMessage(servedVersions []string) string {
-	generic := fmt.Sprintf(
-		"perses.dev/%s PersesDashboard CRD is not installed; install perses-operator %s or newer",
-		persesVersion, persesOperatorMinimumVersion)
+	if len(servedVersions) == 0 {
+		return fmt.Sprintf(
+			"perses.dev/%s PersesDashboard CRD is not installed; install perses-operator %s or newer",
+			persesVersion, persesOperatorMinimumVersion)
+	}
 
-	if len(servedVersions) == 0 || slices.Contains(servedVersions, persesVersion) {
-		return generic
+	// The CRD advertises the version the operator writes, yet the list did not
+	// resolve: the API exists but discovery has not caught up. Saying "not
+	// installed" here sends the user to install something they already have.
+	if slices.Contains(servedVersions, persesVersion) {
+		return fmt.Sprintf(
+			"perses.dev/%s is served by persesdashboards.perses.dev but is not discoverable; "+
+				"check the CRD's Established condition and API discovery", persesVersion)
 	}
 
 	return fmt.Sprintf(
