@@ -5,7 +5,8 @@ import logging
 import os
 import platform
 import shutil
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -15,7 +16,22 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import yaml
-from anyio import EndOfStream, current_time, fail_after, move_on_after, run_process, sleep
+from anyio import (
+    BrokenResourceError,
+    CancelScope,
+    ClosedResourceError,
+    EndOfStream,
+    Event,
+    Lock,
+    create_task_group,
+    current_time,
+    fail_after,
+    move_on_after,
+    run_process,
+    sleep,
+    to_thread,
+)
+from anyio.abc import ObjectStream
 from anyio.streams.file import FileReadStream, FileWriteStream
 from jumpstarter_driver_network.driver import TcpNetwork, UnixNetwork, VsockNetwork
 from jumpstarter_driver_power.driver import PowerInterface, PowerReading
@@ -163,12 +179,38 @@ class QemuFlasher(FlasherInterface, Driver):
 @dataclass(kw_only=True)
 class QemuPower(PowerInterface, Driver):
     parent: Qemu
+    _process: Popen[bytes] | None = field(default=None, init=False, repr=False)
+    # Publish serial readiness only after startup, and withdraw it before stopping.
+    _serial_process: Popen[bytes] | None = field(default=None, init=False, repr=False)
+    _serial_changed: Event = field(default_factory=Event, init=False, repr=False)
+    # The console's single fanout reader owns this scope, including physical open/read.
+    _serial_read_scope: CancelScope | None = field(default=None, init=False, repr=False)
+    _power_lock: Lock = field(default_factory=Lock, init=False, repr=False)
+
+    @asynccontextmanager
+    async def serving(self):
+        async with super().serving():
+            try:
+                yield
+            finally:
+                with CancelScope(shield=True):
+                    await self._off(warn_if_off=False)
 
     @export
-    async def on(self) -> None:  # noqa: C901
-        if hasattr(self, "_process"):
+    async def on(self) -> None:
+        async with self._power_lock:
+            try:
+                await self._start()
+            except BaseException:
+                await self._stop(warn_if_off=False)
+                raise
+
+    async def _start(self) -> None:  # noqa: C901
+        process = self._process
+        if process is not None and process.poll() is None:
             self.logger.warning("already powered on, ignoring request")
             return
+        self._cleanup_power_off()
 
         # The mmio transport exists to boot AIB aboot images via u-boot, whose
         # DTB (e.g. qemu-tcg.dtb) hardcodes a 4G memory layout. A smaller -m
@@ -345,7 +387,8 @@ class QemuPower(PowerInterface, Driver):
                 f"{blk_device},drive=cidata",
             ]
 
-        self._process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
+        process = Popen(self.parent._wrap_command(cmdline), stdin=PIPE)  # noqa: ASYNC220
+        self._process = process
 
         qmp = QMPClient(self.parent.hostname)
 
@@ -360,26 +403,59 @@ class QemuPower(PowerInterface, Driver):
                 except ConnectError:
                     await sleep(0.5)
 
-        if not self.parent.launcher_socket:
-            chardevs = await qmp.execute("query-chardev")
-            pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")  # ty: ignore[not-iterable]
-            Path(self.parent._pty).unlink(missing_ok=True)
-            Path(self.parent._pty).symlink_to(pty)
+            if not self.parent.launcher_socket:
+                chardevs = await qmp.execute("query-chardev")
+                pty = next(c for c in chardevs if c["label"] == "serial0")["filename"].lstrip("pty:")  # ty: ignore[not-iterable]
+                Path(self.parent._pty).unlink(missing_ok=True)
+                Path(self.parent._pty).symlink_to(pty)
 
-        await qmp.execute("system_reset")
-        await qmp.disconnect()
+            await qmp.execute("system_reset")
+            await qmp.disconnect()
+        returncode = process.poll()
+        if returncode is not None:
+            raise RuntimeError(f"QEMU exited during startup (status {returncode})")
+        self._serial_process = process
+        self._notify_serial_change()
+
+    def _notify_serial_change(self) -> None:
+        self._serial_changed.set()
+        self._serial_changed = Event()
+        if self._serial_read_scope is not None:
+            self._serial_read_scope.cancel()
 
     @export
-    def off(self) -> None:
-        if hasattr(self, "_process"):
-            self._process.terminate()
-            try:
-                self._process.wait(timeout=5)
-            except TimeoutExpired:
-                self._process.kill()
-            del self._process
-        else:
-            self.logger.warning("already powered off, ignoring request")
+    async def off(self) -> None:
+        await self._off(warn_if_off=True)
+
+    async def _off(self, warn_if_off: bool) -> None:
+        async with self._power_lock:
+            await self._stop(warn_if_off)
+
+    async def _stop(self, warn_if_off: bool) -> None:
+        # Both callers hold _power_lock, including rollback of incomplete startup.
+        # gRPC cancels the handler directly; its child must finish before releasing the lock.
+        async with create_task_group() as tasks:
+            tasks.start_soon(self._stop_process, warn_if_off)
+
+    async def _stop_process(self, warn_if_off: bool) -> None:
+        with CancelScope(shield=True):
+            self._serial_process = None
+            self._notify_serial_change()
+            process = self._process
+            if process is None or process.poll() is not None:
+                self.logger.log(
+                    logging.WARNING if warn_if_off else logging.DEBUG, "already powered off, ignoring request"
+                )
+            else:
+                process.terminate()
+                try:
+                    await to_thread.run_sync(process.wait, 5)
+                except TimeoutExpired:
+                    process.kill()
+            self._cleanup_power_off()
+
+    def _cleanup_power_off(self) -> None:
+        self._process = None
 
         if hasattr(self, "_cidata"):
             del self._cidata
@@ -388,8 +464,122 @@ class QemuPower(PowerInterface, Driver):
     async def read(self) -> AsyncGenerator[PowerReading, None]:
         raise NotImplementedError
 
-    def close(self):
-        self.off()
+
+@dataclass(kw_only=True)
+class _QemuSerialStream(ObjectStream[bytes]):
+    """Keep a logical serial line open while QEMU's physical PTY comes and goes."""
+
+    console: QemuConsole
+    source_factory: Callable[[], AbstractAsyncContextManager[ObjectStream[bytes]]]
+    _stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False)
+    _source: ObjectStream[bytes] | None = field(default=None, init=False)
+    # Reuse the readiness event as a generation token when release() invalidates the source.
+    _generation: Event | None = field(default=None, init=False)
+    _closed: bool = field(default=False, init=False)
+
+    def _current_process(self) -> Popen[bytes] | None:
+        process = self.console.power._serial_process
+        return process if not self.console._released and process is not None and process.poll() is None else None
+
+    @contextmanager
+    def _physical_io(self):
+        with CancelScope() as scope:
+            self.console.power._serial_read_scope = scope
+            try:
+                yield
+            finally:
+                self.console.power._serial_read_scope = None
+
+    async def _disconnect(self) -> None:
+        self._source = None
+        self._generation = None
+        await self._stack.aclose()
+
+    async def receive(self) -> bytes:
+        power = self.console.power
+        while not self._closed:
+            changed = power._serial_changed
+            if self._generation is not changed:
+                await self._disconnect()
+            if power._serial_changed is not changed:
+                continue
+            if self._current_process() is None:
+                await self._disconnect()
+                await changed.wait()
+                continue
+
+            if self._source is None:
+                try:
+                    with self._physical_io():
+                        self._source = await self._stack.enter_async_context(self.source_factory())
+                        self._generation = changed
+                except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
+                    await self._disconnect()
+                    if self._current_process() is not None and power._serial_changed is changed:
+                        raise  # Initial-open failures must stay visible while the VM is ready.
+                # Recheck readiness after opening before reading from the physical port.
+                continue
+
+            try:
+                with self._physical_io():
+                    data = await self._source.receive()
+                    if self._current_process() is not None and power._serial_changed is changed:
+                        return data
+            except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream) as exc:
+                await self._disconnect()
+                power.logger.warning("Serial source disconnected; waiting for power or acquire: %s", exc)
+                # An established PTY hangup stays silent until power or release state changes.
+                await changed.wait()
+        raise ClosedResourceError
+
+    async def send(self, item: bytes) -> None:
+        if self._closed:
+            raise ClosedResourceError
+        source = self._source
+        generation = self._generation
+        if (
+            source is None
+            or self._current_process() is None
+            or generation is not self.console.power._serial_changed
+        ):
+            return  # An unavailable serial line silently discards input; never replay it.
+        try:
+            await source.send(item)
+        except (OSError, BrokenResourceError, ClosedResourceError, EndOfStream):
+            if self._current_process() is not None and generation is self.console.power._serial_changed:
+                raise
+
+    async def send_eof(self) -> None:
+        pass  # A serial line has no half-close.
+
+    async def aclose(self) -> None:
+        self._closed = True
+        self.console.power._notify_serial_change()
+        await self._disconnect()
+
+
+@dataclass(kw_only=True)
+class QemuConsole(PySerial):
+    power: QemuPower
+
+    @export
+    async def release(self):
+        try:
+            await super().release()
+        finally:
+            self.power._notify_serial_change()
+
+    @export
+    async def acquire(self):
+        if not self._released:
+            return
+        await super().acquire()
+        self.power._notify_serial_change()
+
+    @asynccontextmanager
+    async def _open_source(self):
+        async with _QemuSerialStream(console=self, source_factory=super()._open_source) as stream:
+            yield stream
 
 
 class Hostfwd(BaseModel):
@@ -451,15 +641,16 @@ class Qemu(Driver):
         self.hostfwd = {k: Hostfwd.model_validate(v) for k, v in self.hostfwd.items()}
         self.default_partitions = {k: Path(v) for k, v in self.default_partitions.items()}
 
-        self.children["power"] = QemuPower(parent=self)
+        power = QemuPower(parent=self)
+        self.children["power"] = power
         self.children["flasher"] = QemuFlasher(parent=self)
 
         if self.launcher_socket:
             self.children["console"] = UnixNetwork(path=self._serial_socket)
         else:
             # The power child enables the console's Ctrl-] x3 power-cycle hotkey.
-            self.children["console"] = PySerial(
-                url=self._pty, check_present=False, children={"power": self.children["power"]}
+            self.children["console"] = QemuConsole(
+                power=power, url=self._pty, check_present=False, children={"power": power}
             )
 
         self.children["vnc"] = UnixNetwork(path=self._vnc)
