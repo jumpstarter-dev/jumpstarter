@@ -127,3 +127,11 @@ Good examples can be found in `python/packages/jumpstarter-driver-shell/jumpstar
 Drives which have children drivers should be composite drivers, and the client interface should
 inherit from `CompositeClient` in jumpstarter_driver_composite.client, also the pyproject.toml should
 have a dependency on `jumpstarter-driver-composite`.
+
+## Telemetry
+
+Drivers can publish metrics and structured events through `self.metrics` and
+`self.emit_event()`; each driver declares a `driver_type` from the documented
+set. See the
+[driver telemetry guide](../../docs/source/getting-started/guides/driver-telemetry.md)
+before adding instruments, and run `make driver-telemetry-check` from `python/`.

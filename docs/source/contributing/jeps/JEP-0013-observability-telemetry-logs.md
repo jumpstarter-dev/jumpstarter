@@ -95,7 +95,11 @@ exporter-level metrics that a monitoring stack can scrape or receive.
   enriched by individual drivers via the `driver_type` label. Each driver
   selects a category from a predefined set in jumpstarter core (e.g.
   `storage`, `power`, `network`, `serial`, `console`, `video`,
-  `composite`).
+  `composite`). Phase 4 expanded the default set to every category used by
+  in-repo drivers: `appium`, `automotive`, `bluetooth`, `debug`, `gpio`,
+  `iosdevice`, `shell`, and `testing` were added alongside the original
+  seven, and the CRD default, the operator default, and the Telemetry service
+  fallback are kept in sync by a workspace check.
   Composite drivers (e.g. Renode, QEMU) that bundle multiple sub-drivers
   do not emit a single top-level category for delegated work. Instead,
   each sub-driver emits its own `driver_type` when it performs an
@@ -1761,6 +1765,15 @@ all subsequent phases have E2E coverage from the start.
 - Operator E2E result on this branch: 64 passed, 0 failed, 1 skipped, with the
   gated shipper delivery and Prometheus target-health tests passing
   separately. The monorepo CLI E2E suite was not rerun: 2026-11-04
+- Phase 4 (driver telemetry) implemented on the `jep-0013-phase4-driver-telemetry`
+  branch: `self.metrics` for driver counters/histograms/gauges with automatic
+  `exporter`/`driver_type` labels, memoised label binding, a cardinality guard,
+  a task-local `driver_type` context for composite sub-drivers, and
+  `self.emit_event()` for structured operations. The default `driver_type`
+  allowlist now covers every in-repo category across the CRD default, operator
+  default, and service fallback; a generated catalog plus a workspace check
+  enforce the documented surface, the 23-package grandfather baseline, and the
+  docs contract. Reference adoption: the power drivers and SD Wire: 2026-11-19
 
 ## References
 

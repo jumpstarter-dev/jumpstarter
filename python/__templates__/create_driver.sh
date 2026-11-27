@@ -119,3 +119,9 @@ for f in .gitignore pyproject.toml conftest.py examples/exporter.yaml; do
     echo "Creating: ${DRIVER_DIRECTORY}/${f}"
     envsubst < ${SCRIPT_DIR}/driver/${f}.tmpl > ${DRIVER_DIRECTORY}/${f}
 done
+
+echo ""
+echo "Next: declare a driver_type from the documented set and add telemetry"
+echo "(self.metrics / self.emit_event). See"
+echo "docs/source/getting-started/guides/driver-telemetry.md, then run from python/:"
+echo "  make driver-telemetry-check"

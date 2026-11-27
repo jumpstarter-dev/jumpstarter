@@ -2431,14 +2431,24 @@ spec:
                         - console
                         - video
                         - composite
+                        - appium
+                        - automotive
+                        - bluetooth
+                        - debug
+                        - gpio
+                        - iosdevice
+                        - shell
+                        - testing
                         description: |-
                           Allowed driver_type label values. Unlisted types are remapped to "other".
-                          At most 16 entries (the default set plus site-specific categories), each
-                          at most 32 characters.
+                          At most 24 entries (the default set plus site-specific categories), each
+                          at most 32 characters. Keep the default in sync with
+                          service.DefaultDriverTypeEnum and the operator's
+                          defaultTelemetryDriverTypeEnum.
                         items:
                           maxLength: 32
                           type: string
-                        maxItems: 16
+                        maxItems: 24
                         type: array
                       exemplarKeys:
                         default:

@@ -11,6 +11,8 @@ development workflow.
   KubeVirt cluster using the `kubevirt.jumpstarter.dev` provisioner
 - [Appium UI Automation](ui-automation.md): Drive iOS and Android targets
   through one Appium interface
+- [Driver telemetry](driver-telemetry.md): Publish driver metrics and events,
+  the driver_type categories, and the workspace checks
 
 ```{toctree}
 :maxdepth: 1
@@ -20,4 +22,5 @@ examples/index.md
 integration-patterns/index.md
 kubevirt-provisioner.md
 ui-automation.md
+driver-telemetry.md
 ```

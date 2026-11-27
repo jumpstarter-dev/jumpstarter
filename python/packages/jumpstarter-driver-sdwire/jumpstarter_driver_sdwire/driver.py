@@ -256,11 +256,38 @@ class SDWire(StorageMuxFlasherInterface, Driver):
 
     def select(self, target):
         # CBUS bitbang: wValue = 0x20<<8 | (0xF0 DUT / 0xF1 HOST). Needs CBUS0=GPIO.
-        self.dev.ctrl_transfer(
-            bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_DEVICE,
-            bRequest=0xB,
-            wIndex=0,
-            wValue=(0x20 << 8) | target,
+        operation = "host" if target == 0xF1 else "dut"
+        started = time.perf_counter()
+        try:
+            self.dev.ctrl_transfer(
+                bmRequestType=usb.ENDPOINT_OUT | usb.TYPE_VENDOR | usb.RECIP_DEVICE,
+                bRequest=0xB,
+                wIndex=0,
+                wValue=(0x20 << 8) | target,
+            )
+        except Exception:
+            self._record_mux_operation(operation, "failure", started, target)
+            raise
+        self._record_mux_operation(operation, "success", started, target)
+
+    def _record_mux_operation(self, operation: str, result: str, started: float, target: int) -> None:
+        metrics = self.metrics
+        metrics.counter(
+            "operations",
+            "SD Wire storage mux operations",
+            labels=("operation", "result"),
+        ).labels(operation=operation, result=result).inc()
+        metrics.histogram(
+            "operation_seconds",
+            "Time spent switching the storage mux",
+            labels=("operation",),
+            buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 5.0),
+        ).labels(operation=operation).observe(time.perf_counter() - started)
+        self.emit_event(
+            "sd-wire mux switch",
+            operation=operation,
+            result=result,
+            fields={"target": hex(target)},
         )
 
     def query(self):

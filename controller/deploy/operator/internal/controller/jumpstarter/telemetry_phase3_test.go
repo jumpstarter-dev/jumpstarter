@@ -32,7 +32,7 @@ import (
 // they encode the JEP rather than the implementation.
 const (
 	jepDefaultScrapeTimeoutFlag  = "-scrape-timeout=7s"
-	jepDefaultDriverTypeEnumFlag = "-driver-type-enum=power,storage,network,serial,console,video,composite"
+	jepDefaultDriverTypeEnumFlag = "-driver-type-enum=power,storage,network,serial,console,video,composite,appium,automotive,bluetooth,debug,gpio,iosdevice,shell,testing"
 	jepDefaultExemplarKeysFlag   = "-exemplar-keys=client,lease_id"
 	jepMetricsBindFlag           = "-metrics-bind-address=:8080"
 )

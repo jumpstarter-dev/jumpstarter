@@ -56,6 +56,11 @@ pkg-ty-%: packages/%
 
 pkg-test-all: sync $(addprefix pkg-test-,$(PKG_TARGETS))
 
+# JEP-0013 Phase 4: driver_type baseline, metric catalog, docs contract, and the
+# three Go allowlist authorities. Set UPDATE_CATALOG=1 to rewrite the catalog.
+driver-telemetry-check:
+	uv run --isolated --directory packages/jumpstarter python ../../scripts/check-driver-telemetry.py
+
 ifdef LOGS_DIR
 # Under make -j, test-report would otherwise start before the last packages finish.
 test-report: pkg-test-all
