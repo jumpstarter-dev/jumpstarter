@@ -37,6 +37,11 @@ extensions = [
     "sphinx_inline_tabs",
 ]
 
+# The autodoc rewrite in Sphinx 9 writes parsed annotations back onto
+# pydantic.BaseModel, so models with extra="allow" (mcp_types, imported by
+# jumpstarter_mcp) fail to import: https://github.com/sphinx-doc/sphinx/issues/14337
+autodoc_use_legacy_class_based = True
+
 templates_path = ["_templates"]
 exclude_patterns = []
 
