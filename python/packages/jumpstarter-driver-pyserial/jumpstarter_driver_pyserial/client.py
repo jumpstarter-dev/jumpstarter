@@ -105,8 +105,11 @@ class PySerialClient(DriverClient):
     async def _console_method(self, observe: bool, writes: bool) -> str:
         """Pick the pipe stream method, falling back to connect when observe is unavailable.
 
-        Older exporters do not export observe; without the fallback a read-only
-        pipe fails there. The fallback takes the exclusive write token.
+        Pure backward compatibility with exporters predating the console
+        fan-out: their serial drivers do not export observe, and without the
+        fallback a read-only pipe fails there. Remove this fallback (and
+        _has_observe) once every supported exporter ships observe.
+        The fallback takes the exclusive write token.
         """
         if writes and not observe:
             return "connect"
@@ -114,7 +117,10 @@ class PySerialClient(DriverClient):
             return "observe"
         if observe:
             raise DriverMethodNotImplemented("observe mode is not available on this exporter")
-        click.echo("observe not available on this exporter, falling back to connect (exclusive access)", err=True)
+        click.echo(
+            "observe not available on this exporter, falling back to connect (takes the exclusive write token)",
+            err=True,
+        )
         return "connect"
 
     async def _pipe_serial(

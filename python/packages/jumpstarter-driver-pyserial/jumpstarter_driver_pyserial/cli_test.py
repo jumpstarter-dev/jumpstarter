@@ -336,7 +336,7 @@ async def test_pipe_serial_selects_stream_mode(pyserial_client, observe, input_e
         return (0, 0)
 
     with (
-        patch.object(pyserial_client, "call_async", new_callable=AsyncMock),
+        patch.object(pyserial_client, "call_async", new_callable=AsyncMock) as call_async,
         patch.object(pyserial_client, "stream_async", side_effect=stream_async),
         patch.object(
             pyserial_client, "_serial_to_output", new_callable=AsyncMock, side_effect=serial_to_output
@@ -346,12 +346,16 @@ async def test_pipe_serial_selects_stream_mode(pyserial_client, observe, input_e
         await pyserial_client._pipe_serial(input_enabled=input_enabled, observe=observe)
 
     assert methods == [expected_method]
+    if expected_method == "observe":
+        call_async.assert_awaited_once_with("console_status")
+    else:
+        call_async.assert_not_awaited()
     output.assert_awaited_once()
     assert stdin.await_count == int(input_enabled)
 
 
 @pytest.mark.anyio
-async def test_pipe_serial_falls_back_to_connect_without_observe(pyserial_client):
+async def test_pipe_serial_falls_back_to_connect_without_observe(pyserial_client, capsys):
     """A read-only pipe falls back to connect on exporters without observe."""
     methods = []
 
@@ -374,6 +378,7 @@ async def test_pipe_serial_falls_back_to_connect_without_observe(pyserial_client
 
     assert methods == ["connect"]
     output.assert_awaited_once()
+    assert "falling back to connect (takes the exclusive write token)" in capsys.readouterr().err
 
 
 @pytest.mark.anyio

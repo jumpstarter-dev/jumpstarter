@@ -297,7 +297,8 @@ Access is coordinated by an exclusive **write token**:
   (including a replay of recent scrollback on attach) but unable to write. A
   client observes when it passes `--observe`, or when a `pipe` has no stdin to
   forward (a plain logging/monitoring pipe never takes the write token, so it
-  cannot lock out an interactive user).
+  cannot lock out an interactive user; on an older exporter without `observe`
+  it falls back to `connect` and does take the token).
 - There is no silent fallback for interactive sessions: running `console` (or
   `pipe -i`) while another client holds the token fails with an error telling
   you to retry with `--observe`. Running an interactive command means you intend
