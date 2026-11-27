@@ -72,6 +72,42 @@ func TestDashboardsEnabled(t *testing.T) {
 	}
 }
 
+// TestReconcilePersesDashboardsWaitsForDeletion covers a dashboard that is
+// still readable because a finalizer is holding it while it terminates.
+func TestReconcilePersesDashboardsWaitsForDeletion(t *testing.T) {
+	js := testJumpstarter()
+	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}
+	js.Spec.Telemetry.Metrics.Dashboards = new(true)
+	js.Spec.Telemetry.Metrics.PersesInstanceSelector = map[string]string{
+		"app.kubernetes.io/instance": "perses-sample",
+	}
+
+	existing := desiredPersesDashboard(js)
+	now := metav1.Now()
+	existing.SetDeletionTimestamp(&now)
+	existing.SetFinalizers([]string{"test.jumpstarter.dev/hold"})
+
+	s := runtime.NewScheme()
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+	r := &JumpstarterReconciler{
+		Client: fake.NewClientBuilder().WithScheme(s).WithObjects(existing).Build(),
+		Scheme: s,
+	}
+
+	result, err := r.reconcilePersesDashboards(context.Background(), js)
+	if err == nil {
+		t.Fatal("reconcile must fail while the dashboard is being deleted, so it retries")
+	}
+	if result.reason != serviceMonitorReasonFailed {
+		t.Errorf("reason = %q, want %q", result.reason, serviceMonitorReasonFailed)
+	}
+	if !strings.Contains(result.message, "being deleted") {
+		t.Errorf("message = %q, want it to mention the deletion in progress", result.message)
+	}
+}
+
 func TestDesiredPersesDashboard(t *testing.T) {
 	js := testJumpstarter()
 	js.Spec.Telemetry = &operatorv1alpha1.TelemetryConfig{}

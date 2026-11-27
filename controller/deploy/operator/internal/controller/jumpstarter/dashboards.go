@@ -475,6 +475,17 @@ func (r *JumpstarterReconciler) reconcilePersesDashboards(ctx context.Context, j
 	case err != nil:
 		return applyFailedDashboardResult(err), fmt.Errorf("get PersesDashboard %s: %w", desired.GetName(), err)
 	default:
+		if !existing.GetDeletionTimestamp().IsZero() {
+			// The API server keeps returning the object while it terminates, and
+			// this controller does not watch PersesDashboards, so nothing would
+			// notice the delete completing. Fail the reconcile so the retry
+			// recreates the dashboard once it is gone.
+			return integrationResult{
+				reason: serviceMonitorReasonFailed,
+				message: fmt.Sprintf(
+					"PersesDashboard %s is being deleted; waiting to recreate it", existing.GetName()),
+			}, fmt.Errorf("PersesDashboard %s is being deleted", existing.GetName())
+		}
 		if err := ensureControlledBy(js, existing); err != nil {
 			return applyFailedDashboardResult(err), fmt.Errorf("refusing to update PersesDashboard %s: %w", desired.GetName(), err)
 		}
