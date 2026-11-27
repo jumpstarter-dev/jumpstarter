@@ -105,8 +105,10 @@ The starter set implements the JEP alert table:
 | `JumpstarterScrapeTimeouts` | Telemetry | More than three timeouts per exporter over 15 minutes |
 
 Telemetry-pipeline alerts use `critical`; operation and lease alerts use
-`warning`. Edit the generated `PrometheusRule` to tune thresholds, or set
-`prometheusRules: false` to remove the owned rule.
+`warning`. The generated `PrometheusRule` is reconciled, so edits to it are
+reverted on the next pass. To change the thresholds, set `prometheusRules: false`
+and manage a `PrometheusRule` of your own; a rule with its own name can also sit
+alongside the generated one, since pruning only removes rules this CR owns.
 
 `ruleLabels` are added to the `PrometheusRule` metadata so the object matches
 your Prometheus `ruleSelector`. The stable label
