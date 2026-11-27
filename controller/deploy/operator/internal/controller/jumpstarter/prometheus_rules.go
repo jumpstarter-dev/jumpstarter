@@ -81,7 +81,9 @@ func (r *JumpstarterReconciler) prometheusRuleCRDAvailable(ctx context.Context) 
 		Group: prometheusRuleGroup, Version: prometheusRuleVersion, Kind: prometheusRuleKind + "List",
 	})
 	if err := r.List(ctx, list, client.Limit(1)); err != nil {
-		if apimeta.IsNoMatchError(err) {
+		// NotFound means the API was removed after the RESTMapper resolved it;
+		// treat it like an absent CRD instead of a reconcile failure.
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			return false, nil
 		}
 		return false, err
@@ -296,7 +298,8 @@ func (r *JumpstarterReconciler) prunePrometheusRules(ctx context.Context, js *op
 		Group: prometheusRuleGroup, Version: prometheusRuleVersion, Kind: prometheusRuleKind + "List",
 	})
 	if err := r.List(ctx, list, client.InNamespace(js.Namespace)); err != nil {
-		if apimeta.IsNoMatchError(err) {
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+			// Already gone, or the API is absent: nothing left to prune.
 			return nil
 		}
 		return fmt.Errorf("list prometheusrules: %w", err)

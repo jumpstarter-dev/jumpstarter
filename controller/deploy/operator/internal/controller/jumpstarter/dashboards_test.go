@@ -24,6 +24,7 @@ import (
 
 	operatorv1alpha1 "github.com/jumpstarter-dev/jumpstarter/controller/deploy/operator/api/v1alpha1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -358,6 +359,35 @@ func TestServedPersesDashboardVersionsWithoutCRDScheme(t *testing.T) {
 	}
 }
 
+// TestListNotFoundIsTreatedAsAbsent covers the case where the API disappears
+// after the RESTMapper resolved it: the list returns NotFound rather than
+// NoMatch, and that must not turn into a reconcile failure.
+func TestListNotFoundIsTreatedAsAbsent(t *testing.T) {
+	s := runtime.NewScheme()
+	if err := operatorv1alpha1.AddToScheme(s); err != nil {
+		t.Fatalf("add scheme: %v", err)
+	}
+	r := &JumpstarterReconciler{
+		Client: &notFoundListClient{Client: fake.NewClientBuilder().WithScheme(s).Build()},
+		Scheme: s,
+	}
+
+	available, _, err := r.persesDashboardCRDAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("persesDashboardCRDAvailable() error = %v", err)
+	}
+	if available {
+		t.Fatal("persesDashboardCRDAvailable() = true, want false when the API is gone")
+	}
+
+	js := &operatorv1alpha1.Jumpstarter{
+		ObjectMeta: metav1.ObjectMeta{Name: "jumpstarter", Namespace: "jumpstarter-lab"},
+	}
+	if err := r.prunePersesDashboards(context.Background(), js, nil); err != nil {
+		t.Fatalf("prunePersesDashboards() error = %v", err)
+	}
+}
+
 func TestDashboardCRDUnavailableMessage(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -412,6 +442,20 @@ func (c *noMatchListClient) List(ctx context.Context, list client.ObjectList, op
 		return &apimeta.NoKindMatchError{
 			GroupKind: schema.GroupKind{Group: persesGroup, Kind: persesDashboardKind + "List"},
 		}
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
+// notFoundListClient answers every unstructured list with NotFound, the way a
+// client with a stale mapping does after the API is removed.
+type notFoundListClient struct {
+	client.Client
+}
+
+func (c *notFoundListClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if _, ok := list.(*unstructured.UnstructuredList); ok {
+		return apierrors.NewNotFound(
+			schema.GroupResource{Group: persesGroup, Resource: persesDashboardKind + "s"}, "list")
 	}
 	return c.Client.List(ctx, list, opts...)
 }

@@ -123,7 +123,9 @@ func (r *JumpstarterReconciler) persesDashboardCRDAvailable(ctx context.Context)
 		Group: persesGroup, Version: persesVersion, Kind: persesDashboardKind + "List",
 	})
 	if err := r.List(ctx, list, client.Limit(1)); err != nil {
-		if apimeta.IsNoMatchError(err) {
+		// NotFound means the API was removed after the RESTMapper resolved it;
+		// treat it like an absent CRD instead of a reconcile failure.
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
 			served, versionErr := r.servedPersesDashboardVersions(ctx)
 			if versionErr != nil {
 				return false, nil, versionErr
@@ -514,7 +516,8 @@ func (r *JumpstarterReconciler) prunePersesDashboards(ctx context.Context, js *o
 		Group: persesGroup, Version: persesVersion, Kind: persesDashboardKind + "List",
 	})
 	if err := r.List(ctx, list, client.InNamespace(js.Namespace)); err != nil {
-		if apimeta.IsNoMatchError(err) {
+		if apimeta.IsNoMatchError(err) || apierrors.IsNotFound(err) {
+			// Already gone, or the API is absent: nothing left to prune.
 			return nil
 		}
 		return fmt.Errorf("list PersesDashboards: %w", err)
