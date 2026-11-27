@@ -279,7 +279,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -323,7 +323,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -398,7 +398,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -470,7 +470,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
@@ -523,7 +523,7 @@ jobs:
       - id: uv
         run: echo "version=$(cat .uv-version)" >> "$GITHUB_OUTPUT"
       - name: Install uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: ${{ steps.uv.outputs.version }}
           python-version-file: .py-version
