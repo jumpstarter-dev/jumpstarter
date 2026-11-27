@@ -521,7 +521,10 @@ func (r *JumpstarterReconciler) prunePersesDashboards(ctx context.Context, js *o
 		if !metav1.IsControlledBy(dashboard, js) {
 			continue
 		}
-		if err := r.Delete(ctx, dashboard); err != nil && !apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+		// Pin the delete to the object whose ownership was just checked; a
+		// conflict means it was replaced and the next pass re-reads it.
+		if err := r.Delete(ctx, dashboard, deletePreconditions(dashboard)); err != nil &&
+			!apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
 			return fmt.Errorf("delete stale PersesDashboard %s: %w", dashboard.GetName(), err)
 		}
 		logf.FromContext(ctx).Info("Deleted stale PersesDashboard", "name", dashboard.GetName())
