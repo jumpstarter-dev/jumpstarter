@@ -1,10 +1,20 @@
+import queue
 import warnings
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager, contextmanager
 from unittest.mock import MagicMock, patch
 
 import click.testing
 import pytest
+from aiohttp import web
+from anyio import fail_after
+from anyio.from_thread import start_blocking_portal
+from pydantic.dataclasses import dataclass
 
+from jumpstarter.client.core import DriverError
 from jumpstarter.client.flasher import FlashPhase, FlashStatus, StreamingFlasherClient, _parse_path
+from jumpstarter.common.utils import serve
+from jumpstarter.driver import Driver, FlasherInterface, export
 from jumpstarter.streams.encoding import Compression
 
 
@@ -87,6 +97,123 @@ class TestHttpUrlAdapter:
         assert result["headers"] == {}
 
         await gen.__aexit__(None, None, None)
+
+
+@dataclass(kw_only=True)
+class _DumpingFlasher(FlasherInterface, Driver):
+    """A flasher whose dump sends whatever `body` yields."""
+
+    body: Callable[[], AsyncIterator[bytes]]
+
+    @export
+    async def flash(self, source, target: str | None = None):
+        raise NotImplementedError
+
+    @export
+    async def dump(self, target, partition: str | None = None):
+        # a dump stuck on the request fails the test instead of hanging it
+        with fail_after(10):
+            async with self.resource(target) as res:
+                async for chunk in self.body():
+                    await res.send(chunk)
+
+
+# more chunks than the exporter buffers, each one different, so the body cannot fit
+# in a buffer while the request waits and a reordered or dropped chunk shows
+_CHUNKS = [bytes([i]) * 65536 for i in range(64)]
+
+
+async def _whole_body():
+    for chunk in _CHUNKS:
+        yield chunk
+
+
+async def _endless_body():
+    while True:
+        yield _CHUNKS[0]
+
+
+async def _failing_body():
+    # all of it first, so the request is under way when the driver fails
+    for chunk in _CHUNKS:
+        yield chunk
+    raise RuntimeError("device read failed")
+
+
+@contextmanager
+def _http_server(handler: Callable[[web.Request], Awaitable[web.Response]]):
+    """Serve handler for PUT /dump.bin on a loop of its own, since serve() blocks this thread."""
+
+    @asynccontextmanager
+    async def run():
+        app = web.Application(client_max_size=64 * 1024 * 1024)
+        app.router.add_put("/dump.bin", handler)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        try:
+            await web.TCPSite(runner, "127.0.0.1", 0).start()
+            yield f"http://127.0.0.1:{runner.addresses[0][1]}/dump.bin"
+        finally:
+            await runner.cleanup()
+
+    with start_blocking_portal() as portal, portal.wrap_async_context_manager(run()) as url:
+        yield url
+
+
+class TestDumpToHttpUrl:
+    """dump() to an HTTP URL, from the client through the exporter's PUT to a real server."""
+
+    def test_uploads_what_the_driver_sends(self):
+        uploads = queue.Queue()
+
+        async def store(request: web.Request) -> web.Response:
+            uploads.put(await request.read())
+            return web.Response()
+
+        with _http_server(store) as url, serve(_DumpingFlasher(body=_whole_body)) as client:
+            client.dump(url)
+
+        assert uploads.get_nowait() == b"".join(_CHUNKS)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param(_whole_body, id="after-the-body"),
+            # a body that only ends when the dump is told the request is over
+            pytest.param(_endless_body, id="during-the-body"),
+        ],
+    )
+    def test_reports_the_server_rejection(self, body):
+        async def reject(request: web.Request) -> web.Response:
+            return web.Response(status=403)
+
+        with (
+            _http_server(reject) as url,
+            serve(_DumpingFlasher(body=body)) as client,
+            pytest.raises(DriverError, match="status=403"),
+        ):
+            client.dump(url)
+
+    def test_aborts_the_upload_when_the_driver_fails(self):
+        outcomes = queue.Queue()
+
+        async def store(request: web.Request) -> web.Response:
+            try:
+                body = await request.read()
+            except BaseException as error:
+                outcomes.put(error)
+                raise
+            outcomes.put(body)
+            return web.Response()
+
+        with _http_server(store) as url, serve(_DumpingFlasher(body=_failing_body)) as client:
+            with pytest.raises(DriverError, match="device read failed"):
+                client.dump(url)
+            # the server learns how the body ended only after the client has its error
+            outcome = outcomes.get(timeout=5)
+
+        # a body ended normally here would have been stored as the whole dump
+        assert isinstance(outcome, BaseException), f"the server received a complete body of {len(outcome)} bytes"
 
 
 class TestAsyncIteratorStream:
