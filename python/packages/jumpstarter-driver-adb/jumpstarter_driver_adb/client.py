@@ -13,6 +13,8 @@ from jumpstarter.client import DriverClient
 if TYPE_CHECKING:
     from jumpstarter_driver_appium.client import AppiumClient
 
+    from .hmi.client import AdbDeviceHmiClient
+
 #: Seconds to allow the **local** ``adb connect`` when attaching.
 #:
 #: Deliberately separate from the driver's ``connect_timeout``, which bounds adb calls
@@ -209,6 +211,14 @@ class AdbDeviceClient(DriverClient):
             raise AttributeError("Appium is not configured for this device on the exporter")
         return child  # ty: ignore[invalid-explicit-return]
 
+    @property
+    def hmi(self) -> "AdbDeviceHmiClient":
+        """The device's HMI, when the exporter configures one: its picture, input and Android extras."""
+        child = self.children.get("hmi")
+        if child is None:
+            raise AttributeError("An HMI is not configured for this device on the exporter")
+        return child  # ty: ignore[invalid-return-type]
+
     def info(self) -> dict:
         """Describe the device: transport, selector, and whether it is present."""
         return self.call("info")
@@ -297,6 +307,8 @@ class AdbDeviceClient(DriverClient):
 
         if "appium" in self.children:
             adb.add_command(self.appium.cli(), "appium")
+        if "hmi" in self.children:
+            adb.add_command(self.hmi.cli(), "hmi")
 
         @adb.command()
         def info():

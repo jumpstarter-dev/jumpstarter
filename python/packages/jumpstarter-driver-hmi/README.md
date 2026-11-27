@@ -4,6 +4,8 @@ An **HMI** (human-machine interface) is a **remote display with declared input**
 
 `jumpstarter-driver-hmi` is the **interface**, not a device driver. It holds the abstract `HmiInterface`, the client, the shared hub that fans one encode out to any number of viewers, the recorder, the wire format, a small web view, and a mock HMI for tests. It covers embedded touch screens and mobile devices today and is made for more: remote desktops (VNC) and KVM devices are future sources of the same interface (see [What each implementation declares](#what-each-implementation-declares)). The implementations live in the device packages that already know the device, each as an optional `hmi:` child of the device driver, the way `appium:` is. Anyone can implement the interface in their own driver (see [Implementing an HMI](#implementing-an-hmi)).
 
+* `jumpstarter-driver-adb` (`jumpstarter-driver-adb[hmi]`): Android, through scrcpy.
+
 ## Installation
 
 ```shell
@@ -66,6 +68,7 @@ Whatever the device speaks, the **exporter** receives it and turns it into one H
 | --- | --- | --- | --- | --- |
 | `MockHmi` (`mode: touch`, the default) | H.264, HEVC, MJPEG | touch, 1 contact | text | Home, Back, App switch, Volume up |
 | `MockHmi` (`mode: mouse`) | H.264, HEVC, MJPEG | mouse: absolute, buttons, wheel (relative with `relative: true`), 1 contact | every code, text | none |
+| Android, through `adb` (scrcpy) | H.264, HEVC | touch, 1 contact | a table of codes with an Android key code, text | Back, Home, Recents, Volume up and down (Power and Lock only when listed) |
 | **Future** | | | | |
 | VNC (remote desktops) | whatever the server speaks, re-encoded or MJPEG | mouse: absolute, buttons, wheel | every code, text | none |
 | KVM devices | MJPEG or H.264 | mouse: absolute and relative, buttons, wheel | every code | none |
