@@ -46,7 +46,7 @@ class Esp32FlasherClient(FlasherClient):
         target: str | None = None,
         compression: Compression | None = None,
     ) -> Generator[FlashStatus, None, None]:
-        """Like ``flash``, yielding a status update as each image is written."""
+        """Like ``flash``, yielding progress updates as the images are written."""
         images = _resolve_images(path, target)
         layout, upload = _layout(images)
         try:
@@ -139,6 +139,8 @@ def _status_line(status: FlashStatus) -> str:
     line = status.message
     if status.step_index is not None:
         line = f"[{status.step_index}/{status.total_steps}] {status.step_name}: {line}"
+    if status.progress is not None:
+        line = f"{line} {status.progress:.0%}"
     return line
 
 

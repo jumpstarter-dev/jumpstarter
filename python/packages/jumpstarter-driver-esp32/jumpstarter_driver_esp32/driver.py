@@ -1,8 +1,10 @@
 import asyncio
 import contextlib
 import gc
+import logging
 import os
 import tempfile
+import threading
 import time
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import contextmanager
@@ -13,12 +15,58 @@ import esptool.cmds
 from anyio import CancelScope, to_thread
 from anyio.streams.file import FileReadStream
 from esptool.loader import ESPLoader
+from esptool.logger import TemplateLogger, log
 from jumpstarter_driver_opendal.driver import FlasherInterface
 
 from jumpstarter.client.flasher import FlashPhase, FlashStatus
 from jumpstarter.common.resources import PresignedRequestResource
 from jumpstarter.driver import Driver, export
 from jumpstarter.streams.encoding import Compression, create_decompressor
+
+# Least time between two progress updates for one image. The first and the
+# last update of each image are always sent.
+PROGRESS_INTERVAL = 1.0
+
+_progress = threading.local()
+_esptool_logger = logging.getLogger("esptool")
+
+
+class _ExporterLogger(TemplateLogger):
+    """Route esptool's output into the exporter.
+
+    esptool reports through one process-wide logger. Write progress goes to
+    the flash that a worker thread registered in ``_progress``; messages go
+    to the ``esptool`` logger. It keeps no instance state, because esptool
+    5.2 installs a logger by swapping the class of its own logger object.
+    """
+
+    def print(self, *args, **kwargs):
+        message = " ".join(str(arg) for arg in args).strip()
+        if message:
+            _esptool_logger.info(message)
+
+    def note(self, message: str):
+        _esptool_logger.info(message)
+
+    def warning(self, message: str):
+        _esptool_logger.warning(message)
+
+    def error(self, message: str):
+        _esptool_logger.error(message)
+
+    def stage(self, finish: bool = False):
+        pass
+
+    def progress_bar(self, cur_iter, total_iters, prefix="", suffix="", bar_length=30):
+        callback = getattr(_progress, "callback", None)
+        if callback is not None:
+            callback(cur_iter, total_iters)
+
+    def set_verbosity(self, verbosity: str):
+        pass
+
+
+log.set_logger(_ExporterLogger())
 
 
 @dataclass(frozen=True)
@@ -123,19 +171,46 @@ class Esp32Flasher(FlasherInterface, Driver):
         finally:
             self._close_esp(esp)
 
-    def _write_images(self, esp, images: list[_Image], *, report: Callable[[FlashStatus], None]):
-        """Write every image in order, reporting each one once it is written."""
-        for step, image in enumerate(images, 1):
-            esptool.cmds.write_flash(esp, [(image.address, image.data)])
-            report(
-                FlashStatus(
-                    phase=FlashPhase.STEP,
-                    message="written",
-                    step_index=step,
-                    total_steps=len(images),
-                    step_name=str(image),
-                )
+    def _write_image(
+        self,
+        esp,
+        image: _Image,
+        *,
+        report: Callable[[FlashStatus], None],
+        step: int,
+        steps: int,
+    ):
+        """Write one image, reporting esptool's progress."""
+        last_report: float | None = None
+
+        def status(message: str, progress: float | None) -> FlashStatus:
+            return FlashStatus(
+                phase=FlashPhase.STEP,
+                message=message,
+                step_index=step,
+                total_steps=steps,
+                step_name=str(image),
+                progress=progress,
             )
+
+        def on_progress(done: int, total: int):
+            nonlocal last_report
+            now = time.monotonic()
+            if done < total and last_report is not None and now - last_report < PROGRESS_INTERVAL:
+                return
+            last_report = now
+            report(status("writing", done / total))
+
+        _progress.callback = on_progress
+        try:
+            esptool.cmds.write_flash(esp, [(image.address, image.data)])
+        finally:
+            _progress.callback = None
+
+    def _write_images(self, esp, images: list[_Image], *, report: Callable[[FlashStatus], None]):
+        """Write every image in order."""
+        for step, image in enumerate(images, 1):
+            self._write_image(esp, image, report=report, step=step, steps=len(images))
 
     async def _receive(self, source) -> bytes:
         data = bytearray()
@@ -158,7 +233,7 @@ class Esp32Flasher(FlasherInterface, Driver):
     async def flash_images(
         self, source, layout: list[dict], compression: Compression | None = None
     ) -> AsyncGenerator[FlashStatus, None]:
-        """Write several images in one esptool session, reporting each one.
+        """Write several images in one esptool session, reporting progress.
 
         ``layout`` gives each image's ``address`` and ``name``, in order, and
         where it comes from: ``size`` bytes of ``source``, which carries those
