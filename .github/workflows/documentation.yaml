@@ -13,6 +13,8 @@ on:
       - 'docs/**'
       - 'python/packages/**'
       - 'protocol/proto/**'
+      - 'python/pyproject.toml'
+      - 'python/uv.lock'
   merge_group:
 
   # Allows you to run this workflow manually from the Actions tab
