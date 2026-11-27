@@ -397,24 +397,23 @@ OPM = $(shell which opm)
 endif
 endif
 
-# A comma-separated list of bundle images (e.g. make catalog-build BUNDLE_IMGS=example.com/operator-bundle:v0.1.0,example.com/operator-bundle:v0.2.0).
-# These images MUST exist in a registry and be pull-able.
-BUNDLE_IMGS ?= $(BUNDLE_IMG)
-
-# The image tag given to the resulting catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
+# The image tag given to the catalog image (e.g. make catalog-build CATALOG_IMG=example.com/operator-catalog:v0.2.0).
 CATALOG_IMG ?= $(IMAGE_TAG_BASE)-catalog:v$(VERSION)
 
-# Set CATALOG_BASE_IMG to an existing catalog image tag to add $BUNDLE_IMGS to that image.
-ifneq ($(origin CATALOG_BASE_IMG), undefined)
-FROM_INDEX_OPT := --from-index $(CATALOG_BASE_IMG)
-endif
+# The channel the catalog serves BUNDLE_IMG in.
+CATALOG_CHANNEL ?= unstable
 
-# Build a catalog image by adding bundle images to an empty catalog using the operator package manager tool, 'opm'.
-# This recipe invokes 'opm' in 'semver' bundle add mode. For more information on add modes, see:
-# https://github.com/operator-framework/community-operators/blob/7f1438c/docs/packaging-operator.md#updating-your-existing-operator
+# Render a file-based catalog in which CATALOG_CHANNEL holds only BUNDLE_IMG,
+# with a skipRange that upgrades any lower version. BUNDLE_IMG must already be
+# pushed: opm reads the bundle from the registry.
+.PHONY: catalog
+catalog: opm ## Render a file-based catalog serving BUNDLE_IMG in CATALOG_CHANNEL.
+	rm -rf catalog
+	OPM=$(OPM) hack/render-catalog.sh $(BUNDLE_IMG) $(CATALOG_CHANNEL) catalog
+
 .PHONY: catalog-build
-catalog-build: opm ## Build a catalog image.
-	$(OPM) index add --container-tool $(CONTAINER_TOOL) --mode semver --tag $(CATALOG_IMG) --bundles $(BUNDLE_IMGS) $(FROM_INDEX_OPT)
+catalog-build: catalog ## Build the catalog image.
+	$(CONTAINER_TOOL) build -f Containerfile.catalog -t $(CATALOG_IMG) .
 
 # Push the catalog image.
 .PHONY: catalog-push

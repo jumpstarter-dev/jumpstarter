@@ -1,0 +1,10 @@
+# File-based OLM catalog rendered by `make catalog`.
+# opm builds its serving cache in a temporary directory when the catalog pod
+# starts. Building it here instead would run opm under emulation for every
+# non-native platform, and --cache-dir would then be required to make opm trust
+# it; for a catalog of one bundle, the startup build takes no time.
+FROM quay.io/operator-framework/opm:v1.55.0@sha256:f9ecca9c1fd94862b39877a3da4a020986fa5fcb693fac626e969a7e2640267b
+ENTRYPOINT ["/bin/opm"]
+CMD ["serve", "/configs"]
+COPY catalog /configs
+LABEL operators.operatorframework.io.index.configs.v1=/configs

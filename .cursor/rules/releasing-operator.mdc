@@ -109,6 +109,10 @@ v0.8.0 → v0.8.1-rc.1 → v0.8.1
 
 The `skipRange` (e.g. `>=0.8.0 <0.8.1`) allows users on any intermediate version to upgrade directly, but `replaces` must still form a valid graph with a single head.
 
+## The Unstable Catalog
+
+`build-images.yaml` publishes `quay.io/jumpstarter-dev/jumpstarter-operator-catalog:unstable` for every push to `main`. Its one channel, `unstable`, holds only the bundle of that commit (`make catalog`, `hack/render-catalog.sh`), with a `skipRange` that upgrades any lower version, so there is no `replaces` chain to maintain and nothing to do for it at release time. Bundles of untagged commits get a version OLM can order: `git describe`'s `0.10.0-dev-248-g54cd2f08` becomes `0.10.0-dev.248`, while the images keep the `git describe` tag. Releases and RCs still go to community-operators as described above.
+
 ## Cherry-Picking Fixes to Main
 
 When a release includes Makefile infrastructure fixes (not version-specific), split them into a separate commit so they can be cherry-picked to `main` independently from version bumps.
