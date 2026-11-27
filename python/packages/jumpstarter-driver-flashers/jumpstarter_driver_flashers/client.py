@@ -63,7 +63,7 @@ EXPECT_TIMEOUT_SYNC = 1200
 # fls version downloaded from GitHub when neither the caller nor the exporter picks one
 # and the exporter cannot serve its own binary.
 # renovate: datasource=github-releases depName=jumpstarter-dev/fls
-DEFAULT_FLS_VERSION = "0.3.0"
+DEFAULT_FLS_VERSION = "0.4.1"
 
 
 class _RedactingConsoleWriter:
