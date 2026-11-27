@@ -157,7 +157,10 @@ sum(rate(jumpstarter_lease_acquisitions_total[15m])) > 0.1`,
 					alertRule(
 						"JumpstarterTelemetryDropped",
 						`increase(jumpstarter_telemetry_dropped_total[5m]) > 0`,
-						"5m",
+						// No hold: a burst that stops is gone from the window
+						// before five minutes of pending could elapse, so a
+						// "any dropped entry" alert would never fire.
+						"0s",
 						"critical",
 						"Jumpstarter telemetry is dropping log entries",
 						"The telemetry Loki push queue dropped entries; check telemetry backpressure and Loki availability.",

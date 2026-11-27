@@ -147,6 +147,10 @@ func TestDesiredPrometheusRules(t *testing.T) {
 		"by (exporter, error_type)")
 	assertAlertRule(t, rules, "JumpstarterExporterIdle", "warning", "30m",
 		"increase(jumpstarter_operations_total[1h])")
+	// A single drop burst leaves the window before a pending period could
+	// elapse, so this alert must have no hold.
+	assertAlertRule(t, rules, "JumpstarterTelemetryDropped", "critical", "0s",
+		"increase(jumpstarter_telemetry_dropped_total[5m])")
 }
 
 // assertAlertRule finds an alert by name and asserts its severity, duration, and
