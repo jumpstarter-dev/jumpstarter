@@ -1165,3 +1165,18 @@ async def test_update_lease_raises_when_no_changes():
 
     with pytest.raises(ValueError, match="At least one of"):
         await svc.UpdateLease(name="test-lease")
+
+
+@pytest.mark.anyio
+async def test_get_exporter_passes_timeout():
+    from jumpstarter_protocol import client_pb2
+
+    mock_stub = Mock()
+    mock_stub.GetExporter = AsyncMock(return_value=client_pb2.Exporter(name="namespaces/default/exporters/board"))
+
+    svc = ClientService(channel=Mock(), namespace="default")
+    svc.stub = mock_stub
+
+    await svc.GetExporter(name="board", timeout=5)
+
+    assert mock_stub.GetExporter.call_args.kwargs["timeout"] == 5

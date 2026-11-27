@@ -66,6 +66,10 @@ _LEASE_CHECK_TIMEOUT_SECONDS = 5
 # gRPC deadline for the local client that registers `j` completion; past it,
 # the shell starts without completion
 _LOCAL_CLIENT_TIMEOUT_SECONDS = 5
+# How often a client waiting for the beforeLease hook asks the controller whether it ended
+_BEFORE_LEASE_HOOK_POLL_SECONDS = 5
+# How long a client waits for the beforeLease hook to end
+_BEFORE_LEASE_HOOK_TIMEOUT_SECONDS = 300
 
 
 def _run_shell_only(lease, config, command, path: str, motd: str | None = None, client=None) -> int:
@@ -417,6 +421,44 @@ async def _lease_has_ended(lease) -> bool:
     return True
 
 
+async def _read_exporter_status(lease) -> ExporterStatus | None:
+    try:
+        exporter = await lease.svc.GetExporter(name=lease.exporter_name, timeout=_LEASE_CHECK_TIMEOUT_SECONDS)
+    except Exception:
+        logger.debug("Could not read the status of exporter %s", lease.exporter_name, exc_info=True)
+        return None
+    return exporter.status
+
+
+async def _wait_for_before_lease_hook(lease, reconnected: bool) -> bool:
+    """Wait while the exporter runs this live lease's beforeLease hook, and return whether to connect again."""
+    if reconnected or isinstance(lease, DirectLease) or lease.lease_transferred:
+        return False
+    waited = False
+    deadline = time.monotonic() + _BEFORE_LEASE_HOOK_TIMEOUT_SECONDS
+    while True:
+        status = await _read_exporter_status(lease)
+        if status is None and not waited:
+            return False
+        if status == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:
+            raise ExporterOfflineError("beforeLease hook failed")
+        if status not in (ExporterStatus.BEFORE_LEASE_HOOK, None):
+            break
+        if lease.lease_ended or await _lease_has_ended(lease):
+            lease.lease_ended = True
+            return False
+        if time.monotonic() >= deadline:
+            raise ExporterOfflineError("Timeout waiting for beforeLease hook")
+        if not waited:
+            logger.info("Exporter %s is running its beforeLease hook, waiting for it to end", lease.exporter_name)
+            waited = True
+        await anyio.sleep(_BEFORE_LEASE_HOOK_POLL_SECONDS)
+    if waited and status == ExporterStatus.OFFLINE:
+        logger.warning("Exporter %s went offline during the beforeLease hook", lease.exporter_name)
+    # The hook can end between the connect timeout and the first read
+    return status == ExporterStatus.LEASE_READY
+
+
 async def _cancel_if_connection_lost(monitor, coro):
     """Run *coro* but cancel it as soon as monitor.connection_lost becomes True.
 
@@ -446,21 +488,28 @@ async def _run_shell_with_lease_async(lease, exporter_logs, config, command, can
     is done, so report its exit code instead.
     """
     exit_code = None  # recorded from inside the shell thread once it returns
+    reconnected = False
 
     def record_exit(code):
         nonlocal exit_code
         exit_code = code
 
-    try:
-        return await _run_shell_session(lease, exporter_logs, config, command, cancel_scope, record_exit)
-    except (BaseExceptionGroup, ExporterUnreachableError) as exc:
-        unreachable = (
-            find_exception_in_group(exc, ExporterUnreachableError) if isinstance(exc, BaseExceptionGroup) else exc
-        )
-        if unreachable is None or exit_code is None:
-            raise
-        logger.debug("Exporter unreachable after shell exit, not reconnecting: %s", unreachable)
-        return exit_code
+    while True:
+        try:
+            return await _run_shell_session(lease, exporter_logs, config, command, cancel_scope, record_exit)
+        except (BaseExceptionGroup, ExporterUnreachableError) as exc:
+            unreachable = (
+                find_exception_in_group(exc, ExporterUnreachableError) if isinstance(exc, BaseExceptionGroup) else exc
+            )
+            if unreachable is None:
+                raise
+            if exit_code is None:
+                if not cancel_scope.cancel_called and await _wait_for_before_lease_hook(lease, reconnected):
+                    reconnected = True
+                    continue
+                raise
+            logger.debug("Exporter unreachable after shell exit, not reconnecting: %s", unreachable)
+            return exit_code
 
 
 async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope, on_shell_exit):  # noqa: C901
@@ -513,7 +562,8 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
 
                     # Wait for LEASE_READY or hook failure using background monitor
                     result = await monitor.wait_for_any_of(
-                        [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED], timeout=300.0
+                        [ExporterStatus.LEASE_READY, ExporterStatus.BEFORE_LEASE_HOOK_FAILED],
+                        timeout=_BEFORE_LEASE_HOOK_TIMEOUT_SECONDS,
                     )
 
                     if result == ExporterStatus.BEFORE_LEASE_HOOK_FAILED:  # pragma: no cover

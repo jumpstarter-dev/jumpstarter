@@ -37,6 +37,7 @@ from jumpstarter_cli.shell import (
     shell,
 )
 
+from jumpstarter.client import DirectLease
 from jumpstarter.client.grpc import Lease, LeaseList
 from jumpstarter.client.lease import Lease as ClientLease
 from jumpstarter.common import ExporterStatus
@@ -1279,6 +1280,142 @@ class TestRunShellWithLeaseAsync:
         assert exit_code == 0
         assert monitor._connection_lost
         client.end_session_async.assert_not_called()
+
+
+def _lease_reporting(*replies, transferred=False, **lease_kwargs):
+    lease = _make_shell_lease(**lease_kwargs)
+    lease.lease_transferred = transferred
+    lease.svc.GetExporter = AsyncMock(
+        side_effect=[reply if isinstance(reply, Exception) else SimpleNamespace(status=reply) for reply in replies]
+    )
+    return lease
+
+
+class TestWaitForBeforeLeaseHook:
+    @staticmethod
+    @contextmanager
+    def _session_timing_out(times=1):
+        timeout = ExporterUnreachableError("Exporter did not respond to initial connection")
+        session = AsyncMock(side_effect=[timeout] * times + [0])
+        with (
+            patch("jumpstarter_cli.shell._run_shell_session", session),
+            patch("jumpstarter_cli.shell._BEFORE_LEASE_HOOK_POLL_SECONDS", 0),
+            patch("jumpstarter_cli.shell._BEFORE_LEASE_HOOK_TIMEOUT_SECONDS", 1),
+        ):
+            yield session
+
+    @pytest.mark.parametrize(
+        "replies",
+        [
+            (ExporterStatus.BEFORE_LEASE_HOOK, ExporterStatus.LEASE_READY),
+            (ExporterStatus.BEFORE_LEASE_HOOK, RuntimeError("controller unreachable"), ExporterStatus.LEASE_READY),
+            (ExporterStatus.LEASE_READY,),
+        ],
+        ids=["hook-ended", "status-unknown-during-hook", "hook-ended-before-first-read"],
+    )
+    async def test_connects_again_on_the_same_lease_after_the_hook(self, replies):
+        lease = _lease_reporting(*replies)
+
+        with self._session_timing_out() as session:
+            exit_code = await _run_shell_with_lease_async(lease, False, None, (), Mock(cancel_called=False))
+
+        assert exit_code == 0
+        assert session.await_count == 2
+        # Connects again only once a read reports the lease ready
+        assert lease.svc.GetExporter.await_count == len(replies)
+
+    @pytest.mark.parametrize(
+        "replies",
+        [
+            (ExporterStatus.LEASE_READY, ExporterStatus.LEASE_READY),
+            (ExporterStatus.BEFORE_LEASE_HOOK, ExporterStatus.LEASE_READY) * 2,
+        ],
+        ids=["ready", "after-the-hook"],
+    )
+    async def test_connects_again_only_once(self, replies):
+        lease = _lease_reporting(*replies)
+
+        with self._session_timing_out(times=2) as session, pytest.raises(ExporterUnreachableError):
+            await _run_shell_with_lease_async(lease, False, None, (), Mock(cancel_called=False))
+
+        assert session.await_count == 2
+
+    async def test_gives_up_on_a_hook_that_does_not_end(self):
+        lease = _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK)
+
+        with (
+            self._session_timing_out() as session,
+            patch("jumpstarter_cli.shell._BEFORE_LEASE_HOOK_TIMEOUT_SECONDS", 0),
+            pytest.raises(ExporterOfflineError, match="Timeout waiting for beforeLease hook"),
+        ):
+            await _run_shell_with_lease_async(lease, False, None, (), Mock(cancel_called=False))
+
+        assert session.await_count == 1
+
+    @pytest.mark.parametrize(
+        "lease",
+        [
+            lambda: _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK, ExporterStatus.BEFORE_LEASE_HOOK_FAILED),
+            lambda: _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK_FAILED, lease_ended=True),
+        ],
+        ids=["during-wait", "lease-already-ended"],
+    )
+    async def test_reports_a_failed_hook(self, lease):
+        with self._session_timing_out() as session, pytest.raises(ExporterOfflineError, match="hook failed"):
+            await _run_shell_with_lease_async(lease(), False, None, (), Mock(cancel_called=False))
+
+        assert session.await_count == 1
+
+    async def test_leases_again_when_the_exporter_goes_offline_during_the_hook(self, caplog):
+        caplog.set_level(logging.WARNING)
+        lease = _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK, ExporterStatus.OFFLINE)
+
+        with self._session_timing_out() as session, pytest.raises(ExporterUnreachableError):
+            await _run_shell_with_lease_async(lease, False, None, (), Mock(cancel_called=False))
+
+        assert session.await_count == 1
+        assert "went offline during the beforeLease hook" in caplog.text
+
+    @pytest.mark.parametrize(
+        "lease, cancel_called",
+        [
+            (lambda: _lease_reporting(ExporterStatus.OFFLINE), False),
+            (lambda: _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK, lease_ended=True), False),
+            (lambda: _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK), True),
+            (lambda: _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK, transferred=True), False),
+            (lambda: Mock(spec=DirectLease), False),
+            (lambda: _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK, ExporterStatus.AVAILABLE), False),
+            (lambda: _lease_reporting(RuntimeError("controller unreachable")), False),
+        ],
+        ids=[
+            "not-in-hook",
+            "lease-ended",
+            "cancelled",
+            "transferred",
+            "direct-connection",
+            "released-during-hook",
+            "status-unknown",
+        ],
+    )
+    async def test_gives_up_without_a_hook_to_wait_for(self, lease, cancel_called):
+        with self._session_timing_out() as session, pytest.raises(ExporterUnreachableError):
+            await _run_shell_with_lease_async(lease(), False, None, (), Mock(cancel_called=cancel_called))
+
+        assert session.await_count == 1
+
+    async def test_gives_up_when_the_lease_ends_during_the_hook(self):
+        lease = _lease_reporting(ExporterStatus.BEFORE_LEASE_HOOK, ExporterStatus.BEFORE_LEASE_HOOK)
+        lease.get.side_effect = [
+            _make_lease("test-lease", client="test-client"),
+            _make_lease("test-lease", client="test-client", effective_end_time=datetime.now(tz=UTC)),
+        ]
+
+        with self._session_timing_out() as session, pytest.raises(ExporterUnreachableError):
+            await _run_shell_with_lease_async(lease, False, None, (), Mock(cancel_called=False))
+
+        assert session.await_count == 1
+        # The retry loop reads the flag instead of asking the controller again
+        assert lease.lease_ended
 
 
 class TestCancelIfConnectionLost:
