@@ -146,7 +146,7 @@ jobs:
         if: runner.os == 'Linux'
         env:
           # renovate: datasource=github-releases depName=renode/renode
-          RENODE_VERSION: v1.17.0
+          RENODE_VERSION: v1.17.1
         run: |
           RENODE_TAG="${RENODE_VERSION#v}"
           wget "https://github.com/renode/renode/releases/download/${RENODE_VERSION}/renode-${RENODE_TAG}.linux-portable.tar.gz" -O /tmp/renode.tar.gz
