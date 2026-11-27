@@ -38,7 +38,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${ds_prometheus}" },
           "editorMode": "code",
-          "expr": "sum by (exporter, operation) (\n  rate(jumpstarter_operations_total{result=\"failure\"}[5m])\n)\n/\nsum by (exporter, operation) (\n  rate(jumpstarter_operations_total[5m])\n)",
+          "expr": "(\n  sum by (exporter, operation) (\n    rate(jumpstarter_operations_total{result=\"failure\"}[5m])\n  )\n  or\n  0 * sum by (exporter, operation) (\n    rate(jumpstarter_operations_total[5m])\n  )\n)\n/\nsum by (exporter, operation) (\n  rate(jumpstarter_operations_total[5m])\n)",
           "legendFormat": "{{exporter}} / {{operation}}",
           "range": true,
           "refId": "A"

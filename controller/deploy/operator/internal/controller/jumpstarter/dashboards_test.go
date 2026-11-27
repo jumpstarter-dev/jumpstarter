@@ -138,8 +138,54 @@ func TestDesiredPersesDashboard(t *testing.T) {
 	}
 
 	assertPrometheusPanel(t, panels, "operationFailureRate", "prom")
+	// A deployment that has never failed has no result="failure" series, so the
+	// numerator must fall back to zero or the panel shows no data at all.
+	failureRate := panelQueryString(t, panels, "operationFailureRate")
+	for _, want := range []string{"or", "0 * sum by (exporter, operation)", `result="failure"`} {
+		if !strings.Contains(failureRate, want) {
+			t.Errorf("failure-rate query must contain %q:\n%s", want, failureRate)
+		}
+	}
 	assertLokiPanel(t, panels, "leaseLogs", "logs")
 	assertLayoutReferences(t, layouts[0], panels)
+}
+
+// panelQueryString returns the PromQL of a single-query panel.
+func panelQueryString(t *testing.T, panels map[string]any, key string) string {
+	t.Helper()
+	panel, ok := panels[key].(map[string]any)
+	if !ok {
+		t.Fatalf("panel %q missing", key)
+	}
+	panelSpec, ok := panel["spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("panel %q spec is %T", key, panel["spec"])
+	}
+	queries, ok := panelSpec["queries"].([]any)
+	if !ok || len(queries) == 0 {
+		t.Fatalf("panel %q has no queries", key)
+	}
+	query, ok := queries[0].(map[string]any)
+	if !ok {
+		t.Fatalf("panel %q query is %T", key, queries[0])
+	}
+	qspec, ok := query["spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("panel %q query spec is %T", key, query["spec"])
+	}
+	plugin, ok := qspec["plugin"].(map[string]any)
+	if !ok {
+		t.Fatalf("panel %q query plugin is %T", key, qspec["plugin"])
+	}
+	pspec, ok := plugin["spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("panel %q plugin spec is %T", key, plugin["spec"])
+	}
+	text, ok := pspec["query"].(string)
+	if !ok {
+		t.Fatalf("panel %q query is %T", key, pspec["query"])
+	}
+	return text
 }
 
 func assertPrometheusPanel(t *testing.T, panels map[string]any, key, datasource string) {

@@ -237,8 +237,14 @@ func desiredPersesDashboard(js *operatorv1alpha1.Jumpstarter) *unstructured.Unst
 	}
 
 	addPanel("operationFailureRate", "Operation failure rate", "TimeSeriesChart",
-		prometheusQuery(`sum by (exporter, operation) (
-  rate(jumpstarter_operations_total{result="failure"}[5m])
+		prometheusQuery(`(
+  sum by (exporter, operation) (
+    rate(jumpstarter_operations_total{result="failure"}[5m])
+  )
+  or
+  0 * sum by (exporter, operation) (
+    rate(jumpstarter_operations_total[5m])
+  )
 )
 /
 sum by (exporter, operation) (

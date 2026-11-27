@@ -49,8 +49,14 @@ spec:
                       kind: PrometheusDatasource
                       name: prometheus
                     query: |
-                      sum by (exporter) (
-                        rate(jumpstarter_operations_total{result="failure"}[5m])
+                      (
+                        sum by (exporter) (
+                          rate(jumpstarter_operations_total{result="failure"}[5m])
+                        )
+                        or
+                        0 * sum by (exporter) (
+                          rate(jumpstarter_operations_total[5m])
+                        )
                       )
                       /
                       sum by (exporter) (
