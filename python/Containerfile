@@ -30,6 +30,26 @@ RUN ARCH=$(uname -m) && \
         ln -s /usr/local/bin/fls /usr/local/bin/fls-aarch64; \
     fi
 
+# scrios streams an iPhone's or iPad's screen for the iosdevice HMI (jumpstarter-driver-iosdevice[hmi]). It is a
+# static binary, downloaded with the release's SHA256SUMS and checked against them: the build fails if the file is not
+# listed or does not match. Nothing is downloaded when the image runs. SCRIOS_BASE_URL is where the releases are (the
+# release asset layout is <base>/<version>/<asset>): point it at a mirror of them to build without GitHub.
+# SCRIOS_VERSION is a PLACEHOLDER until the first scrios release is tagged. Until then this step fails (it fails closed:
+# a missing release, a missing line in SHA256SUMS and a wrong checksum all stop the build), so set it to a release
+# whose SHA256SUMS lists the asset before building the image.
+ARG SCRIOS_VERSION=v0.1.0
+ARG SCRIOS_BASE_URL=https://github.com/kirkbrauer/scrios/releases/download
+RUN ARCH=$(uname -m) && \
+    case "${ARCH}" in x86_64|aarch64) ;; *) echo "scrios has no release for ${ARCH}" >&2; exit 1 ;; esac && \
+    ASSET="scrios-${ARCH}-linux-musl" && \
+    WORK=$(mktemp -d) && \
+    curl -fsSL "${SCRIOS_BASE_URL}/${SCRIOS_VERSION}/${ASSET}" -o "${WORK}/${ASSET}" && \
+    curl -fsSL "${SCRIOS_BASE_URL}/${SCRIOS_VERSION}/SHA256SUMS" -o "${WORK}/SHA256SUMS" && \
+    (cd "${WORK}" && grep -E "^[0-9a-f]{64}  ?\*?${ASSET}\$" SHA256SUMS > "${ASSET}.sum" && sha256sum -c "${ASSET}.sum") && \
+    install -m 0755 "${WORK}/${ASSET}" /usr/local/bin/scrios && \
+    rm -rf "${WORK}" && \
+    /usr/local/bin/scrios --version
+
 # Build the jumpstarter-exec Rust binary for the sidecar remote-exec bridge.
 # Uses UBI 10 + rust-toolset for Red Hat-supported toolchain and glibc compatibility.
 FROM registry.access.redhat.com/ubi10/ubi:latest@sha256:87ceab8634a53a36c75a8ba7282f09f11c46ab3e8906db6c6d2b3cd2a7dc4f4e AS rust-builder

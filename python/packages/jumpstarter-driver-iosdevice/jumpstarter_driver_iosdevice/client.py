@@ -27,6 +27,7 @@ from jumpstarter.client import DriverClient
 if TYPE_CHECKING:
     from jumpstarter_driver_appium.client import AppiumClient
     from jumpstarter_driver_appium.common import AppiumTarget
+    from jumpstarter_driver_hmi.client import HmiClient
 
 CONNECT_TIMEOUT = 60.0
 DISCONNECT_TIMEOUT = 30.0
@@ -219,6 +220,14 @@ class IosDeviceClient(DriverClient):
         if child is None:
             raise AttributeError("Appium is not configured for this device on the exporter")
         return child  # ty: ignore[invalid-explicit-return]
+
+    @property
+    def hmi(self) -> "HmiClient":
+        """The device's HMI, when the exporter configures one; see the HMI package's client."""
+        child = self.children.get("hmi")
+        if child is None:
+            raise AttributeError("An HMI is not configured for this device on the exporter")
+        return child  # ty: ignore[invalid-return-type]
 
     def info(self) -> dict:
         info = self.call("info")
@@ -608,6 +617,8 @@ class IosDeviceClient(DriverClient):
 
         if "appium" in self.children:
             ios.add_command(self.appium.cli(), "appium")
+        if "hmi" in self.children:
+            ios.add_command(self.hmi.cli(), "hmi")
 
         @ios.command()
         @click.argument("ports", nargs=-1, type=click.IntRange(1, 65535), required=True)
