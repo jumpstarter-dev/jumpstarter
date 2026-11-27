@@ -68,6 +68,7 @@ Drivers that control storage devices and manage data:
 Drivers that handle media streams:
 
 - {doc}`uStreamer <ustreamer>` (`jumpstarter-driver-ustreamer`) - Video streaming
+- {doc}`HMI <hmi>` (`jumpstarter-driver-hmi`) - a remote display with declared input (touch, mouse, keyboard, hard keys), H.264 by default
 - {doc}`Video <video>` (`jumpstarter-driver-video`) - Video interface and HTTP/MJPEG camera sources
 - {doc}`NanoKVM-USB <nanokvm-usb>` (`jumpstarter-driver-nanokvm-usb`) - NanoKVM-USB KVM over local USB serial and UVC
 ### Automotive Diagnostics
@@ -163,6 +164,7 @@ pyserial.md
 qemu.md
 renode.md
 ridesx.md
+hmi.md
 sdwire.md
 shell.md
 sigrok.md

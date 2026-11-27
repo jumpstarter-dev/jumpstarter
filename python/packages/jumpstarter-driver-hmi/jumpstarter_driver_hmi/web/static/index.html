@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>HMI view</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f4f5f7; --panel: #ffffff; --fg: #1b1d21; --muted: #555d6b;
+    --border: #b9c0cc; --accent: #0b5fd7; --accent-fg: #ffffff; --error: #a8201a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1f232a; --fg: #e8eaee; --muted: #a0a8b6;
+      --border: #3c424e; --accent: #7aa7ff; --accent-fg: #0a0f1a; --error: #ff8f86;
+    }
+  }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1rem; background: var(--bg); color: var(--fg);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; max-width: 100%; }
+  h1 { margin: 0; font-size: 1.1rem; }
+  #status, #note, #hint { margin: 0; color: var(--muted); text-align: center; }
+  #hint { font-size: 0.9em; }
+  #hmi {
+    display: block; max-width: 100%; max-height: 78vh; width: auto; height: auto;
+    background: #000; border-radius: 6px; touch-action: none; user-select: none; -webkit-user-select: none;
+    cursor: crosshair;
+  }
+  #hmi:focus-visible, button:focus-visible, input:focus-visible, .knob:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px;
+  }
+  #errors { list-style: none; margin: 0; padding: 0; min-height: 1.4em; color: var(--error); text-align: center; }
+  #errors li { opacity: 1; transition: opacity 1.5s ease-out; }
+  #errors li.fading { opacity: 0; }
+  #controls { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; width: 100%; }
+  #keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5rem; }
+  #dials { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 1rem 1.5rem; }
+  .dial {
+    display: grid; grid-template-columns: auto auto auto; grid-template-areas: "ccw knob cw" "name name name" "push push push";
+    align-items: center; justify-items: center; gap: 0.35rem 0.6rem; min-width: 12rem;
+  }
+  .knob {
+    grid-area: knob; width: 4.5rem; height: 4.5rem; border-radius: 50%; position: relative;
+    border: 2px solid var(--border); background: var(--panel); user-select: none; -webkit-user-select: none;
+  }
+  .notch {
+    position: absolute; top: 0.3rem; left: calc(50% - 0.2rem); width: 0.4rem; height: 1.1rem;
+    border-radius: 0.2rem; background: var(--accent);
+  }
+  .ccw { grid-area: ccw; }
+  .cw { grid-area: cw; }
+  .name { grid-area: name; font-weight: 600; }
+  .push { grid-area: push; }
+  .ccw, .cw { padding: 0.3rem 0.6rem; font-size: 1.1rem; line-height: 1; }
+  button {
+    font: inherit; padding: 0.45rem 0.9rem; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--fg); cursor: pointer; touch-action: manipulation;
+    user-select: none; -webkit-user-select: none;
+  }
+  button:hover { border-color: var(--accent); }
+  button:active { background: var(--accent); color: var(--accent-fg); }
+  #text-form { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.5rem; }
+  input[type="text"] {
+    font: inherit; padding: 0.4rem 0.6rem; min-width: 16rem; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--panel); color: var(--fg);
+  }
+  @media (prefers-reduced-motion: reduce) { #errors li { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>HMI view</h1>
+  <p id="status" role="status" aria-live="polite">Loading…</p>
+  <p id="note" role="status" aria-live="polite" hidden></p>
+  <canvas id="hmi" tabindex="-1" role="img" hidden
+          aria-label="The device's display. Where the device takes input, click or touch to operate it; focus here to type."></canvas>
+  <p id="hint" hidden></p>
+  <ul id="errors" aria-live="polite" aria-label="Messages from the HMI"></ul>
+  <section id="controls" aria-label="Device controls" hidden>
+    <div id="dials" role="group" aria-label="Rotary knobs" hidden></div>
+    <div id="keys" role="group" aria-label="Hard keys"></div>
+    <form id="text-form" hidden>
+      <label for="text-input">Type text</label>
+      <input id="text-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button type="submit">Send</button>
+    </form>
+  </section>
+  <button id="reconnect" type="button" hidden>Reconnect</button>
+  <noscript><p>This page needs JavaScript.</p></noscript>
+</main>
+<script type="module" src="/hmi.js"></script>
+</body>
+</html>

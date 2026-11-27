@@ -46,6 +46,11 @@ UDID = "UDID"
 buid = "buid"
 BUID = "BUID"
 
+# trak and trun are MP4 box names; ue is the Exp-Golomb code of an H.264 SPS
+trak = "trak"
+trun = "trun"
+ue = "ue"
+
 [type.gomod]
 # Exclude go.mod and go.sum from spell checking
 extend-glob = ["go.mod", "go.sum"]
