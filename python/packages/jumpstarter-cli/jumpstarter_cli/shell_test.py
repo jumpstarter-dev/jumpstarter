@@ -1070,6 +1070,25 @@ class TestRunShellWithLeaseAsync:
         assert exit_code == 42
         client.end_session_async.assert_not_called()
 
+    async def test_connection_lost_during_before_lease_hook_is_unreachable(self):
+        monitor = _FakeStatusMonitor(statuses=[ExporterStatus.BEFORE_LEASE_HOOK], connection_lost=True)
+        client = _build_fake_client(monitor, get_status_return=ExporterStatus.BEFORE_LEASE_HOOK)
+        lease = _make_shell_lease()
+        run_shell = Mock(return_value=0)
+
+        @asynccontextmanager
+        async def fake_client_from_path(*_a, **_kw):
+            yield client
+
+        with (
+            patch("jumpstarter_cli.shell.client_from_path", side_effect=fake_client_from_path),
+            patch("jumpstarter_cli.shell._run_shell_only", run_shell),
+            pytest.raises(ExporterUnreachableError),
+        ):
+            await _run_shell_with_lease_async(lease, False, None, (), Mock(cancel_called=False))
+
+        run_shell.assert_not_called()
+
     async def test_calls_end_session_when_controller_confirms_lease_is_held(self):
         monitor = _FakeStatusMonitor(statuses=[ExporterStatus.LEASE_READY, ExporterStatus.AVAILABLE])
         client = _build_fake_client(

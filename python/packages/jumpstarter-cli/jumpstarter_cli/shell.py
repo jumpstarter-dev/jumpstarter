@@ -491,7 +491,7 @@ async def _run_shell_session(lease, exporter_logs, config, command, cancel_scope
                         reason = monitor.status_message or "beforeLease hook failed"
                         raise ExporterOfflineError(reason)
                     elif result is None:
-                        if monitor.connection_lost:  # pragma: no cover
+                        if monitor.connection_lost:
                             raise ExporterUnreachableError(
                                 f"Exporter {lease.exporter_name} was lost during the beforeLease hook"
                             )
