@@ -112,6 +112,7 @@ restarting the exporter.
 | H2: beforeLease fail+exit does NOT run afterLease hook | `exporter-hooks-before-fail-exit-with-after.yaml` (single-run) | shell fails | output lacks "AFTER_SHOULD_NOT_RUN"; exporter goes Offline |
 | H3: warning displayed when beforeLease hook fails with warn | `exporter-hooks-before-fail-warn.yaml` | shell succeeds | contains "Warning:" |
 | H4: warning displayed when afterLease hook fails with warn | `exporter-hooks-after-fail-warn.yaml` | shell succeeds | contains "Warning:" |
+| H5: beforeLease hook longer than the connect timeout keeps the lease | `exporter-hooks-long-before.yaml` (hook sleeps 30s, past the client's 20s connect timeout) | `jmp shell ... j power on` | succeeds; contains "LONG_BEFORE_HOOK: complete"; lacks "releasing lease and retrying" |
 
 ---
 

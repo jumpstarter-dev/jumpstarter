@@ -463,6 +463,16 @@ print("PYTHON_HOOK: complete")
 			Expect(err).NotTo(HaveOccurred(), out)
 			Expect(out).To(ContainSubstring("Warning:"))
 		})
+
+		It("H5: beforeLease hook longer than the connect timeout keeps the lease", func() {
+			startHooksExporter("exporter-hooks-long-before.yaml")
+
+			out, err := Jmp("shell", "--client", "test-client-hooks",
+				"--selector", "example.com/board=hooks", "j", "power", "on")
+			Expect(err).NotTo(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("LONG_BEFORE_HOOK: complete"))
+			Expect(out).NotTo(ContainSubstring("releasing lease and retrying"))
+		})
 	})
 
 })

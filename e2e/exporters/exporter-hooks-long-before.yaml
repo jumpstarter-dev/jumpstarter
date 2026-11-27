@@ -1,0 +1,14 @@
+export:
+  power:
+    type: jumpstarter_driver_power.driver.MockPower
+  storage:
+    type: jumpstarter_driver_opendal.driver.MockStorageMux
+
+hooks:
+  beforeLease:
+    script: |
+      echo "LONG_BEFORE_HOOK: starting"
+      sleep 30
+      echo "LONG_BEFORE_HOOK: complete"
+    timeout: 120
+    onFailure: warn
