@@ -20,7 +20,7 @@ from jumpstarter.common.utils import serve
 # .github/workflows/python-tests.yaml downloads and caches the same image for CI,
 # under FEDORA_CLOUD_VERSION too; Renovate bumps both together.
 # renovate: datasource=custom.fedora-cloud-qcow2 depName=fedora-cloud-base-generic
-FEDORA_CLOUD_VERSION = "43-1.6"
+FEDORA_CLOUD_VERSION = "45-1.4"
 
 
 @pytest.fixture
