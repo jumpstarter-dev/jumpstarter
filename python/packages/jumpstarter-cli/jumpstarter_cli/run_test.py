@@ -367,3 +367,32 @@ def test_drains_pending_token_after_child_exit(monkeypatch):
     assert not supervisor.is_alive()
     assert result["code"] == 75
     assert config.token == "last-rotated-token"
+
+
+def test_forked_child_on_macos_takes_its_proxies_from_the_environment(monkeypatch):
+    """The forked child must not ask SystemConfiguration for the proxies: macOS kills it there."""
+    import urllib.request
+
+    def killed(*_args, **_kwargs):
+        raise AssertionError("the forked child asked the system for its proxies")
+
+    monkeypatch.setattr(urllib.request, "getproxies_macosx_sysconf", killed, raising=False)
+    monkeypatch.setattr(urllib.request, "proxy_bypass_macosx_sysconf", killed, raising=False)
+    monkeypatch.setattr(run_mod.sys, "platform", "darwin")
+
+    run_mod._forked_child_on_macos()
+
+    assert getattr(urllib.request, "getproxies_macosx_sysconf")() == {}  # noqa: B009
+    assert getattr(urllib.request, "proxy_bypass_macosx_sysconf")("example.com") is False  # noqa: B009
+
+
+def test_forked_child_elsewhere_is_left_as_it_is(monkeypatch):
+    import urllib.request
+
+    marker = object()
+    monkeypatch.setattr(urllib.request, "getproxies_macosx_sysconf", marker, raising=False)
+    monkeypatch.setattr(run_mod.sys, "platform", "linux")
+
+    run_mod._forked_child_on_macos()
+
+    assert getattr(urllib.request, "getproxies_macosx_sysconf") is marker  # noqa: B009
