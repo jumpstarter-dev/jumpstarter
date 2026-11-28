@@ -251,6 +251,26 @@ def _handle_parent_with_token_updates(pid, config, token_reader):
         token_reader.close()
 
 
+def _forked_child_on_macos():
+    """Keeps the forked child off what macOS does not let a forked process use.
+
+    The exporter serves in a child that is forked and not exec'd. On macOS a process like that may not use
+    the frameworks that talk to system services. urllib asks one of them (SystemConfiguration) for the
+    system's proxies when the environment names none, and the child is killed in it: an exporter does that
+    as soon as a driver reads a resource a client gave by URL, a disk image to flash for one. The child
+    takes its proxies from the environment only.
+
+    (Its DNS is the other thing: see GRPC_DNS_RESOLVER in the package's __init__.)
+    """
+    if sys.platform != "darwin":
+        return
+    import urllib.request
+
+    # (these two exist on macOS only: urllib looks them up by name at each call)
+    setattr(urllib.request, "getproxies_macosx_sysconf", dict)  # noqa: B010
+    setattr(urllib.request, "proxy_bypass_macosx_sysconf", lambda host, proxy_settings=None: False)  # noqa: B010
+
+
 def _serve_with_exc_handling(
     config,
     parsed_bind=None,
@@ -308,6 +328,7 @@ def _serve_with_exc_handling(
                 rapid_failure_count = 0
         else:
             token_reader.close()
+            _forked_child_on_macos()
             os.setsid() # Become group leader so all spawned subprocesses are reached by parent's signals
             _handle_child(
                 config,
